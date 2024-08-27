@@ -2,8 +2,6 @@
 
 set -x
 
-# gprbuild -P lalvm.gpr -XLIBRARY_TYPE=relocatable
-
 mkdir -p build
 pushd build
 
@@ -18,4 +16,4 @@ cmake -G Ninja .. \
 cmake --build .
 popd
 
-LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD/lib ./build/bin/toy
+./build/bin/toy
