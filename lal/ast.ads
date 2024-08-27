@@ -1,4 +1,5 @@
 with Interfaces.C; use Interfaces.C;
+with System;
 
 with Libadalang.Analysis;
 with Libadalang.Common;
@@ -11,7 +12,7 @@ package AST is
       with Convention => C,
            Export => True;
 
-   function My_Func (a : int) return CC
+   function My_Func (a : int) return System.Address
      with
        Export        => True,
        Convention    => C,

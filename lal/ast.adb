@@ -2,7 +2,7 @@ with Ada.Text_IO; use Ada.Text_IO;
 
 package body AST is
 
-   function My_Func (a : int) return CC is
+   function My_Func (a : int) return System.Address is
       package LAL renames Libadalang.Analysis;
       package LCO renames Libadalang.Common;
 
@@ -29,7 +29,8 @@ package body AST is
 
 
 
-      return CC'(Node => Unit.Root);
+      --return CC'(Node => Unit.Root);
+      return Unit.Root'Address;
    end My_Func;
 
 end AST;
