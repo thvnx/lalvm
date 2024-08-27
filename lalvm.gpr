@@ -1,0 +1,12 @@
+with "libadalang";
+
+library project LALVM is
+   for Library_Name use "lalvm";
+   for Library_Dir use "lib";
+
+   for Library_Kind use "relocatable";
+
+   for Languages use ("Ada");
+   for Source_Dirs use ("lal");
+   for Object_Dir use "obj";
+end LALVM;
