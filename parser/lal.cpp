@@ -1,6 +1,3 @@
-#include <iostream>
-#include <cstring>
-
 #include "lal.h"
 
 bool

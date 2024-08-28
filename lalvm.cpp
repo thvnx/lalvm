@@ -1,3 +1,11 @@
+#include "Dialect.h"
+#include "MLIRGen.h"
+
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/Parser/Parser.h"
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorOr.h"
@@ -96,12 +104,57 @@ int dumpAST() {
   return 0;
 }
 
+int dumpMLIR() {
+  mlir::MLIRContext context;
+  // Load our Dialect in this MLIR Context.
+  context.getOrLoadDialect<mlir::ada::AdaDialect>();
+
+  // Handle '.toy' input to the compiler.
+  if (inputType != InputType::MLIR &&
+      !llvm::StringRef(inputFilename).ends_with(".mlir")) {
+    auto lalAST = parseInputFile(inputFilename);
+    if (!lalAST)
+      return 6;
+    mlir::OwningOpRef<mlir::ModuleOp> module = ada::mlirGen(context, *lalAST);
+    if (!module)
+      return 1;
+
+    module->dump();
+    return 0;
+  }
+
+  // Otherwise, the input is '.mlir'.
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
+      llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
+  if (std::error_code ec = fileOrErr.getError()) {
+    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+    return -1;
+  }
+
+  // Parse the input mlir.
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
+  mlir::OwningOpRef<mlir::ModuleOp> module =
+      mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
+  if (!module) {
+    llvm::errs() << "Error can't load file " << inputFilename << "\n";
+    return 3;
+  }
+
+  module->dump();
+  return 0;
+}
+
 int main(int argc, char **argv) {
+  mlir::registerAsmPrinterCLOptions();
+  mlir::registerMLIRContextCLOptions();
   cl::ParseCommandLineOptions(argc, argv, "ada compiler\n");
 
   switch (emitAction) {
   case Action::DumpAST:
     return dumpAST();
+  case Action::DumpMLIR:
+    return dumpMLIR();
   default:
     llvm::errs() << "No action specified (parsing only?), use --emit=<action>\n";
   }

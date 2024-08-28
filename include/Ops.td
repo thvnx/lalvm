@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Defines the operations of the Toy dialect.
+// Defines the operations of the Ada dialect.
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,9 +20,9 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 
 // Provide a definition of the 'toy' dialect in the ODS framework so that we
 // can define our operations.
-def Toy_Dialect : Dialect {
-  let name = "toy";
-  let cppNamespace = "::mlir::toy";
+def Ada_Dialect : Dialect {
+  let name = "ada";
+  let cppNamespace = "::mlir::ada";
 }
 
 // Base class for toy dialect operations. This operation inherits from the base
@@ -30,22 +30,22 @@ def Toy_Dialect : Dialect {
 //   * The parent dialect of the operation.
 //   * The mnemonic for the operation, or the name without the dialect prefix.
 //   * A list of traits for the operation.
-class Toy_Op<string mnemonic, list<Trait> traits = []> :
-    Op<Toy_Dialect, mnemonic, traits>;
+class Ada_Op<string mnemonic, list<Trait> traits = []> :
+    Op<Ada_Dialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// Toy Operations
+// Ada Operations
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-// We define a toy operation by inheriting from our base 'Toy_Op' class above.
+// We define a toy operation by inheriting from our base 'Ada_Op' class above.
 // Here we provide the mnemonic and a list of traits for the operation. The
 // constant operation is marked as 'Pure' as it is a pure operation
 // and may be removed if dead.
-def ConstantOp : Toy_Op<"constant", [Pure]> {
+def ConstantOp : Ada_Op<"constant", [Pure]> {
   // Provide a summary and description for this operation. This can be used to
   // auto-generate documentation of the operations within our dialect.
   let summary = "constant";
@@ -89,7 +89,7 @@ def ConstantOp : Toy_Op<"constant", [Pure]> {
 // AddOp
 //===----------------------------------------------------------------------===//
 
-def AddOp : Toy_Op<"add"> {
+def AddOp : Ada_Op<"add"> {
   let summary = "element-wise addition operation";
   let description = [{
     The "add" operation performs element-wise addition between two tensors.
@@ -112,7 +112,7 @@ def AddOp : Toy_Op<"add"> {
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-def FuncOp : Toy_Op<"func", [
+def FuncOp : Ada_Op<"func", [
     FunctionOpInterface, IsolatedFromAbove
   ]> {
   let summary = "user defined function operation";
@@ -167,7 +167,7 @@ def FuncOp : Toy_Op<"func", [
 // GenericCallOp
 //===----------------------------------------------------------------------===//
 
-def GenericCallOp : Toy_Op<"generic_call"> {
+def GenericCallOp : Ada_Op<"generic_call"> {
   let summary = "generic call operation";
   let description = [{
     Generic calls represent calls to a user defined function that needs to
@@ -206,7 +206,7 @@ def GenericCallOp : Toy_Op<"generic_call"> {
 // MulOp
 //===----------------------------------------------------------------------===//
 
-def MulOp : Toy_Op<"mul"> {
+def MulOp : Ada_Op<"mul"> {
   let summary = "element-wise multiplication operation";
   let description = [{
     The "mul" operation performs element-wise multiplication between two
@@ -229,7 +229,7 @@ def MulOp : Toy_Op<"mul"> {
 // PrintOp
 //===----------------------------------------------------------------------===//
 
-def PrintOp : Toy_Op<"print"> {
+def PrintOp : Ada_Op<"print"> {
   let summary = "print operation";
   let description = [{
     The "print" builtin operation prints a given input tensor, and produces
@@ -246,7 +246,7 @@ def PrintOp : Toy_Op<"print"> {
 // ReshapeOp
 //===----------------------------------------------------------------------===//
 
-def ReshapeOp : Toy_Op<"reshape"> {
+def ReshapeOp : Ada_Op<"reshape"> {
   let summary = "tensor reshape operation";
   let description = [{
     Reshape operation is transforming its input tensor into a new tensor with
@@ -271,7 +271,7 @@ def ReshapeOp : Toy_Op<"reshape"> {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def ReturnOp : Toy_Op<"return", [Pure, HasParent<"FuncOp">,
+def ReturnOp : Ada_Op<"return", [Pure, HasParent<"FuncOp">,
                                  Terminator]> {
   let summary = "return operation";
   let description = [{
@@ -313,7 +313,7 @@ def ReturnOp : Toy_Op<"return", [Pure, HasParent<"FuncOp">,
 // TransposeOp
 //===----------------------------------------------------------------------===//
 
-def TransposeOp : Toy_Op<"transpose"> {
+def TransposeOp : Ada_Op<"transpose"> {
   let summary = "transpose operation";
 
   let arguments = (ins F64Tensor:$input);

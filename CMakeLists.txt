@@ -53,6 +53,7 @@ link_directories(lib)
 
 add_llvm_executable(lalvm
   mlir/MLIRGen.cpp
+  mlir/Dialect.cpp
   parser/lal.cpp
   lalvm.cpp
 
@@ -63,5 +64,7 @@ add_llvm_executable(lalvm
 target_link_libraries(lalvm
   PRIVATE
   adalang
+  MLIRAnalysis
   MLIRIR
+  MLIRParser
   MLIRSupport)

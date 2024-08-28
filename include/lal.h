@@ -1,6 +1,9 @@
 #ifndef LAL_H_
 #define LAL_H_
 
+#include <iostream>
+#include <cstring>
+
 #include "libadalang.h"
 
 bool

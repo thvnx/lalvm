@@ -26,7 +26,6 @@
 #include <optional>
 #include <vector>
 
-#include "libadalang.h"
 
 //using namespace mlir::toy;
 //using namespace toy;
@@ -64,10 +63,10 @@ public:
     // Verify the module after we have finished constructing it, this will check
     // the structural properties of the IR and invoke any specific verifiers we
     // have on the Toy operations.
-    // if (failed(mlir::verify(theModule))) {
-    //   theModule.emitError("module verification error");
-    //   return nullptr;
-    // }
+    if (failed(mlir::verify(theModule))) {
+      theModule.emitError("module verification error");
+      return nullptr;
+    }
 
     return theModule;
   }
@@ -87,7 +86,7 @@ private:
 
 } // namespace
 
-namespace toy {
+namespace ada {
 
 // The public API for codegen.
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
