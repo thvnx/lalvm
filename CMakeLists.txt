@@ -51,17 +51,17 @@ include_directories(mlir parser)
 link_directories(lib)
 
 
-add_llvm_executable(toy
+add_llvm_executable(lalvm
   mlir/MLIRGen.cpp
   parser/lal.cpp
-  toy.cpp
+  lalvm.cpp
 
   DEPENDS
   AdaOpsIncGen
   )
 
-target_link_libraries(toy
+target_link_libraries(lalvm
   PRIVATE
-    adalang
-      MLIRIR
+  adalang
+  MLIRIR
   MLIRSupport)

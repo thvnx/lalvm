@@ -17,7 +17,7 @@ namespace cl = llvm::cl;
 
 static cl::opt<std::string>
 inputFilename(cl::Positional,
-              cl::desc("<input toy file>"),
+              cl::desc("<input Ada file>"),
               cl::init("-"),
               cl::value_desc("filename"));
 
@@ -29,8 +29,8 @@ static cl::opt<enum InputType>
 inputType("x",
           cl::init(Ada),
           cl::desc("Decided the kind of output desired"),
-          cl::values(clEnumValN(Ada, "toy",
-                                "load the input file as a Toy source.")),
+          cl::values(clEnumValN(Ada, "Ada",
+                                "load the input file as a Ada source.")),
           cl::values(clEnumValN(MLIR, "mlir",
                                 "load the input file as an MLIR file")));
 
@@ -47,7 +47,7 @@ emitAction("emit",
 
 
 
-/// Returns a Toy AST resulting from parsing the file or a nullptr on error.
+/// Returns a Ada AST resulting from parsing the file or a nullptr on error.
 // TODO remove the use of global variable below, free ctx cleanly, see main.
 ada_analysis_context ctx;
 ada_analysis_unit unit;
