@@ -47,12 +47,13 @@ add_subdirectory(include)
 include_directories(/home/thevenoux/code/AdaCore/ancr/src/libadalang/build/src/)
 #add_subdirectory(lib)
 
-include_directories(mlir)
+include_directories(mlir parser)
 link_directories(lib)
 
 
 add_llvm_executable(toy
   mlir/MLIRGen.cpp
+  parser/lal.cpp
   toy.cpp
 
   DEPENDS
