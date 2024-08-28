@@ -54,6 +54,9 @@ link_directories(lib)
 add_llvm_executable(toy
   mlir/MLIRGen.cpp
   toy.cpp
+
+  DEPENDS
+  AdaOpsIncGen
   )
 
 target_link_libraries(toy

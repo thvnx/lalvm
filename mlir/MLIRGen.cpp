@@ -26,6 +26,8 @@
 #include <optional>
 #include <vector>
 
+#include "libadalang.h"
+
 //using namespace mlir::toy;
 //using namespace toy;
 
@@ -51,7 +53,7 @@ public:
 
   /// Public API: convert the AST for a Toy module (source file) to an MLIR
   /// Module operation.
-  mlir::ModuleOp mlirGen(int &moduleAST) {
+  mlir::ModuleOp mlirGen(ada_node &moduleAST) {
     // We create an empty MLIR module and codegen functions one at a time and
     // add them to the module.
     theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
@@ -89,7 +91,7 @@ namespace toy {
 
 // The public API for codegen.
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
-                                          /*ModuleAST*/int &moduleAST) {
+                                          ada_node &moduleAST) {
   return MLIRGenImpl(context).mlirGen(moduleAST);
 }
 

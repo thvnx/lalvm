@@ -16,4 +16,4 @@ cmake -G Ninja .. \
 cmake --build .
 popd
 
-./build/bin/toy
+./build/bin/toy --emit=ast test.adb
