@@ -69,10 +69,9 @@ fprint_text(FILE *stream, ada_text text, bool with_quotes) {
 }
 
 void
-dump(ada_node *node, int level)
+dump_image(ada_node *node, int level)
 {
-    ada_node_kind_enum kind;
-    ada_text kind_name;
+    ada_text img;
     unsigned i, count;
 
     if (ada_node_is_null(node)) {
@@ -81,11 +80,50 @@ dump(ada_node *node, int level)
         return;
     }
 
+    ada_node_image(node, &img);
+    print_indent(level);
+    fprint_text(stdout, img, false);
+    printf("\n");
+    ada_destroy_text(&img);
+
+    count = ada_node_children_count(node);
+    for (i = 0; i < count; ++i)
+    {
+        ada_node child;
+
+        if (ada_node_child(node, i, &child) == 0)
+            fprintf(stderr, "Error while getting a child");
+        dump_image(&child, level + 1);
+    }
+}
+
+void
+dump(ada_node *node, int level)
+{
+    ada_node_kind_enum kind;
+    ada_text kind_name;
+    unsigned i, count;
+
+    ada_source_location_range loc_range;
+
+    if (ada_node_is_null(node)) {
+        print_indent(level);
+        printf("<null node>\n");
+        return;
+    }
+
+    ada_node_sloc_range(node, &loc_range);
+
     kind = ada_node_kind(node);
     ada_kind_name(kind, &kind_name);
     print_indent(level);
     putchar('<');
     fprint_text(stdout, kind_name, false);
+    // fprintf(stdout, "%" PRIu32 ":%" PRIu16 "" , //":%"PRIu16"-%"PRIu32":%"PRIu16" ",
+    //         loc_range.start.line,
+    //         loc_range.start.column);
+    //         // loc_range.end.line,
+    //         // loc_range.end.column);
     puts(">");
 
     count = ada_node_children_count(node);
@@ -97,4 +135,9 @@ dump(ada_node *node, int level)
             std::cerr << "Error while getting a child";
         dump(&child, level + 1);
     }
+}
+
+AdaNode*
+convert(ada_node node) {
+    return new AdaNode(node);
 }

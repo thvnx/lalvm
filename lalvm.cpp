@@ -83,8 +83,9 @@ ada_node* parseInputFile(llvm::StringRef filename) {
   abort_on_exception ();
 
   ada_unit_root(unit, &root);
-  ada_context_decref(ctx);
-  abort_on_exception ();
+  //TODO find a way to free mem
+  //ada_context_decref(ctx);
+  //abort_on_exception ();
 
   return &root;
 }
@@ -100,7 +101,7 @@ int dumpAST() {
   if (!lalAST)
     return 1;
 
-  dump(lalAST, 0);
+  dump_image(lalAST, 0);
   return 0;
 }
 

@@ -5,7 +5,7 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
 //#include "toy/AST.h"
-//#include "toy/Dialect.h"
+#include "Dialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -27,8 +27,8 @@
 #include <vector>
 
 
-//using namespace mlir::toy;
-//using namespace toy;
+//using namespace mlir::ada;
+//using namespace ada;
 
 using llvm::ArrayRef;
 using llvm::cast;
@@ -59,6 +59,9 @@ public:
 
     //for (FunctionAST &f : moduleAST)
     //  mlirGen(f);
+    //TODO: convert ada_node to C++ to use overloading instead of this visit function
+    dump(&moduleAST, 0);
+    visit(moduleAST);
 
     // Verify the module after we have finished constructing it, this will check
     // the structural properties of the IR and invoke any specific verifiers we
@@ -80,7 +83,86 @@ private:
   /// the next operations will be introduced.
   mlir::OpBuilder builder;
 
+  /// The symbol table maps a variable name to a value in the current scope.
+  /// Entering a function creates a new scope, and the function arguments are
+  /// added to the mapping. When the processing of a function is terminated, the
+  /// scope is destroyed and the mappings created in this scope are dropped.
+  llvm::ScopedHashTable<StringRef, mlir::Value> symbolTable;
 
+  /// Helper conversion for a Libadalang AST location to an MLIR location.
+  mlir::Location loc (ada_node &node) {
+    ada_source_location_range loc_range;
+    ada_node_sloc_range (&node, &loc_range);
+
+    ada_source_location loc = loc_range.start;
+    char *filename = ada_unit_filename(ada_node_unit(&node));
+
+    std::cout << loc.line << ":" << loc.column << std::endl;
+    std::cout << filename << std::endl;
+
+    return mlir::FileLineColLoc::get(builder.getStringAttr(filename),
+                                     loc.line,
+                                     loc.column);
+  }
+
+  /// Declare a variable in the current scope, return success if the variable
+  /// wasn't declared yet.
+  llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
+    if (symbolTable.count(var))
+      return mlir::failure();
+    symbolTable.insert(var, value);
+    return mlir::success();
+  }
+
+   void visit(ada_node &moduleAST) {
+    switch (ada_node_kind (&moduleAST)) {
+        case ada_subp_spec: {
+          builder.setInsertionPointToEnd(theModule.getBody());
+          mlir::ada::FuncOp function = mlirGenSubpSpec(moduleAST);
+          mlir::Block &entryBlock = function.front();
+          builder.setInsertionPointToStart(&entryBlock);
+          builder.create<mlir::ada::ReturnOp>(loc(moduleAST));
+          return;}
+        default:
+          break;
+      }
+
+    unsigned i, count = ada_node_children_count(&moduleAST);
+    for (i = 0; i < count; ++i)
+      {
+        ada_node child;
+        //TODO check return value
+        ada_node_child(&moduleAST, i, &child);
+        visit(child);
+      }
+  }
+
+  /// Create the prototype for an MLIR function with as many arguments as the
+  /// provided Libadalang AST prototype.
+  // TODO: convert libadalang ast to C++ classes so that we can use overloading for mlirGen instead of ada_node for all nodes.
+  mlir::ada::FuncOp mlirGenSubpSpec(ada_node &subp_spec) {
+    auto location = loc(subp_spec);
+
+    ada_node name;
+    ada_symbol_type symbol;
+    ada_text text;
+    ada_subp_spec_f_subp_name (&subp_spec, &name);
+    ada_name_p_canonical_text (&name, &symbol);
+    ada_symbol_text (&symbol, &text);
+    char *subp_name;
+    ada_text_to_utf8(&text, &subp_name, &text.length);
+
+    std::cout << subp_name << std::endl;
+
+    // This is a generic function, the return type will be inferred later.
+    // Arguments type are uniformly unranked tensors.
+    //llvm::SmallVector<mlir::Type, 4> argTypes(proto.getArgs().size(),
+    //                                          getType(VarType{}));
+    auto funcType = builder.getFunctionType(/*argTypes*/std::nullopt, std::nullopt);
+    return builder.create<mlir::ada::FuncOp>(location,
+                                             subp_name,
+                                             funcType);
+  }
 
 };
 
