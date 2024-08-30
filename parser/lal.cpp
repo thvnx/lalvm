@@ -104,26 +104,17 @@ dump(ada_node *node, int level)
     ada_text kind_name;
     unsigned i, count;
 
-    ada_source_location_range loc_range;
-
     if (ada_node_is_null(node)) {
         print_indent(level);
         printf("<null node>\n");
         return;
     }
 
-    ada_node_sloc_range(node, &loc_range);
-
     kind = ada_node_kind(node);
     ada_kind_name(kind, &kind_name);
     print_indent(level);
     putchar('<');
     fprint_text(stdout, kind_name, false);
-    // fprintf(stdout, "%" PRIu32 ":%" PRIu16 "" , //":%"PRIu16"-%"PRIu32":%"PRIu16" ",
-    //         loc_range.start.line,
-    //         loc_range.start.column);
-    //         // loc_range.end.line,
-    //         // loc_range.end.column);
     puts(">");
 
     count = ada_node_children_count(node);
@@ -140,4 +131,31 @@ dump(ada_node *node, int level)
 AdaNode*
 convert(ada_node node) {
     return new AdaNode(node);
+}
+
+// TODO rename to getName?
+llvm::StringRef getDefiningName(ada_node *node) {
+    switch (ada_node_kind(node)) {
+        case ada_identifier:
+        case ada_defining_name: {
+            ada_symbol_type symbol;
+            ada_text text;
+            ada_name_p_canonical_text (node, &symbol);
+            ada_symbol_text (&symbol, &text);
+            char *subp_name;
+            size_t length;
+            ada_text_to_utf8(&text, &subp_name, &length);
+            // TODO: why this is necessary? subp_name should end with a NUL byte
+            subp_name[length] = '\0';
+            return llvm::StringRef(subp_name, length);
+        }
+        default: {
+            std::cerr << "Can't get StringRef of node: ";
+            ada_text img;
+            ada_node_image(node, &img);
+            fprint_text(stderr, img, false);
+            std::cerr << std::endl;
+            return llvm::StringRef();
+        }
+    }
 }

@@ -1,4 +1,4 @@
-function Test (I, J, K : Integer) return Boolean is
+function Test (I, J, K : Integer) return Integer is
 begin
-   return False;
+   return I;
 end Test;

@@ -1,6 +1,8 @@
 #ifndef LAL_H_
 #define LAL_H_
 
+#include "llvm/ADT/StringRef.h"
+
 #include <iostream>
 #include <cstring>
 
@@ -26,5 +28,7 @@ public:
 
 AdaNode*
 convert(ada_node *node);
+
+llvm::StringRef getDefiningName(ada_node *node);
 
 #endif // LAL_H_
