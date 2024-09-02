@@ -29,6 +29,6 @@ public:
 AdaNode*
 convert(ada_node *node);
 
-llvm::StringRef getDefiningName(ada_node *node);
+llvm::StringRef getNameUtf8(ada_node *node);
 
 #endif // LAL_H_

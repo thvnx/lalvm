@@ -133,8 +133,7 @@ convert(ada_node node) {
     return new AdaNode(node);
 }
 
-// TODO rename to getName?
-llvm::StringRef getDefiningName(ada_node *node) {
+llvm::StringRef getNameUtf8(ada_node *node) {
     switch (ada_node_kind(node)) {
         case ada_identifier:
         case ada_defining_name: {

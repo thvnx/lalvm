@@ -53,14 +53,11 @@ emitAction("emit",
            cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")));
 
 
-
-
-/// Returns a Ada AST resulting from parsing the file or a nullptr on error.
-// TODO remove the use of global variable below, free ctx cleanly, see main.
 ada_analysis_context ctx;
 ada_analysis_unit unit;
 ada_node root;
 
+/// Returns an Ada AST resulting from parsing the file or a nullptr on error.
 ada_node* parseInputFile(llvm::StringRef filename) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
     llvm::MemoryBuffer::getFileOrSTDIN(filename);
@@ -83,10 +80,6 @@ ada_node* parseInputFile(llvm::StringRef filename) {
   abort_on_exception ();
 
   ada_unit_root(unit, &root);
-  //TODO find a way to free mem
-  //ada_context_decref(ctx);
-  //abort_on_exception ();
-
   return &root;
 }
 
@@ -110,7 +103,7 @@ int dumpMLIR() {
   // Load our Dialect in this MLIR Context.
   context.getOrLoadDialect<mlir::ada::AdaDialect>();
 
-  // Handle '.toy' input to the compiler.
+  // Handle '.ad[bs]' input to the compiler.
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
     auto lalAST = parseInputFile(inputFilename);
@@ -126,7 +119,7 @@ int dumpMLIR() {
 
   // Otherwise, the input is '.mlir'.
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-      llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
+    llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
   if (std::error_code ec = fileOrErr.getError()) {
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";
     return -1;
@@ -136,7 +129,7 @@ int dumpMLIR() {
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
   mlir::OwningOpRef<mlir::ModuleOp> module =
-      mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
+    mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
   if (!module) {
     llvm::errs() << "Error can't load file " << inputFilename << "\n";
     return 3;
@@ -152,17 +145,16 @@ int main(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv, "ada compiler\n");
 
   switch (emitAction) {
-  case Action::DumpAST:
-    return dumpAST();
-  case Action::DumpMLIR:
-    return dumpMLIR();
-  default:
-    llvm::errs() << "No action specified (parsing only?), use --emit=<action>\n";
+    case Action::DumpAST:
+      return dumpAST();
+    case Action::DumpMLIR:
+      return dumpMLIR();
+    default:
+      llvm::errs() << "No action specified (parsing only?), use --emit=<action>\n";
   }
 
-  // TODO: free ctx
-  // ada_context_decref(ctx);
-  // abort_on_exception ();
+  ada_context_decref(ctx);
+  abort_on_exception ();
 
   return 0;
 }

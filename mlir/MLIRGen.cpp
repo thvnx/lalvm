@@ -14,6 +14,8 @@
 #include "mlir/IR/Verifier.h"
 //#include "toy/Lexer.h"
 
+#include "llvm/Support/Debug.h"
+
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
@@ -60,7 +62,7 @@ public:
     //for (FunctionAST &f : moduleAST)
     //  mlirGen(f);
     //TODO: convert ada_node to C++ to use overloading instead of this visit function
-    dump(&moduleAST, 0);
+    //dump(&moduleAST, 0);
     visit(moduleAST);
 
     // Verify the module after we have finished constructing it, this will check
@@ -97,8 +99,10 @@ private:
     ada_source_location loc = loc_range.start;
     char *filename = ada_unit_filename(ada_node_unit(&node));
 
-    std::cout << loc.line << ":" << loc.column << std::endl;
-    std::cout << filename << std::endl;
+    //TODO find a way on how to enable -debug command line option support
+#define DEBUG_TYPE MLIRGEN_DEBUG
+    LLVM_DEBUG(llvm::dbgs() << loc.line << ":" << loc.column << " (" << filename << ")");
+#undef  DEBUG_TYPE
 
     return mlir::FileLineColLoc::get(builder.getStringAttr(filename),
                                      loc.line,
@@ -108,7 +112,10 @@ private:
   /// Declare a variable in the current scope, return success if the variable
   /// wasn't declared yet.
   llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
-    std::cout << "DECLARE: " << var.data() << std::endl;
+#define DEBUG_TYPE MLIRGEN_DEBUG
+    LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data());
+#undef  DEBUG_TYPE
+    //std::cout << "declare variable: " << var.data() << std::endl;
     if (symbolTable.count(var))
       return mlir::failure();
     symbolTable.insert(var, value);
@@ -137,7 +144,6 @@ private:
           ada_params_f_params (&params, &params_l);
 
           unsigned i, count = ada_node_children_count(&params_l);
-          std::cout << "DEBUG V: " << count << std::endl;
           for (i = 0; i < count; ++i)
             {
               ada_node child;
@@ -145,7 +151,6 @@ private:
               ada_node_child(&params, i, &child);
               args_v.push_back(&child);
             }
-          std::cout << "DEBUG V: " << args_v.size() << std::endl;
           llvm::ArrayRef<ada_node*> args(args_v);
 
           // Declare all the function arguments in the symbol table.
@@ -154,13 +159,11 @@ private:
             ada_node *p = std::get<0>(nameValue);
             ada_node names;
             ada_node_child(p, 0, p);
-            dump(p, 0);
             ada_param_spec_f_ids(p, &names);
-            dump(&names, 0);
             ada_node name;
             ada_node_child(&names, 0, &name);
 
-            if (failed(declare(getDefiningName(&name).data(),
+            if (failed(declare(getNameUtf8(&name).data(),
                                std::get<1>(nameValue))))
               return;
           }
@@ -208,11 +211,11 @@ private:
   /// expected to have been declared and so should have a value in the symbol
   /// table, otherwise emit an error and return nullptr.
   mlir::Value mlirGenVariable(ada_node &expr) {
-    if (auto variable = symbolTable.lookup(getDefiningName(&expr).data()))
+    if (auto variable = symbolTable.lookup(getNameUtf8(&expr).data()))
       return variable;
 
     emitError(loc(expr), "error: unknown variable '")
-        << getDefiningName(&expr).data() << "'";
+        << getNameUtf8(&expr).data() << "'";
     return nullptr;
   }
 
@@ -229,24 +232,30 @@ private:
     ada_node name;
     ada_subp_spec_f_subp_name (&subp_spec, &name);
 
-    // ada_node params;
-    // ada_subp_spec_f_subp_params (&subp_spec, &params);
+    size_t n = 0;
+    ada_node_array params;
+    ada_node ids;
+    ada_base_subp_spec_p_params (&subp_spec, &params);
+
+    for (int i = 0; i < params->n; i++) {
+      ada_param_spec_f_ids(&params->items[i], &ids);
+      n+=ada_node_children_count(&ids);
+    }
 
     // This is a generic function, the return type will be inferred later (not in ada).
     // Arguments type are uniformly unranked tensors.
-    llvm::SmallVector<mlir::Type, 4> argTypes(/*proto.getArgs().size()TODO get nb args*/2,
+    llvm::SmallVector<mlir::Type, 4> argTypes(n,
                                               getType(/*VarType{}*/));
     llvm::SmallVector<mlir::Type, 1> retTypes(/*proto.getArgs().size()TODO get nb args*/1,
                                               getType(/*VarType{}*/));
     auto funcType = builder.getFunctionType(argTypes, retTypes);
     return builder.create<mlir::ada::FuncOp>(location,
-                                             getDefiningName(&name).data(),
+                                             getNameUtf8(&name).data(),
                                              funcType);
   }
 
   /// Emit a return operation. This will return failure if any generation fails.
   llvm::LogicalResult mlirGenReturn(ada_node &return_stmt) {
-    std::cout << "DDDD" << std::endl;
     auto location = loc(return_stmt);
 
     // 'return' takes an optional expression, handle that case here.
@@ -290,10 +299,6 @@ namespace ada {
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
                                           ada_node &moduleAST) {
   return MLIRGenImpl(context).mlirGen(moduleAST);
-}
-
-int fn (int a) {
-  return 10 * a;
 }
 
 } // namespace toy

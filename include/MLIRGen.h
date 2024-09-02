@@ -4,6 +4,8 @@
 #include "lal.h"
 //#include <memory>
 
+#define MLIRGEN_DEBUG "mlirgen"
+
 namespace mlir {
 class MLIRContext;
 template <typename OpTy>
@@ -19,7 +21,6 @@ class ModuleAST;
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
                                           ada_node &moduleAST);
 
-int fn (int a);
 } // namespace toy
 
 #endif // MLIRGEN_H_
