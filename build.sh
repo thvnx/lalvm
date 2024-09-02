@@ -18,4 +18,4 @@ cmake --build .
 popd
 
 ./build/bin/lalvm --emit=ast test.adb
-./build/bin/lalvm --emit=mlir test.adb -mlir-print-debuginfo
+./build/bin/lalvm --emit=mlir test.adb -mlir-pretty-debuginfo

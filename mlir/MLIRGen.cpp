@@ -115,94 +115,34 @@ private:
 #define DEBUG_TYPE MLIRGEN_DEBUG
     LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data());
 #undef  DEBUG_TYPE
-    //std::cout << "declare variable: " << var.data() << std::endl;
+    std::cout << "declare variable: " << var.data() << std::endl;
     if (symbolTable.count(var))
       return mlir::failure();
     symbolTable.insert(var, value);
     return mlir::success();
   }
 
-   void visit(ada_node &moduleAST) {
+  void visit(ada_node &moduleAST) {
     switch (ada_node_kind (&moduleAST)) {
-        case ada_subp_body: {
-          // Create a scope in the symbol table to hold variable declarations.
-          ScopedHashTableScope<llvm::StringRef, mlir::Value> varScope(symbolTable);
-
-
-          ada_node ada_subp_spec;
-          ada_base_subp_body_f_subp_spec (&moduleAST, &ada_subp_spec);
-
-          builder.setInsertionPointToEnd(theModule.getBody());
-          mlir::ada::FuncOp function = mlirGenSubpSpec(ada_subp_spec);
-          mlir::Block &entryBlock = function.front();
-
-          std::vector<ada_node*> args_v; // TODO can use std::unique_ptr?
-
-          // auto protoArgs = funcAST.getProto()->getArgs();
-          ada_node params, params_l;
-          ada_subp_spec_f_subp_params (&ada_subp_spec, &params);
-          ada_params_f_params (&params, &params_l);
-
-          unsigned i, count = ada_node_children_count(&params_l);
-          for (i = 0; i < count; ++i)
-            {
-              ada_node child;
-              //TODO check return value
-              ada_node_child(&params, i, &child);
-              args_v.push_back(&child);
-            }
-          llvm::ArrayRef<ada_node*> args(args_v);
-
-          // Declare all the function arguments in the symbol table.
-          for (const auto nameValue :
-                 llvm::zip(args, entryBlock.getArguments())) {
-            ada_node *p = std::get<0>(nameValue);
-            ada_node names;
-            ada_node_child(p, 0, p);
-            ada_param_spec_f_ids(p, &names);
-            ada_node name;
-            ada_node_child(&names, 0, &name);
-
-            if (failed(declare(getNameUtf8(&name).data(),
-                               std::get<1>(nameValue))))
-              return;
-          }
-
-          builder.setInsertionPointToStart(&entryBlock);
-//          builder.create<mlir::ada::ReturnOp>(loc(moduleAST));
-
-          ada_node stmts;
-          ada_subp_body_f_stmts (&moduleAST, &stmts);
-          visit(stmts);
-
-          mlir::ada::ReturnOp returnOp;
-          if (!entryBlock.empty())
-            returnOp = dyn_cast<mlir::ada::ReturnOp>(entryBlock.back());
-          if (!returnOp) {
-            builder.create<mlir::ada::ReturnOp>(loc(moduleAST));
-          } else if (returnOp.hasOperand()) {
-            // Otherwise, if this return operation has an operand then add a result to
-            // the function.
-            function.setType(builder.getFunctionType(
-                             function.getFunctionType().getInputs(), getType()));
-          }
-          return;}
-        case ada_return_stmt: {
-          if(mlir::succeeded(mlirGenReturn(moduleAST)))
-            break;
-          else
-            return;
-          }
-        default:
-          break;
-      }
+    case ada_subp_body:
+      mlirGenSubpBody(moduleAST);
+      return;
+    case ada_return_stmt: {
+      if(mlir::succeeded(mlirGenReturn(moduleAST)))
+        break;
+      else
+        return;
+    }
+    default:
+      break;
+    }
 
     unsigned i, count = ada_node_children_count(&moduleAST);
     for (i = 0; i < count; ++i)
       {
         ada_node child;
-        //TODO check return value
-        ada_node_child(&moduleAST, i, &child);
+        if (ada_node_child(&moduleAST, i, &child) == 0)
+          std::cerr << "Error while getting a child (MLIRGen::visit)";;
         visit(child);
       }
   }
@@ -221,6 +161,87 @@ private:
 
   mlir::Value visit_expr(ada_node &expr) {
     return mlirGenVariable(expr);//mlir::Value();
+  }
+
+  /// Emit a new function and add it to the MLIR module.
+  mlir::ada::FuncOp mlirGenSubpBody(ada_node &subp_body) {
+    // Create a scope in the symbol table to hold variable declarations.
+    ScopedHashTableScope<llvm::StringRef, mlir::Value> varScope(symbolTable);
+
+    ada_node ada_subp_spec;
+    ada_base_subp_body_f_subp_spec (&subp_body, &ada_subp_spec);
+
+    builder.setInsertionPointToEnd(theModule.getBody());
+    mlir::ada::FuncOp function = mlirGenSubpSpec(ada_subp_spec);
+    mlir::Block &entryBlock = function.front();
+
+    std::vector<ada_node> args_v;
+
+    // auto protoArgs = funcAST.getProto()->getArgs();
+    // ada_node params, params_l;
+    // ada_subp_spec_f_subp_params (&ada_subp_spec, &params);
+    // ada_params_f_params (&params, &params_l);
+
+    // unsigned i, count = ada_node_children_count(&params_l);
+    // for (i = 0; i < count; ++i)
+    //   {
+    //     ada_node child;
+    //     //TODO check return value
+    //     ada_node_child(&params, i, &child);
+    //     args_v.push_back(&child);
+    //   }
+
+    size_t n = 0;
+    ada_node_array params;
+    ada_node ids;
+    ada_base_subp_spec_p_params (&ada_subp_spec, &params);
+
+    for (int i = 0; i < params->n; i++) {
+      ada_param_spec_f_ids(&params->items[i], &ids);
+      for (unsigned int j = 0; j < ada_node_children_count(&ids); j++) {
+        ada_node child;
+        ada_node_child(&ids, j, &child);
+        args_v.push_back(child);
+      }
+    }
+
+    // Declare all the function arguments in the symbol table.
+    for (const auto nameValue :
+           llvm::zip(args_v, entryBlock.getArguments())) {
+      ada_node p = std::get<0>(nameValue);
+
+      //ada_node names;
+      //ada_node_child(p, 0, p);
+      //ada_param_spec_f_ids(p, &names);
+      //ada_node name;
+      //ada_node_child(&names, 0, &name);
+
+        if (failed(declare(getNameUtf8(/*&name*/&p).data(),
+                           std::get<1>(nameValue))))
+
+          return nullptr;
+
+    }
+
+    builder.setInsertionPointToStart(&entryBlock);
+    //          builder.create<mlir::ada::ReturnOp>(loc(moduleAST));
+
+    ada_node stmts;
+    ada_subp_body_f_stmts (&subp_body, &stmts);
+    visit(stmts);
+
+    mlir::ada::ReturnOp returnOp;
+    if (!entryBlock.empty())
+      returnOp = dyn_cast<mlir::ada::ReturnOp>(entryBlock.back());
+    if (!returnOp) {
+      builder.create<mlir::ada::ReturnOp>(loc(subp_body));
+    } else if (returnOp.hasOperand()) {
+      // Otherwise, if this return operation has an operand then add a result to
+      // the function.
+      function.setType(builder.getFunctionType(
+                                               function.getFunctionType().getInputs(), getType()));
+    }
+    return function;
   }
 
   /// Create the prototype for an MLIR function with as many arguments as the
@@ -244,10 +265,8 @@ private:
 
     // This is a generic function, the return type will be inferred later (not in ada).
     // Arguments type are uniformly unranked tensors.
-    llvm::SmallVector<mlir::Type, 4> argTypes(n,
-                                              getType(/*VarType{}*/));
-    llvm::SmallVector<mlir::Type, 1> retTypes(/*proto.getArgs().size()TODO get nb args*/1,
-                                              getType(/*VarType{}*/));
+    llvm::SmallVector<mlir::Type, 4> argTypes(n, getType(/*VarType{}*/));
+    llvm::SmallVector<mlir::Type, 1> retTypes(1, getType(/*VarType{}*/));
     auto funcType = builder.getFunctionType(argTypes, retTypes);
     return builder.create<mlir::ada::FuncOp>(location,
                                              getNameUtf8(&name).data(),
@@ -258,7 +277,6 @@ private:
   llvm::LogicalResult mlirGenReturn(ada_node &return_stmt) {
     auto location = loc(return_stmt);
 
-    // 'return' takes an optional expression, handle that case here.
     mlir::Value expr = nullptr;
     //if (ret.getExpr().has_value()) {//TODO in ada return op always has a value, keep a check thout?
      // if (!(expr = mlirGen(**ret.getExpr())))
