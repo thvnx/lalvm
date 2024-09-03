@@ -1,5 +1,5 @@
-#ifndef MLIRGEN_H_
-#define MLIRGEN_H_
+#ifndef ADA_MLIRGEN_H
+#define ADA_MLIRGEN_H
 
 #include "lal/AST.h"
 //#include <memory>
@@ -23,4 +23,4 @@ mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
 
 } // namespace toy
 
-#endif // MLIRGEN_H_
+#endif // ADA_MLIRGEN_H

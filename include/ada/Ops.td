@@ -10,8 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef TOY_OPS
-#define TOY_OPS
+#ifndef ADA_OPS
+#define ADA_OPS
 
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
@@ -334,4 +334,4 @@ def TransposeOp : Ada_Op<"transpose"> {
   let hasVerifier = 1;
 }
 
-#endif // TOY_OPS
+#endif // ADA_OPS

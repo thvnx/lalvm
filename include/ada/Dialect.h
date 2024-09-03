@@ -1,5 +1,5 @@
-#ifndef MLIR_TUTORIAL_ADA_DIALECT_H_
-#define MLIR_TUTORIAL_ADA_DIALECT_H_
+#ifndef ADA_DIALECT_H
+#define ADA_DIALECT_H
 
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/IR/Dialect.h"
@@ -17,4 +17,4 @@
 #define GET_OP_CLASSES
 #include "Ops.h.inc"
 
-#endif // MLIR_TUTORIAL_ADA_DIALECT_H_
+#endif // ADA_DIALECT_H

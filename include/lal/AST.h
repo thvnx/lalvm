@@ -1,5 +1,5 @@
-#ifndef LAL_H_
-#define LAL_H_
+#ifndef LAL_AST_H
+#define LAL_AST_H
 
 #include "llvm/ADT/StringRef.h"
 
@@ -31,4 +31,4 @@ convert(ada_node *node);
 
 llvm::StringRef getNameUtf8(ada_node *node);
 
-#endif // LAL_H_
+#endif // LAL_AST_H
