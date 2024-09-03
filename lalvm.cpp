@@ -1,8 +1,8 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
-#include "Dialect.h"
-#include "MLIRGen.h"
-#include "Passes.h"
+#include "ada/Dialect.h"
+#include "ada/MLIRGen.h"
+#include "ada/Passes.h"
 
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -24,8 +24,8 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "include/MLIRGen.h"
-#include "include/lal.h"
+#include "ada/MLIRGen.h"
+#include "lal/lal.h"
 
 using namespace std;
 

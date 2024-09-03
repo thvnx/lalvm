@@ -29,8 +29,8 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/TypeID.h"
-#include "Dialect.h"
-#include "Passes.h"
+#include "ada/Dialect.h"
+#include "ada/Passes.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"

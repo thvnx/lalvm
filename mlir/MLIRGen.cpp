@@ -1,11 +1,11 @@
-#include "MLIRGen.h"
+#include "ada/MLIRGen.h"
 
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
 //#include "toy/AST.h"
-#include "Dialect.h"
+#include "ada/Dialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"

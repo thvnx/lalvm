@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Dialect.h"
+#include "ada/Dialect.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
