@@ -12,7 +12,8 @@ cmake -G Ninja .. \
     -DCMAKE_CXX_FLAGS="-gdwarf-4" \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold" \
-    -DCMAKE_BUILD_TYPE=Debug
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DLLVM_ENABLE_ASSERTIONS=ON
 
 cmake --build .
 popd

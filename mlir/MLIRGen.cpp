@@ -99,7 +99,8 @@ private:
     ada_source_location loc = loc_range.start;
     char *filename = ada_unit_filename(ada_node_unit(&node));
 
-    //TODO find a way on how to enable -debug command line option support
+    //TODO find a way on how to enable -debug command line option support:
+    // requires a debug build of LLVM
 #define DEBUG_TYPE MLIRGEN_DEBUG
     LLVM_DEBUG(llvm::dbgs() << loc.line << ":" << loc.column << " (" << filename << ")");
 #undef  DEBUG_TYPE
