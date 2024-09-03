@@ -20,3 +20,5 @@ popd
 
 ./build/bin/lalvm --emit=ast test.adb
 ./build/bin/lalvm --emit=mlir test.adb -mlir-pretty-debuginfo
+./build/bin/lalvm --emit=llvm test.adb
+./build/bin/lalvm --emit=llvm test.adb 2>&1 >/dev/null | llc-20 -o -

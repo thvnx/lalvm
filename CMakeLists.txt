@@ -54,6 +54,7 @@ link_directories(lib)
 add_llvm_executable(lalvm
   mlir/MLIRGen.cpp
   mlir/Dialect.cpp
+  mlir/LowerToLLVM.cpp
   parser/lal.cpp
   lalvm.cpp
 
@@ -61,10 +62,22 @@ add_llvm_executable(lalvm
   AdaOpsIncGen
   )
 
+# TODO clean library includes
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
+get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
 target_link_libraries(lalvm
   PRIVATE
+      ${dialect_libs}
+    ${conversion_libs}
+    ${extension_libs}
   adalang
   MLIRAnalysis
   MLIRIR
   MLIRParser
-  MLIRSupport)
+  MLIRSupport
+  MLIRLLVMToLLVMIRTranslation
+  MLIRExecutionEngine
+  MLIRLLVMCommonConversion
+  MLIRSCFDialect
+)
