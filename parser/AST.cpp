@@ -1,4 +1,4 @@
-#include "lal/lal.h"
+#include "lal/AST.h"
 
 bool
 print_exception (bool or_silent)

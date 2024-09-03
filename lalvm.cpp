@@ -25,7 +25,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "ada/MLIRGen.h"
-#include "lal/lal.h"
+#include "lal/AST.h"
 
 using namespace std;
 

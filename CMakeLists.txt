@@ -55,7 +55,7 @@ add_llvm_executable(lalvm
   mlir/MLIRGen.cpp
   mlir/Dialect.cpp
   mlir/LowerToLLVM.cpp
-  parser/lal.cpp
+  parser/AST.cpp
   lalvm.cpp
 
   DEPENDS

@@ -1,7 +1,7 @@
 #ifndef MLIRGEN_H_
 #define MLIRGEN_H_
 
-#include "lal/lal.h"
+#include "lal/AST.h"
 //#include <memory>
 
 #define MLIRGEN_DEBUG "mlirgen"
