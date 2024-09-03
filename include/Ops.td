@@ -290,19 +290,21 @@ def ReturnOp : Ada_Op<"return", [Pure, HasParent<"FuncOp">,
 
   // The return operation takes an optional input operand to return. This
   // value must match the return type of the enclosing function.
-  let arguments = (ins Variadic<F64Tensor>:$input);
+  let arguments = (ins Variadic<I32>:$input);
 
   // The return operation only emits the input in the format if it is present.
-  let assemblyFormat = "($input^ `:` type($input))? attr-dict ";
+  //let assemblyFormat = "($input^ `:` type($input))? attr-dict ";
+  let assemblyFormat = "$input `:` type($input) attr-dict";
 
   // Allow building a ReturnOp with no return operand.
-  let builders = [
-    OpBuilder<(ins), [{ build($_builder, $_state, std::nullopt); }]>
-  ];
+  //let builders = [
+  //  OpBuilder<(ins), [{ build($_builder, $_state, std::nullopt); }]>
+  //];
 
   // Provide extra utility definitions on the c++ operation class definition.
   let extraClassDeclaration = [{
-    bool hasOperand() { return getNumOperands() != 0; }
+    //bool hasOperand() { return getNumOperands() != 0; }
+    bool hasOperand() { return true; }
   }];
 
   // Invoke a static verify method to verify this return operation.

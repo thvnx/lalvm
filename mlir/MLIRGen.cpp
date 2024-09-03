@@ -115,7 +115,7 @@ private:
 #define DEBUG_TYPE MLIRGEN_DEBUG
     LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data());
 #undef  DEBUG_TYPE
-    std::cout << "declare variable: " << var.data() << std::endl;
+    //std::cout << "declare variable: " << var.data() << std::endl;
     if (symbolTable.count(var))
       return mlir::failure();
     symbolTable.insert(var, value);
@@ -191,7 +191,6 @@ private:
     //     args_v.push_back(&child);
     //   }
 
-    size_t n = 0;
     ada_node_array params;
     ada_node ids;
     ada_base_subp_spec_p_params (&ada_subp_spec, &params);
@@ -234,7 +233,7 @@ private:
     if (!entryBlock.empty())
       returnOp = dyn_cast<mlir::ada::ReturnOp>(entryBlock.back());
     if (!returnOp) {
-      builder.create<mlir::ada::ReturnOp>(loc(subp_body));
+      //builder.create<mlir::ada::ReturnOp>(loc(subp_body));
     } else if (returnOp.hasOperand()) {
       // Otherwise, if this return operation has an operand then add a result to
       // the function.
@@ -300,7 +299,8 @@ private:
       return mlir::UnrankedTensorType::get(builder.getF64Type());
 
     // Otherwise, we use the given shape.
-    return mlir::RankedTensorType::get(shape, builder.getF64Type());
+    //return mlir::RankedTensorType::get(shape, builder.getF64Type());
+    return builder.getIntegerType(32);
   }
 
   /// Build an MLIR type from a Toy AST variable type (forward to the generic
