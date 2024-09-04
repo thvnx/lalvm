@@ -64,53 +64,21 @@ emitAction("emit",
            cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
            cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")));
 
-
-ada_analysis_context ctx;
-ada_analysis_unit unit;
-ada_node root;
-
-/// Returns an Ada AST resulting from parsing the file or a nullptr on error.
-ada_node* parseInputFile(llvm::StringRef filename) {
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-    llvm::MemoryBuffer::getFileOrSTDIN(filename);
-  if (std::error_code ec = fileOrErr.getError()) {
-    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
-    return nullptr;
-  }
-  auto buffer = fileOrErr.get()->getBuffer();
-
-  ctx = ada_allocate_analysis_context ();
-  abort_on_exception ();
-
-  ada_initialize_analysis_context (ctx, NULL, NULL, NULL, NULL, 1, 8);
-  abort_on_exception ();
-
-  unit = ada_get_analysis_unit_from_buffer(ctx, filename.data(),
-                                           NULL, buffer.data(),
-                                           strlen(buffer.data()),
-                                           ada_default_grammar_rule);
-  abort_on_exception ();
-
-  ada_unit_root(unit, &root);
-  return &root;
-}
-
-
-int dumpAST() {
+int dumpAST(libadalang::AdaAST ast) {
   if (inputType == InputType::MLIR) {
     llvm::errs() << "Can't dump a Libadalang AST when the input is MLIR\n";
     return 5;
   }
 
-  auto lalAST = parseInputFile(inputFilename);
-  if (!lalAST)
+  if (!ast.isValid())
     return 1;
 
-  dump_image(lalAST, 0);
+  ast.dump();
+
   return 0;
 }
 
-int dumpMLIR() {
+int dumpMLIR(libadalang::AdaAST ast) {
   mlir::MLIRContext context;
   // Load our Dialect in this MLIR Context.
   context.getOrLoadDialect<mlir::ada::AdaDialect>();
@@ -118,10 +86,9 @@ int dumpMLIR() {
   // Handle '.ad[bs]' input to the compiler.
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
-    auto lalAST = parseInputFile(inputFilename);
-    if (!lalAST)
+    if (!ast.isValid())
       return 6;
-    mlir::OwningOpRef<mlir::ModuleOp> module = ada::mlirGen(context, *lalAST);
+    mlir::OwningOpRef<mlir::ModuleOp> module = ada::mlirGen(context, ast.getUnitRootNode());
     if (!module)
       return 1;
 
@@ -151,15 +118,15 @@ int dumpMLIR() {
   return 0;
 }
 
-int loadMLIR(mlir::MLIRContext &context,
+int loadMLIR(libadalang::AdaAST ast,
+             mlir::MLIRContext &context,
              mlir::OwningOpRef<mlir::ModuleOp> &module) {
   // Handle '.toy' input to the compiler.
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
-    auto moduleAST = parseInputFile(inputFilename);
-    if (!moduleAST)
+    if (!ast.isValid())
       return 6;
-    module = ada::mlirGen(context, *moduleAST);
+    module = ada::mlirGen(context, ast.getUnitRootNode());
     return !module ? 1 : 0;
   }
 
@@ -182,9 +149,10 @@ int loadMLIR(mlir::MLIRContext &context,
   return 0;
 }
 
-int loadAndProcessMLIR(mlir::MLIRContext &context,
+int loadAndProcessMLIR(libadalang::AdaAST ast,
+                       mlir::MLIRContext &context,
                        mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  if (int error = loadMLIR(context, module))
+  if (int error = loadMLIR(ast, context, module))
     return error;
 
   mlir::PassManager pm(module.get()->getName());
@@ -288,26 +256,25 @@ int main(int argc, char **argv) {
   mlir::registerMLIRContextCLOptions();
   cl::ParseCommandLineOptions(argc, argv, "ada compiler\n");
 
+  libadalang::AdaAST ast(inputFilename);
+
   switch (emitAction) {
     case Action::DumpAST:
-      return dumpAST();
+      return dumpAST(ast);
     case Action::DumpMLIR:
-      return dumpMLIR();
+      return dumpMLIR(ast);
     case Action::DumpLLVMIR: {
       mlir::MLIRContext context;
       // Load our Dialect in this MLIR Context.
       context.getOrLoadDialect<mlir::ada::AdaDialect>();
       mlir::OwningOpRef<mlir::ModuleOp> module;
-      if (int error = loadAndProcessMLIR(context, module))
+      if (int error = loadAndProcessMLIR(ast, context, module))
         return error;
       return dumpLLVMIR(*module);
     }
     default:
       llvm::errs() << "No action specified (parsing only?), use --emit=<action>\n";
   }
-
-  ada_context_decref(ctx);
-  abort_on_exception ();
 
   return 0;
 }
