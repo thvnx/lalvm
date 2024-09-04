@@ -32,7 +32,7 @@
 using namespace mlir;
 using namespace mlir::ada;
 
-#include "Dialect.cpp.inc"
+#include "ada/Dialect.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // ToyDialect
@@ -43,7 +43,7 @@ using namespace mlir::ada;
 void AdaDialect::initialize() {
   addOperations<
 #define GET_OP_LIST
-#include "Ops.cpp.inc"
+#include "ada/Ops.cpp.inc"
       >();
 }
 
@@ -319,4 +319,4 @@ llvm::LogicalResult TransposeOp::verify() {
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "Ops.cpp.inc"
+#include "ada/Ops.cpp.inc"
