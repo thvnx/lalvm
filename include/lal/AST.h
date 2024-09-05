@@ -8,10 +8,14 @@
 
 #include "libadalang.h"
 
-// TODO: to include in AdaAST
-void dump_image(ada_node *node, int level);
-
 namespace libadalang {
+
+/// Dump an ada_node tree.
+void dump(ada_node *node);
+
+/// Get the name (in utf8 format) of the given ada_node (return an empty string
+/// if no name).
+llvm::StringRef getName(ada_node *node);
 
 /// The AdaAST class handles an AST produced by Libadalang.
 class AdaAST {
@@ -31,15 +35,9 @@ public:
 
   /// Return whether everything went well during object construction.
   bool isValid() { return valid; }
-  void dump() { dump_image(&root, 0); }
+  void dump() { libadalang::dump(&root); }
 };
 
 } // namespace libadalang
-
-// bool print_exception(bool or_silent);
-
-void abort_on_exception(void);
-
-llvm::StringRef getNameUtf8(ada_node *node);
 
 #endif // LAL_AST_H

@@ -4,47 +4,9 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
-libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename) {
-  filename = inputFilename;
+// TODO concert fprintf to stderr to llvm::errs()
 
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-      llvm::MemoryBuffer::getFileOrSTDIN(filename);
-  if (std::error_code ec = fileOrErr.getError()) {
-    valid = false;
-    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
-  } else {
-    auto buffer = fileOrErr.get()->getBuffer();
-
-    context = ada_allocate_analysis_context();
-    abort_on_exception();
-
-    ada_initialize_analysis_context(context, NULL, NULL, NULL, NULL, 1, 8);
-    abort_on_exception();
-
-    unit = ada_get_analysis_unit_from_buffer(
-        context, filename.data(), NULL, buffer.data(), strlen(buffer.data()),
-        ada_default_grammar_rule);
-    abort_on_exception();
-
-    ada_unit_root(unit, &root);
-  }
-}
-
-libadalang::AdaAST::AdaAST(const AdaAST &ast) {
-  filename = ast.filename;
-  context = ast.context;
-  ada_context_incref(context);
-  unit = ast.unit;
-  root = ast.root;
-  valid = ast.valid;
-}
-
-libadalang::AdaAST::~AdaAST() {
-  ada_context_decref(context);
-  abort_on_exception();
-}
-
-bool print_exception(bool or_silent) {
+static bool print_exception(bool or_silent) {
   const ada_exception *exc = ada_get_last_exception();
   if (exc != NULL) {
     char *exc_name = ada_exception_name(exc->kind);
@@ -56,7 +18,7 @@ bool print_exception(bool or_silent) {
   return false;
 }
 
-void abort_on_exception(void) {
+static void abort_on_exception(void) {
   if (print_exception(true))
     exit(1);
 }
@@ -100,7 +62,7 @@ static void fprint_text(FILE *stream, ada_text text, bool with_quotes) {
     fputc('"', stream);
 }
 
-void dump_image(ada_node *node, int level) {
+static void dump_image(ada_node *node, int level) {
   ada_text img;
   unsigned i, count;
 
@@ -126,7 +88,49 @@ void dump_image(ada_node *node, int level) {
   }
 }
 
-llvm::StringRef getNameUtf8(ada_node *node) {
+libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename) {
+  filename = inputFilename;
+
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
+      llvm::MemoryBuffer::getFileOrSTDIN(filename);
+  if (std::error_code ec = fileOrErr.getError()) {
+    valid = false;
+    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+  } else {
+    auto buffer = fileOrErr.get()->getBuffer();
+
+    context = ada_allocate_analysis_context();
+    abort_on_exception();
+
+    ada_initialize_analysis_context(context, NULL, NULL, NULL, NULL, 1, 8);
+    abort_on_exception();
+
+    unit = ada_get_analysis_unit_from_buffer(
+        context, filename.data(), NULL, buffer.data(), strlen(buffer.data()),
+        ada_default_grammar_rule);
+    abort_on_exception();
+
+    ada_unit_root(unit, &root);
+  }
+}
+
+libadalang::AdaAST::AdaAST(const AdaAST &ast) {
+  filename = ast.filename;
+  context = ast.context;
+  ada_context_incref(context);
+  unit = ast.unit;
+  root = ast.root;
+  valid = ast.valid;
+}
+
+libadalang::AdaAST::~AdaAST() {
+  ada_context_decref(context);
+  abort_on_exception();
+}
+
+void libadalang::dump(ada_node *node) { dump_image(node, 0); }
+
+llvm::StringRef libadalang::getName(ada_node *node) {
   switch (ada_node_kind(node)) {
   case ada_identifier:
   case ada_defining_name: {
@@ -137,11 +141,12 @@ llvm::StringRef getNameUtf8(ada_node *node) {
     char *subp_name;
     size_t length;
     ada_text_to_utf8(&text, &subp_name, &length);
-    // TODO: why this is necessary? subp_name should end with a NUL byte
+    // TODO why this is necessary? subp_name should end with a NUL byte
     subp_name[length] = '\0';
     return llvm::StringRef(subp_name, length);
   }
   default: {
+    // TODO use llvm::errs to print the error
     std::cerr << "Can't get StringRef of node: ";
     ada_text img;
     ada_node_image(node, &img);

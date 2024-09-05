@@ -152,11 +152,11 @@ private:
   /// expected to have been declared and so should have a value in the symbol
   /// table, otherwise emit an error and return nullptr.
   mlir::Value mlirGenVariable(ada_node &expr) {
-    if (auto variable = symbolTable.lookup(getNameUtf8(&expr).data()))
+    if (auto variable = symbolTable.lookup(libadalang::getName(&expr).data()))
       return variable;
 
     emitError(loc(expr), "error: unknown variable '")
-        << getNameUtf8(&expr).data() << "'";
+        << libadalang::getName(&expr).data() << "'";
     return nullptr;
   }
 
@@ -216,7 +216,7 @@ private:
       //ada_node name;
       //ada_node_child(&names, 0, &name);
 
-        if (failed(declare(getNameUtf8(/*&name*/&p).data(),
+        if (failed(declare(libadalang::getName(/*&name*/&p).data(),
                            std::get<1>(nameValue))))
 
           return nullptr;
@@ -269,7 +269,7 @@ private:
     llvm::SmallVector<mlir::Type, 1> retTypes(1, getType(/*VarType{}*/));
     auto funcType = builder.getFunctionType(argTypes, retTypes);
     return builder.create<mlir::ada::FuncOp>(location,
-                                             getNameUtf8(&name).data(),
+                                             libadalang::getName(&name).data(),
                                              funcType);
   }
 
