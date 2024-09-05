@@ -18,7 +18,7 @@ include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
-// Provide a definition of the 'toy' dialect in the ODS framework so that we
+// Provide a definition of the 'Ada' dialect in the ODS framework so that we
 // can define our operations.
 def Ada_Dialect : Dialect {
   let name = "ada";
@@ -117,17 +117,15 @@ def FuncOp : Ada_Op<"func", [
   ]> {
   let summary = "user defined function operation";
   let description = [{
-    The "toy.func" operation represents a user defined function. These are
-    callable SSA-region operations that contain toy computations.
+    The "ada.func" operation represents a user defined function. These are
+    callable SSA-region operations that contain Ada computations.
 
     Example:
 
     ```mlir
-    toy.func @main() {
-      %0 = toy.constant dense<5.500000e+00> : tensor<f64>
-      %1 = toy.reshape(%0 : tensor<f64>) to tensor<2x2xf64>
-      toy.print %1 : tensor<2x2xf64>
-      toy.return
+    ada.func @main() -> f32 {
+      %0 = ada.constant 5.500000e+00 : f32
+      ada.return %0 : f32
     }
     ```
   }];
@@ -276,35 +274,28 @@ def ReturnOp : Ada_Op<"return", [Pure, HasParent<"FuncOp">,
   let summary = "return operation";
   let description = [{
     The "return" operation represents a return operation within a function.
-    The operation takes an optional tensor operand and produces no results.
+    The operation takes an operand and produces no results.
     The operand type must match the signature of the function that contains
     the operation. For example:
 
     ```mlir
-      toy.func @foo() -> tensor<2xf64> {
+      ada.func @foo() -> i32 {
         ...
-        toy.return %0 : tensor<2xf64>
+        ada.return %0 : i32
       }
     ```
   }];
 
-  // The return operation takes an optional input operand to return. This
-  // value must match the return type of the enclosing function.
+  // The return operation takes an input operand to return. This value must
+  // match the return type of the enclosing function.
   let arguments = (ins Variadic<I32>:$input);
 
-  // The return operation only emits the input in the format if it is present.
-  //let assemblyFormat = "($input^ `:` type($input))? attr-dict ";
+  // The return operation emits the input in the format.
   let assemblyFormat = "$input `:` type($input) attr-dict";
-
-  // Allow building a ReturnOp with no return operand.
-  //let builders = [
-  //  OpBuilder<(ins), [{ build($_builder, $_state, std::nullopt); }]>
-  //];
 
   // Provide extra utility definitions on the c++ operation class definition.
   let extraClassDeclaration = [{
-    //bool hasOperand() { return getNumOperands() != 0; }
-    bool hasOperand() { return true; }
+    bool hasOperand() { return getNumOperands() != 0; }
   }];
 
   // Invoke a static verify method to verify this return operation.
