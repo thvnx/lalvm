@@ -220,6 +220,8 @@ private:
                            std::get<1>(nameValue))))
 
           return nullptr;
+        // Set location of function parameters
+        std::get<1>(nameValue).setLoc(loc(p));
 
     }
 
