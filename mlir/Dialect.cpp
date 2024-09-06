@@ -175,7 +175,8 @@ llvm::LogicalResult ConstantOp::verify() {
 
 void AddOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                   mlir::Value lhs, mlir::Value rhs) {
-  state.addTypes(UnrankedTensorType::get(builder.getF64Type()));
+    //state.addTypes(UnrankedTensorType::get(builder.getF64Type()));
+     state.addTypes(builder.getI32Type());
   state.addOperands({lhs, rhs});
 }
 

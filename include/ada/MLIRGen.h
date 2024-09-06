@@ -2,6 +2,7 @@
 #define ADA_MLIRGEN_H
 
 #include "lal/AST.h"
+#include "mlir/IR/Value.h"
 //#include <memory>
 
 #define MLIRGEN_DEBUG "mlirgen"
@@ -15,6 +16,8 @@ class ModuleOp;
 
 namespace ada {
 class ModuleAST;
+
+mlir::Value visit_expr(ada_node &expr);
 
 /// Emit IR for the given Toy moduleAST, returns a newly created MLIR module
 /// or nullptr on failure.

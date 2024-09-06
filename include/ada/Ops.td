@@ -96,8 +96,10 @@ def AddOp : Ada_Op<"add"> {
     The shapes of the tensor operands are expected to match.
   }];
 
-  let arguments = (ins F64Tensor:$lhs, F64Tensor:$rhs);
-  let results = (outs F64Tensor);
+  // let arguments = (ins F64Tensor:$lhs, F64Tensor:$rhs);
+  // let results = (outs F64Tensor);
+  let arguments = (ins I32:$lhs, I32:$rhs);
+  let results = (outs I32);
 
   // Indicate that the operation has a custom parser and printer method.
   let hasCustomAssemblyFormat = 1;

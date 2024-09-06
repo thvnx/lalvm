@@ -160,8 +160,60 @@ private:
     return nullptr;
   }
 
+  /// Emit a binary operation
+  mlir::Value mlirGenBinOp(ada_node &binop) {
+    // First emit the operations for each side of the operation before emitting
+    // the operation itself. For example if the expression is `a + foo(a)`
+    // 1) First it will visiting the LHS, which will return a reference to the
+    //    value holding `a`. This value should have been emitted at declaration
+    //    time and registered in the symbol table, so nothing would be
+    //    codegen'd. If the value is not in the symbol table, an error has been
+    //    emitted and nullptr is returned.
+    // 2) Then the RHS is visited (recursively) and a call to `foo` is emitted
+    //    and the result value is returned. If an error occurs we get a nullptr
+    //    and propagate.
+    //
+    ada_node left;
+    ada_bin_op_f_left(&binop, &left);
+    mlir::Value lhs = visit_expr(left);
+    if (!lhs)
+      return nullptr;
+    ada_node right;
+    ada_bin_op_f_right(&binop, &right);
+    mlir::Value rhs = visit_expr(right);
+    if (!rhs)
+      return nullptr;
+    auto location = loc(binop);
+
+    // Derive the operation name from the binary operator. At the moment we only
+    // support '+' and '*'.
+    ada_node op;
+    ada_bin_op_f_op(&binop, &op);
+    switch (ada_node_kind (&op)) {
+    case ada_op_plus:
+      return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
+    // case '*':
+    //   return builder.create<MulOp>(location, lhs, rhs);
+    }
+
+    emitError(location, "invalid binary operator: ");
+      libadalang::dump(&binop);
+    return nullptr;
+  }
+
   mlir::Value visit_expr(ada_node &expr) {
-    return mlirGenVariable(expr);//mlir::Value();
+    switch (ada_node_kind (&expr)) {
+    case ada_identifier:
+      return mlirGenVariable(expr);//mlir::Value();
+    case ada_bin_op:
+      return mlirGenBinOp(expr);
+    default:
+      std::cerr << "Error while visiting unsupported expression: ";
+      libadalang::dump(&expr);
+      std::cerr << "\n";
+    }
+
+    return nullptr;
   }
 
   /// Emit a new function and add it to the MLIR module.
