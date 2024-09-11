@@ -194,6 +194,10 @@ private:
       return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
     // case '*':
     //   return builder.create<MulOp>(location, lhs, rhs);
+    default:
+      std::cerr << "Error while visiting unsupported binop: ";
+      libadalang::dump(&op);
+      std::cerr << "\n";
     }
 
     emitError(location, "invalid binary operator: ");
