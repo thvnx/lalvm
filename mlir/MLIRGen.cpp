@@ -110,9 +110,13 @@ private:
     LLVM_DEBUG(llvm::dbgs() << loc.line << ":" << loc.column << " (" << filename << ")");
 #undef  DEBUG_TYPE
 
-    return mlir::FileLineColLoc::get(builder.getStringAttr(filename),
-                                     loc.line,
-                                     loc.column);
+    // getStringAttr copies the string into the MLIR context, so filename can
+    // be freed immediately.
+    auto result = mlir::FileLineColLoc::get(builder.getStringAttr(filename),
+                                            loc.line,
+                                            loc.column);
+    free(filename);
+    return result;
   }
 
   /// Declare a variable in the current scope, return success if the variable
