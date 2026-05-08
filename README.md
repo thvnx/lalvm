@@ -31,18 +31,17 @@ mode, assertions enabled).
 ## Usage
 
 ```
-lalvm [--emit=<action>] [--x=<input-type>] <input-file>
+lalvm --emit=<action> [--x=<input-type>] <input-file>
 ```
 
 Options:
-- `--emit {ast,mlir,llvm}` — output format (default: llvm)
-- `--x {Ada,mlir}` — input type (default: Ada)
+- `--emit {ast,mlir,llvm}` — output format (required)
+- `--x {Ada,mlir}` — input type (default: Ada; inferred from `.mlir` extension)
 
 ## Example
 
-Given `test.adb`:
-
 ```ada
+-- add.adb
 function Test (I, J, K : Integer) return Integer is
 begin
    return I + J + K;
@@ -50,20 +49,52 @@ end Test;
 ```
 
 ```sh
-lalvm --emit=ast  test.adb   # Libadalang AST
-lalvm --emit=mlir test.adb   # Ada MLIR dialect
-lalvm --emit=llvm test.adb   # LLVM IR
+lalvm --emit=ast  add.adb   # Libadalang AST dump
+lalvm --emit=mlir add.adb   # Ada MLIR dialect
+lalvm --emit=llvm add.adb   # LLVM IR
 ```
+
+MLIR output:
+```mlir
+ada.func @test(%arg0: i32, %arg1: i32, %arg2: i32) -> i32 {
+  %0 = ada.add %arg0, %arg1 : i32
+  %1 = ada.add %0, %arg2 : i32
+  ada.return %1 : i32
+}
+```
+
+## Generating assembly
+
+The LLVM IR produced by `--emit=llvm` can be passed to `llc` to generate assembly
+for any target supported by LLVM:
+
+```sh
+# Native target
+lalvm --emit=llvm add.adb | llc -o add.s
+
+# Specific target (e.g. AArch64)
+lalvm --emit=llvm add.adb | llc -mtriple=aarch64-linux-gnu -o add.s
+
+# Object file
+lalvm --emit=llvm add.adb | llc -filetype=obj -o add.o
+```
+
+## Status
+
+This is a work in progress. Only a very small subset of Ada is currently supported.
 
 ## Architecture
 
 The compiler is organized in three layers:
 
-- **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`) — custom MLIR dialect with Ada-level operations
-- **MLIRGen** (`mlir/MLIRGen.cpp`) — lowers Libadalang AST to Ada dialect IR
-- **LowerToLLVM** (`mlir/LowerToLLVM.cpp`) — lowers Ada dialect to LLVM dialect via Func and Arith dialects
+- **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`) — custom MLIR dialect defining
+  `ada.func`, `ada.proc`, `ada.return`, `ada.add`, `ada.sub`, `ada.mul`
+- **MLIRGen** (`mlir/MLIRGen.cpp`) — lowers a Libadalang AST to the Ada dialect
+- **LowerToLLVM** (`mlir/LowerToLLVM.cpp`) — lowers the Ada dialect to LLVM IR via
+  the Func and Arith intermediate dialects
 
-Ada parsing is handled by [Libadalang](https://github.com/AdaCore/libadalang) through its C API (`include/lal/AST.h`, `parser/AST.cpp`).
+Ada parsing is handled by [Libadalang](https://github.com/AdaCore/libadalang) through
+its C API (`include/lal/AST.h`, `parser/AST.cpp`).
 
 ## Testing
 
