@@ -46,15 +46,9 @@ static void fprint_text(FILE *stream, ada_text text, bool with_quotes) {
       fprintf(stream, "\\x");
       fprintf(stream, "%02x", c);
     } else if (c <= 0xffff) {
-      fprintf(stream, "\\u");
-      fprintf(stream, "%02x", c >> 8);
-      fprintf(stream, "%02x", c & 0xff);
+      fprintf(stream, "\\u%04x", c);
     } else {
-      fprintf(stream, "\\U");
-      fprintf(stream, "%02x", c >> 24);
-      fprintf(stream, "%02x", (c >> 16) & 0xff);
-      fprintf(stream, "%02x", (c >> 8) & 0xff);
-      fprintf(stream, "%02x", c & 0xff);
+      fprintf(stream, "\\U%08x", c);
     }
   }
 
