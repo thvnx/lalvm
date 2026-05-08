@@ -245,6 +245,10 @@ private:
     errno = 0;
     char *endptr;
     int64_t value = static_cast<int64_t>(std::strtoll(literal.c_str(), &endptr, 10));
+    if (endptr == literal.c_str()) {
+      emitError(loc(node), "failed to parse integer literal '") << literal.c_str() << "'";
+      return nullptr;
+    }
     if (errno == ERANGE) {
       emitError(loc(node), "integer literal ") << literal.c_str() << " out of range for i64";
       return nullptr;
@@ -275,7 +279,9 @@ private:
 
     unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
     // Reject literals that don't fit in the target type.
-    // Values outside i64 range are already caught above via std::stoll.
+    // width == 64: already covered by the ERANGE check above (strtoll range).
+    // width == 1 : won't occur for Ada integer types; if it did, the signed
+    //              1-bit range [-1, 0] differs from MLIR's boolean convention.
     if (width < 64) {
       int64_t maxVal = (1LL << (width - 1)) - 1;
       int64_t minVal = -(1LL << (width - 1));
@@ -306,6 +312,10 @@ private:
     errno = 0;
     char *endptr;
     double value = std::strtod(literal.c_str(), &endptr);
+    if (endptr == literal.c_str()) {
+      emitError(loc(node), "failed to parse real literal '") << literal.c_str() << "'";
+      return nullptr;
+    }
     if (errno == ERANGE || std::isinf(value)) {
       emitError(loc(node), "real literal ") << literal.c_str() << " out of range for f64";
       return nullptr;
