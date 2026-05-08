@@ -438,12 +438,17 @@ private:
   /// Resolve an Ada type expression node to an MLIR type.
   mlir::Type getMLIRType(ada_node &type_expr) {
     ada_node type_decl;
-    if (!ada_expr_p_expression_type(&type_expr, &type_decl) ||
+    if (!ada_type_expr_p_designated_type_decl(&type_expr, &type_decl) ||
         ada_node_is_null(&type_decl))
       return builder.getI32Type();
 
     ada_node canon_type;
-    if (!ada_base_type_decl_p_canonical_type(&type_decl, nullptr, &canon_type) ||
+    // TODO: would like to use nullptr for origin (arg 2) but fails with
+    //
+    // raised CONSTRAINT_ERROR : libadalang-implementation-c.adb:14228 access check failed
+    //
+    // using self as origin for now.
+    if (!ada_base_type_decl_p_canonical_type(&type_decl, &type_decl, &canon_type) ||
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 

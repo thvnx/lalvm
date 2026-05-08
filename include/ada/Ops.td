@@ -18,6 +18,9 @@ include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+// C++ implementation in mlir/IR/OpDefinition.h.
+def SameOperandsAndResultType : NativeOpTrait<"SameOperandsAndResultType">;
+
 // Provide a definition of the 'Ada' dialect in the ODS framework so that we
 // can define our operations.
 def Ada_Dialect : Dialect {
@@ -89,42 +92,30 @@ def ConstantOp : Ada_Op<"constant", [Pure]> {
 // AddOp
 //===----------------------------------------------------------------------===//
 
-def AddOp : Ada_Op<"add"> {
-  let summary = "element-wise addition operation";
-  let description = [{
-    The "add" operation performs element-wise addition between two tensors.
-    The shapes of the tensor operands are expected to match.
-  }];
+def AddOp : Ada_Op<"add", [SameOperandsAndResultType]> {
+  let summary = "addition operation";
 
-  // let arguments = (ins F64Tensor:$lhs, F64Tensor:$rhs);
-  // let results = (outs F64Tensor);
-  let arguments = (ins I32:$lhs, I32:$rhs);
-  let results = (outs I32);
+  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
+  let results = (outs AnyType);
 
-  // Indicate that the operation has a custom parser and printer method.
   let hasCustomAssemblyFormat = 1;
-
-  // Allow building an AddOp with from the two input operands.
-  let builders = [
-    OpBuilder<(ins "Value":$lhs, "Value":$rhs)>
-  ];
+  // No custom builder: SameOperandsAndResultType auto-generates
+  // build(Value lhs, Value rhs) inferring result type from operands.
 }
 
 //===----------------------------------------------------------------------===//
 // SubOp
 //===----------------------------------------------------------------------===//
 
-def SubOp : Ada_Op<"sub"> {
-  let summary = "integer subtraction operation";
+def SubOp : Ada_Op<"sub", [SameOperandsAndResultType]> {
+  let summary = "subtraction operation";
 
-  let arguments = (ins I32:$lhs, I32:$rhs);
-  let results = (outs I32);
+  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
+  let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
-
-  let builders = [
-    OpBuilder<(ins "Value":$lhs, "Value":$rhs)>
-  ];
+  // No custom builder: SameOperandsAndResultType auto-generates
+  // build(Value lhs, Value rhs) inferring result type from operands.
 }
 
 //===----------------------------------------------------------------------===//
@@ -255,19 +246,15 @@ def GenericCallOp : Ada_Op<"generic_call"> {
 // MulOp
 //===----------------------------------------------------------------------===//
 
-def MulOp : Ada_Op<"mul"> {
-  let summary = "integer multiplication operation";
+def MulOp : Ada_Op<"mul", [SameOperandsAndResultType]> {
+  let summary = "multiplication operation";
 
-  let arguments = (ins I32:$lhs, I32:$rhs);
-  let results = (outs I32);
+  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
+  let results = (outs AnyType);
 
-  // Indicate that the operation has a custom parser and printer method.
   let hasCustomAssemblyFormat = 1;
-
-  // Allow building a MulOp with from the two input operands.
-  let builders = [
-    OpBuilder<(ins "Value":$lhs, "Value":$rhs)>
-  ];
+  // No custom builder: SameOperandsAndResultType auto-generates
+  // build(Value lhs, Value rhs) inferring result type from operands.
 }
 
 //===----------------------------------------------------------------------===//
