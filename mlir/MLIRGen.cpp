@@ -21,6 +21,8 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Allocator.h"
+#include "llvm/Support/StringSaver.h"
 #include <cassert>
 #include <cstdint>
 #include <functional>
@@ -88,6 +90,12 @@ private:
   // new Value rather than mutating in place.
   llvm::ScopedHashTable<StringRef, mlir::Value> symbolTable;
 
+  // Arena for string keys stored in symbolTable. StringRef is non-owning, so
+  // names must outlive their symbol-table entry; stringSaver copies each name
+  // into stringPool which lives as long as MLIRGenImpl.
+  llvm::BumpPtrAllocator stringPool;
+  llvm::StringSaver stringSaver{stringPool};
+
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc (ada_node &node) {
     ada_source_location_range loc_range;
@@ -113,10 +121,9 @@ private:
 #define DEBUG_TYPE MLIRGEN_DEBUG
     LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data());
 #undef  DEBUG_TYPE
-    //std::cout << "declare variable: " << var.data() << std::endl;
     if (symbolTable.count(var))
       return mlir::failure();
-    symbolTable.insert(var, value);
+    symbolTable.insert(stringSaver.save(var), value);
     return mlir::success();
   }
 
@@ -517,7 +524,7 @@ private:
       return mlir::failure();
     }
 
-    symbolTable.insert(name.data(), rhs);
+    symbolTable.insert(stringSaver.save(name), rhs);
     return mlir::success();
   }
 
@@ -563,7 +570,7 @@ private:
       return {};
     }
 
-    llvm::StringRef name = libadalang::getName(&type_name);
+    std::string name = libadalang::getName(&type_name);
     if (name == "integer")       return builder.getI32Type();
     if (name == "long_integer")  return builder.getI64Type();
     if (name == "short_integer") return builder.getIntegerType(16);

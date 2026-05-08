@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <string>
 
 #include "llvm/ADT/StringRef.h"
 
@@ -15,7 +16,7 @@ void dump(ada_node *node);
 
 /// Get the name (in utf8 format) of the given ada_node (return an empty string
 /// if no name).
-llvm::StringRef getName(ada_node *node);
+std::string getName(ada_node *node);
 
 /// The AdaAST class handles an AST produced by Libadalang.
 class AdaAST {

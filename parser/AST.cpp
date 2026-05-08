@@ -130,7 +130,7 @@ libadalang::AdaAST::~AdaAST() {
 
 void libadalang::dump(ada_node *node) { dump_image(node, 0); }
 
-llvm::StringRef libadalang::getName(ada_node *node) {
+std::string libadalang::getName(ada_node *node) {
   switch (ada_node_kind(node)) {
   case ada_identifier:
   case ada_defining_name: {
@@ -138,21 +138,23 @@ llvm::StringRef libadalang::getName(ada_node *node) {
     ada_text text;
     ada_name_p_canonical_text(node, &symbol);
     ada_symbol_text(&symbol, &text);
-    char *subp_name;
+    char *buf;
     size_t length;
-    ada_text_to_utf8(&text, &subp_name, &length);
-    // TODO why this is necessary? subp_name should end with a NUL byte
-    subp_name[length] = '\0';
-    return llvm::StringRef(subp_name, length);
+    ada_text_to_utf8(&text, &buf, &length);
+    ada_destroy_text(&text);
+    std::string result(buf, length);
+    free(buf);
+    return result;
   }
   default: {
     // TODO use llvm::errs to print the error
-    std::cerr << "Can't get StringRef of node: ";
+    std::cerr << "Can't get name of node: ";
     ada_text img;
     ada_node_image(node, &img);
     fprint_text(stderr, img, false);
+    ada_destroy_text(&img);
     std::cerr << std::endl;
-    return llvm::StringRef();
+    return {};
   }
   }
 }
