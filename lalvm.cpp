@@ -27,40 +27,34 @@
 
 #include "lal/AST.h"
 
-
 // Command line
 
 namespace cl = llvm::cl;
 
-static cl::opt<std::string>
-inputFilename(cl::Positional,
-              cl::desc("<input Ada file>"),
-              cl::init("-"),
-              cl::value_desc("filename"));
+static cl::opt<std::string> inputFilename(cl::Positional,
+                                          cl::desc("<input Ada file>"),
+                                          cl::init("-"),
+                                          cl::value_desc("filename"));
 
 namespace {
-  enum InputType { Ada, MLIR };
+enum InputType { Ada, MLIR };
 } // namespace
 
-static cl::opt<enum InputType>
-inputType("x",
-          cl::init(Ada),
-          cl::desc("Decides the kind of input to load"),
-          cl::values(clEnumValN(Ada, "Ada",
-                                "load the input file as a Ada source.")),
-          cl::values(clEnumValN(MLIR, "mlir",
-                                "load the input file as an MLIR file")));
+static cl::opt<enum InputType> inputType(
+    "x", cl::init(Ada), cl::desc("Decides the kind of input to load"),
+    cl::values(clEnumValN(Ada, "Ada", "load the input file as a Ada source.")),
+    cl::values(clEnumValN(MLIR, "mlir",
+                          "load the input file as an MLIR file")));
 
 namespace {
-  enum Action { None, DumpAST, DumpMLIR, DumpLLVMIR };
+enum Action { None, DumpAST, DumpMLIR, DumpLLVMIR };
 } // namespace
 
-static cl::opt<enum Action>
-emitAction("emit",
-           cl::desc("Select the kind of output desired"),
-           cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
-           cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
-           cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")));
+static cl::opt<enum Action> emitAction(
+    "emit", cl::desc("Select the kind of output desired"),
+    cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
+    cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
+    cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")));
 
 int dumpAST(libadalang::AdaAST ast) {
   if (inputType == InputType::MLIR) {
@@ -76,8 +70,7 @@ int dumpAST(libadalang::AdaAST ast) {
   return 0;
 }
 
-int loadMLIR(libadalang::AdaAST ast,
-             mlir::MLIRContext &context,
+int loadMLIR(libadalang::AdaAST ast, mlir::MLIRContext &context,
              mlir::OwningOpRef<mlir::ModuleOp> &module) {
   // Handle '.ad[bs]' input to the compiler.
   if (inputType != InputType::MLIR &&
@@ -120,10 +113,9 @@ int dumpMLIR(libadalang::AdaAST ast) {
 }
 
 // Full compilation pipeline: Ada source → Ada MLIR dialect → LLVM dialect.
-// The MLIR module is modified in place; the caller then translates it to LLVM IR.
-// Pre-condition: context must have AdaDialect and ArithDialect loaded.
-int loadAndProcessMLIR(libadalang::AdaAST ast,
-                       mlir::MLIRContext &context,
+// The MLIR module is modified in place; the caller then translates it to LLVM
+// IR. Pre-condition: context must have AdaDialect and ArithDialect loaded.
+int loadAndProcessMLIR(libadalang::AdaAST ast, mlir::MLIRContext &context,
                        mlir::OwningOpRef<mlir::ModuleOp> &module) {
   if (int error = loadMLIR(ast, context, module))
     return error;
@@ -171,7 +163,8 @@ int dumpLLVMIR(mlir::ModuleOp module) {
   mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(),
                                                         tmOrError.get().get());
 
-  // TODO: add an optional optimization pipeline via mlir::makeOptimizingTransformer.
+  // TODO: add an optional optimization pipeline via
+  // mlir::makeOptimizingTransformer.
   llvm::outs() << *llvmModule << "\n";
   return 0;
 }
@@ -184,23 +177,24 @@ int main(int argc, char **argv) {
   libadalang::AdaAST ast(inputFilename);
 
   switch (emitAction) {
-    case Action::DumpAST:
-      return dumpAST(ast);
-    case Action::DumpMLIR:
-      return dumpMLIR(ast);
-    case Action::DumpLLVMIR: {
-      mlir::MLIRContext context;
-      // Load our Dialect in this MLIR Context.
-      context.getOrLoadDialect<mlir::ada::AdaDialect>();
-      context.getOrLoadDialect<mlir::arith::ArithDialect>();
-      mlir::OwningOpRef<mlir::ModuleOp> module;
-      if (int error = loadAndProcessMLIR(ast, context, module))
-        return error;
-      return dumpLLVMIR(*module);
-    }
-    default:
-      llvm::errs() << "No action specified (parsing only?), use --emit=<action>\n";
-      return 1;
+  case Action::DumpAST:
+    return dumpAST(ast);
+  case Action::DumpMLIR:
+    return dumpMLIR(ast);
+  case Action::DumpLLVMIR: {
+    mlir::MLIRContext context;
+    // Load our Dialect in this MLIR Context.
+    context.getOrLoadDialect<mlir::ada::AdaDialect>();
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
+    mlir::OwningOpRef<mlir::ModuleOp> module;
+    if (int error = loadAndProcessMLIR(ast, context, module))
+      return error;
+    return dumpLLVMIR(*module);
+  }
+  default:
+    llvm::errs()
+        << "No action specified (parsing only?), use --emit=<action>\n";
+    return 1;
   }
 
   return 0;

@@ -86,3 +86,19 @@ target_link_libraries(lalvm
   MLIRLLVMCommonConversion
   MLIRSCFDialect
 )
+
+# Format all C++ sources in-place using clang-format.
+file(GLOB_RECURSE ALL_CXX_SOURCES
+  ${CMAKE_SOURCE_DIR}/*.cpp
+  ${CMAKE_SOURCE_DIR}/*.h
+)
+find_program(CLANG_FORMAT clang-format)
+if(CLANG_FORMAT)
+  add_custom_target(format
+    COMMAND ${CLANG_FORMAT} -i --style=LLVM ${ALL_CXX_SOURCES}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Running clang-format"
+  )
+else()
+  message(STATUS "clang-format not found, 'format' target unavailable")
+endif()

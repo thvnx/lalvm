@@ -1,10 +1,10 @@
 #include "ada/MLIRGen.h"
 
+#include "ada/Dialect.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
-#include "ada/Dialect.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -27,14 +27,12 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/StringSaver.h"
 #include <cassert>
+#include <cerrno>
 #include <cstdint>
 #include <functional>
 #include <numeric>
 #include <optional>
-#include <cerrno>
 #include <vector>
-
-
 
 using llvm::ArrayRef;
 using llvm::cast;
@@ -66,10 +64,10 @@ public:
     // add them to the module.
     theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
 
-    //for (FunctionAST &f : moduleAST)
-    //  mlirGen(f);
-    //TODO: convert ada_node to C++ to use overloading instead of this visit function
-    //dump(&moduleAST, 0);
+    // for (FunctionAST &f : moduleAST)
+    //   mlirGen(f);
+    // TODO: convert ada_node to C++ to use overloading instead of this visit
+    // function dump(&moduleAST, 0);
     visit(moduleAST);
 
     // Verify the module after we have finished constructing it, this will check
@@ -93,9 +91,9 @@ private:
   mlir::OpBuilder builder;
 
   // Maps variable names to their current SSA Value within the active scope.
-  // ScopedHashTable automatically pops bindings when a scope is destroyed, which
-  // handles Ada's block scoping. In SSA form, assignment rebinds the name to a
-  // new Value rather than mutating in place.
+  // ScopedHashTable automatically pops bindings when a scope is destroyed,
+  // which handles Ada's block scoping. In SSA form, assignment rebinds the name
+  // to a new Value rather than mutating in place.
   llvm::ScopedHashTable<StringRef, mlir::Value> symbolTable;
 
   // Arena for string keys stored in symbolTable. StringRef is non-owning, so
@@ -105,22 +103,22 @@ private:
   llvm::StringSaver stringSaver{stringPool};
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
-  mlir::Location loc (ada_node &node) {
+  mlir::Location loc(ada_node &node) {
     ada_source_location_range loc_range;
-    ada_node_sloc_range (&node, &loc_range);
+    ada_node_sloc_range(&node, &loc_range);
 
     ada_source_location loc = loc_range.start;
     char *filename = ada_unit_filename(ada_node_unit(&node));
 
-    //TODO find a way on how to enable -debug command line option support:
-    // requires a debug build of LLVM
-    LLVM_DEBUG(llvm::dbgs() << loc.line << ":" << loc.column << " (" << filename << ")");
+    // TODO find a way on how to enable -debug command line option support:
+    //  requires a debug build of LLVM
+    LLVM_DEBUG(llvm::dbgs()
+               << loc.line << ":" << loc.column << " (" << filename << ")");
 
     // getStringAttr copies the string into the MLIR context, so filename can
     // be freed immediately.
     auto result = mlir::FileLineColLoc::get(builder.getStringAttr(filename),
-                                            loc.line,
-                                            loc.column);
+                                            loc.line, loc.column);
     free(filename);
     return result;
   }
@@ -144,7 +142,7 @@ private:
   // ada_compilation_unit, etc.) are silently skipped. A file containing only
   // a package will produce an empty module with no diagnostic.
   void visit(ada_node &moduleAST) {
-    switch (ada_node_kind (&moduleAST)) {
+    switch (ada_node_kind(&moduleAST)) {
     case ada_subp_body:
       mlirGenSubpBody(moduleAST);
       return;
@@ -160,13 +158,12 @@ private:
     }
 
     unsigned i, count = ada_node_children_count(&moduleAST);
-    for (i = 0; i < count; ++i)
-      {
-        ada_node child;
-        if (ada_node_child(&moduleAST, i, &child) == 0)
-          llvm::errs() << "Error while getting a child (MLIRGen::visit)\n";
-        visit(child);
-      }
+    for (i = 0; i < count; ++i) {
+      ada_node child;
+      if (ada_node_child(&moduleAST, i, &child) == 0)
+        llvm::errs() << "Error while getting a child (MLIRGen::visit)\n";
+      visit(child);
+    }
   }
 
   /// This is a reference to a variable in an expression. The variable is
@@ -210,7 +207,7 @@ private:
     // support '+' and '*'.
     ada_node op;
     ada_bin_op_f_op(&binop, &op);
-    switch (ada_node_kind (&op)) {
+    switch (ada_node_kind(&op)) {
     case ada_op_plus:
       return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
     case ada_op_minus:
@@ -224,7 +221,7 @@ private:
     }
 
     emitError(location, "invalid binary operator: ");
-      libadalang::dump(&binop);
+    libadalang::dump(&binop);
     return nullptr;
   }
 
@@ -248,22 +245,27 @@ private:
     ada_big_integer_decref(bigint);
     errno = 0;
     char *endptr;
-    int64_t value = static_cast<int64_t>(std::strtoll(literal.c_str(), &endptr, 10));
+    int64_t value =
+        static_cast<int64_t>(std::strtoll(literal.c_str(), &endptr, 10));
     if (endptr == literal.c_str()) {
-      emitError(loc(node), "failed to parse integer literal '") << literal.c_str() << "'";
+      emitError(loc(node), "failed to parse integer literal '")
+          << literal.c_str() << "'";
       return nullptr;
     }
     if (errno == ERANGE) {
-      emitError(loc(node), "integer literal ") << literal.c_str() << " out of range for i64";
+      emitError(loc(node), "integer literal ")
+          << literal.c_str() << " out of range for i64";
       return nullptr;
     }
 
     // p_expression_type on an integer literal returns universal_integer
     // (Libadalang's "universal_int_type_"), not the concrete type.
     // When that happens, p_expected_expression_type gives the type required
-    // by the surrounding context (e.g. the return type of the enclosing function).
+    // by the surrounding context (e.g. the return type of the enclosing
+    // function).
     ada_node type_decl;
-    if (!ada_expr_p_expression_type(&node, &type_decl) || ada_node_is_null(&type_decl)) {
+    if (!ada_expr_p_expression_type(&node, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
       emitError(loc(node), "failed to resolve type of integer literal");
       return nullptr;
     }
@@ -273,7 +275,8 @@ private:
         libadalang::getName(&type_name) == "universal_int_type_") {
       if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
           ada_node_is_null(&type_decl)) {
-        emitError(loc(node), "failed to resolve expected type of integer literal");
+        emitError(loc(node),
+                  "failed to resolve expected type of integer literal");
         return nullptr;
       }
     }
@@ -290,8 +293,8 @@ private:
       int64_t maxVal = (1LL << (width - 1)) - 1;
       int64_t minVal = -(1LL << (width - 1));
       if (value < minVal || value > maxVal) {
-        emitError(loc(node), "integer literal ") << value
-            << " out of range for i" << width;
+        emitError(loc(node), "integer literal ")
+            << value << " out of range for i" << width;
         return nullptr;
       }
     }
@@ -311,25 +314,29 @@ private:
     std::string literal;
     literal.reserve(length);
     for (size_t i = 0; i < length; ++i)
-      if (buf[i] != '_') literal += buf[i];
+      if (buf[i] != '_')
+        literal += buf[i];
     free(buf);
 
     errno = 0;
     char *endptr;
     double value = std::strtod(literal.c_str(), &endptr);
     if (endptr == literal.c_str()) {
-      emitError(loc(node), "failed to parse real literal '") << literal.c_str() << "'";
+      emitError(loc(node), "failed to parse real literal '")
+          << literal.c_str() << "'";
       return nullptr;
     }
     if (errno == ERANGE || std::isinf(value)) {
-      emitError(loc(node), "real literal ") << literal.c_str() << " out of range for f64";
+      emitError(loc(node), "real literal ")
+          << literal.c_str() << " out of range for f64";
       return nullptr;
     }
 
     // Real literals have universal_real type; fall back to the expected type
     // to get the concrete type required by the surrounding context.
     ada_node type_decl;
-    if (!ada_expr_p_expression_type(&node, &type_decl) || ada_node_is_null(&type_decl)) {
+    if (!ada_expr_p_expression_type(&node, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
       emitError(loc(node), "failed to resolve type of real literal");
       return nullptr;
     }
@@ -351,16 +358,17 @@ private:
     // needed first; then we check if the value fits in the narrower type).
     auto floatType = mlir::cast<mlir::FloatType>(type);
     if (floatType.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
-      emitError(loc(node), "real literal ") << literal.c_str() << " out of range for f32";
+      emitError(loc(node), "real literal ")
+          << literal.c_str() << " out of range for f32";
       return nullptr;
     }
 
-    return builder.create<mlir::arith::ConstantOp>(loc(node),
-        builder.getFloatAttr(type, value));
+    return builder.create<mlir::arith::ConstantOp>(
+        loc(node), builder.getFloatAttr(type, value));
   }
 
   mlir::Value visit_expr(ada_node &expr) {
-    switch (ada_node_kind (&expr)) {
+    switch (ada_node_kind(&expr)) {
     case ada_identifier:
       return mlirGenVariable(expr);
     case ada_int_literal:
@@ -399,12 +407,14 @@ private:
     mlir::Block *entryBlock;
     if (isProc) {
       mlir::ada::ProcOp proc = mlirGenProcSpec(ada_subp_spec);
-      if (!proc) return nullptr;
+      if (!proc)
+        return nullptr;
       op = proc;
       entryBlock = &proc.front();
     } else {
       mlir::ada::FuncOp function = mlirGenSubpSpec(ada_subp_spec);
-      if (!function) return nullptr;
+      if (!function)
+        return nullptr;
       op = function;
       entryBlock = &function.front();
     }
@@ -413,7 +423,7 @@ private:
 
     ada_node_array params;
     ada_node ids;
-    ada_base_subp_spec_p_params (&ada_subp_spec, &params);
+    ada_base_subp_spec_p_params(&ada_subp_spec, &params);
 
     for (int i = 0; i < params->n; i++) {
       ada_param_spec_f_ids(&params->items[i], &ids);
@@ -426,11 +436,10 @@ private:
     ada_node_array_dec_ref(params);
 
     // Declare all the function arguments in the symbol table.
-    for (const auto nameValue :
-           llvm::zip(args_v, entryBlock->getArguments())) {
+    for (const auto nameValue : llvm::zip(args_v, entryBlock->getArguments())) {
       ada_node p = std::get<0>(nameValue);
-      if (failed(declare(libadalang::getName(&p).data(),
-                         std::get<1>(nameValue))))
+      if (failed(
+              declare(libadalang::getName(&p).data(), std::get<1>(nameValue))))
         return nullptr;
       std::get<1>(nameValue).setLoc(loc(p));
     }
@@ -449,7 +458,8 @@ private:
     return op;
   }
 
-  /// Create an ada.proc with the signature derived from the Ada subprogram spec.
+  /// Create an ada.proc with the signature derived from the Ada subprogram
+  /// spec.
   mlir::ada::ProcOp mlirGenProcSpec(ada_node &subp_spec) {
     auto location = loc(subp_spec);
 
@@ -472,19 +482,19 @@ private:
     ada_node_array_dec_ref(params);
 
     auto funcType = builder.getFunctionType(argTypes, {});
-    return builder.create<mlir::ada::ProcOp>(location,
-                                             libadalang::getName(&name).data(),
-                                             funcType);
+    return builder.create<mlir::ada::ProcOp>(
+        location, libadalang::getName(&name).data(), funcType);
   }
 
   /// Create the prototype for an MLIR function with as many arguments as the
   /// provided Libadalang AST prototype.
-  // TODO: convert libadalang ast to C++ classes so that we can use overloading for mlirGen instead of ada_node for all nodes.
+  // TODO: convert libadalang ast to C++ classes so that we can use overloading
+  // for mlirGen instead of ada_node for all nodes.
   mlir::ada::FuncOp mlirGenSubpSpec(ada_node &subp_spec) {
     auto location = loc(subp_spec);
 
     ada_node name;
-    ada_subp_spec_f_subp_name (&subp_spec, &name);
+    ada_subp_spec_f_subp_name(&subp_spec, &name);
 
     ada_node_array params;
     ada_node ids;
@@ -511,9 +521,8 @@ private:
     if (!retType)
       return nullptr;
     auto funcType = builder.getFunctionType(argTypes, {retType});
-    return builder.create<mlir::ada::FuncOp>(location,
-                                             libadalang::getName(&name).data(),
-                                             funcType);
+    return builder.create<mlir::ada::FuncOp>(
+        location, libadalang::getName(&name).data(), funcType);
   }
 
   /// Emit an assignment statement. In SSA form this rebinds the name to the
@@ -539,8 +548,7 @@ private:
 
     auto name = libadalang::getName(&dest_node);
     if (!symbolTable.count(name.data())) {
-      emitError(loc(dest_node), "unknown variable '")
-          << name.data() << "'";
+      emitError(loc(dest_node), "unknown variable '") << name.data() << "'";
       return mlir::failure();
     }
 
@@ -563,11 +571,10 @@ private:
         return mlir::failure();
     }
 
-    builder.create<mlir::ada::ReturnOp>(location,
-                             expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
+    builder.create<mlir::ada::ReturnOp>(
+        location, expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
     return mlir::success();
   }
-
 
   /// Map a type declaration node to an MLIR type. Follows the subtype chain
   /// to the canonical base type, then matches its name against known Ada types.
@@ -578,7 +585,8 @@ private:
     // TODO: nullptr would be the correct origin but crashes with a
     // CONSTRAINT_ERROR in libadalang-implementation-c.adb; using self for now.
     ada_node canon_type;
-    if (!ada_base_type_decl_p_canonical_type(&type_decl, &type_decl, &canon_type) ||
+    if (!ada_base_type_decl_p_canonical_type(&type_decl, &type_decl,
+                                             &canon_type) ||
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
@@ -592,11 +600,16 @@ private:
     }
 
     std::string name = libadalang::getName(&type_name);
-    if (name == "integer")       return builder.getI32Type();
-    if (name == "long_integer")  return builder.getI64Type();
-    if (name == "short_integer") return builder.getIntegerType(16);
-    if (name == "float")         return builder.getF32Type();
-    if (name == "long_float")    return builder.getF64Type();
+    if (name == "integer")
+      return builder.getI32Type();
+    if (name == "long_integer")
+      return builder.getI64Type();
+    if (name == "short_integer")
+      return builder.getIntegerType(16);
+    if (name == "float")
+      return builder.getF32Type();
+    if (name == "long_float")
+      return builder.getF64Type();
 
     mlir::emitError(diagLoc, "unsupported Ada type '") << name << "'";
     return {};
@@ -618,7 +631,6 @@ private:
 
     return getMLIRTypeFromDecl(type_decl, loc(type_expr));
   }
-
 };
 
 } // namespace

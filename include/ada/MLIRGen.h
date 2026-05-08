@@ -7,8 +7,7 @@
 
 namespace mlir {
 class MLIRContext;
-template <typename OpTy>
-class OwningOpRef;
+template <typename OpTy> class OwningOpRef;
 class ModuleOp;
 } // namespace mlir
 

@@ -10,6 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ada/Dialect.h"
+#include "ada/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -17,8 +19,6 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/TypeID.h"
-#include "ada/Dialect.h"
-#include "ada/Passes.h"
 
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
@@ -59,7 +59,8 @@ struct AdaToLLVMLoweringPass
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AdaToLLVMLoweringPass)
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<LLVM::LLVMDialect, func::FuncDialect, arith::ArithDialect>();
+    registry
+        .insert<LLVM::LLVMDialect, func::FuncDialect, arith::ArithDialect>();
   }
   void runOnOperation() final;
 };
@@ -101,9 +102,12 @@ struct NumericBinaryOpLowering : public OpRewritePattern<AdaOp> {
     return success();
   }
 };
-using AddOpLowering = NumericBinaryOpLowering<ada::AddOp, arith::AddIOp, arith::AddFOp>;
-using SubOpLowering = NumericBinaryOpLowering<ada::SubOp, arith::SubIOp, arith::SubFOp>;
-using MulOpLowering = NumericBinaryOpLowering<ada::MulOp, arith::MulIOp, arith::MulFOp>;
+using AddOpLowering =
+    NumericBinaryOpLowering<ada::AddOp, arith::AddIOp, arith::AddFOp>;
+using SubOpLowering =
+    NumericBinaryOpLowering<ada::SubOp, arith::SubIOp, arith::SubFOp>;
+using MulOpLowering =
+    NumericBinaryOpLowering<ada::MulOp, arith::MulIOp, arith::MulFOp>;
 
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: Func operations
@@ -168,8 +172,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<ReturnOpLowering, FuncOpLowering, ProcOpLowering,
-               AddOpLowering, SubOpLowering, MulOpLowering>(&getContext());
+  patterns.add<ReturnOpLowering, FuncOpLowering, ProcOpLowering, AddOpLowering,
+               SubOpLowering, MulOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

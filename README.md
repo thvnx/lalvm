@@ -106,6 +106,15 @@ pip install lit   # one-time
 cmake --build --preset=debug --target check-lalvm
 ```
 
+## Formatting
+
+Source files are formatted with clang-format using the LLVM style. To reformat all
+C++ sources in place:
+
+```sh
+cmake --build --preset=debug --target format
+```
+
 ## Dependencies
 
 - LLVM/MLIR 21

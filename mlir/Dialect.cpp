@@ -258,7 +258,6 @@ llvm::LogicalResult ReturnOp::verify() {
                          << ") doesn't match function result type ("
                          << resultType << ")";
   return mlir::success();
-
 }
 
 //===----------------------------------------------------------------------===//
