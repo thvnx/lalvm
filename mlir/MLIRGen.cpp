@@ -230,16 +230,17 @@ private:
     }
     ada_text text;
     ada_big_integer_text(bigint, &text);
-    char *str;
+    char *buf;
     size_t length;
-    ada_text_to_utf8(&text, &str, &length);
-    str[length] = '\0';
+    ada_text_to_utf8(&text, &buf, &length);
+    std::string literal(buf, length);
+    free(buf);
     ada_big_integer_decref(bigint);
     errno = 0;
     char *endptr;
-    int64_t value = static_cast<int64_t>(std::strtoll(str, &endptr, 10));
+    int64_t value = static_cast<int64_t>(std::strtoll(literal.c_str(), &endptr, 10));
     if (errno == ERANGE) {
-      emitError(loc(node), "integer literal ") << str << " out of range for i64";
+      emitError(loc(node), "integer literal ") << literal.c_str() << " out of range for i64";
       return nullptr;
     }
 
@@ -286,21 +287,21 @@ private:
     // C API, so we extract the value by reading the literal's source text.
     ada_text text;
     ada_node_text(&node, &text);
-    char *str;
+    char *buf;
     size_t length;
-    ada_text_to_utf8(&text, &str, &length);
-
-    // Ada allows underscores as digit separators; strip them in-place.
-    size_t j = 0;
+    ada_text_to_utf8(&text, &buf, &length);
+    // Ada allows underscores as digit separators; strip them while copying.
+    std::string literal;
+    literal.reserve(length);
     for (size_t i = 0; i < length; ++i)
-      if (str[i] != '_') str[j++] = str[i];
-    str[j] = '\0';
+      if (buf[i] != '_') literal += buf[i];
+    free(buf);
 
     errno = 0;
     char *endptr;
-    double value = std::strtod(str, &endptr);
+    double value = std::strtod(literal.c_str(), &endptr);
     if (errno == ERANGE || std::isinf(value)) {
-      emitError(loc(node), "real literal ") << str << " out of range for f64";
+      emitError(loc(node), "real literal ") << literal.c_str() << " out of range for f64";
       return nullptr;
     }
 
@@ -329,7 +330,7 @@ private:
     // needed first; then we check if the value fits in the narrower type).
     auto floatType = mlir::cast<mlir::FloatType>(type);
     if (floatType.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
-      emitError(loc(node), "real literal ") << str << " out of range for f32";
+      emitError(loc(node), "real literal ") << literal.c_str() << " out of range for f32";
       return nullptr;
     }
 
