@@ -181,6 +181,38 @@ def FuncOp : Ada_Op<"func", [
 }
 
 //===----------------------------------------------------------------------===//
+// ProcOp
+//===----------------------------------------------------------------------===//
+
+def ProcOp : Ada_Op<"proc", [
+    FunctionOpInterface, IsolatedFromAbove
+  ]> {
+  let summary = "user defined procedure operation";
+
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    TypeAttrOf<FunctionType>:$function_type,
+    OptionalAttr<DictArrayAttr>:$arg_attrs,
+    OptionalAttr<DictArrayAttr>:$res_attrs
+  );
+  let regions = (region AnyRegion:$body);
+
+  let builders = [OpBuilder<(ins
+    "StringRef":$name, "FunctionType":$type,
+    CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)
+  >];
+
+  let extraClassDeclaration = [{
+    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+    Region *getCallableRegion() { return &getBody(); }
+  }];
+
+  let hasCustomAssemblyFormat = 1;
+  let skipDefaultBuilders = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // GenericCallOp
 //===----------------------------------------------------------------------===//
 
@@ -284,8 +316,7 @@ def ReshapeOp : Ada_Op<"reshape"> {
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-def ReturnOp : Ada_Op<"return", [Pure, HasParent<"FuncOp">,
-                                 Terminator]> {
+def ReturnOp : Ada_Op<"return", [Pure, Terminator]> {
   let summary = "return operation";
   let description = [{
     The "return" operation represents a return operation within a function.
@@ -303,10 +334,9 @@ def ReturnOp : Ada_Op<"return", [Pure, HasParent<"FuncOp">,
 
   // The return operation takes an input operand to return. This value must
   // match the return type of the enclosing function.
-  let arguments = (ins Variadic<I32>:$input);
+  let arguments = (ins Variadic<AnyType>:$input);
 
-  // The return operation emits the input in the format.
-  let assemblyFormat = "$input `:` type($input) attr-dict";
+  let hasCustomAssemblyFormat = 1;
 
   // Provide extra utility definitions on the c++ operation class definition.
   let extraClassDeclaration = [{

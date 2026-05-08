@@ -205,6 +205,35 @@ mlir::ParseResult SubOp::parse(mlir::OpAsmParser &parser,
 void SubOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 
 //===----------------------------------------------------------------------===//
+// ProcOp
+//===----------------------------------------------------------------------===//
+
+void ProcOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                   llvm::StringRef name, mlir::FunctionType type,
+                   llvm::ArrayRef<mlir::NamedAttribute> attrs) {
+  buildWithEntryBlock(builder, state, name, type, attrs, type.getInputs());
+}
+
+mlir::ParseResult ProcOp::parse(mlir::OpAsmParser &parser,
+                                mlir::OperationState &result) {
+  auto buildFuncType =
+      [](mlir::Builder &builder, llvm::ArrayRef<mlir::Type> argTypes,
+         llvm::ArrayRef<mlir::Type> results,
+         mlir::function_interface_impl::VariadicFlag,
+         std::string &) { return builder.getFunctionType(argTypes, results); };
+  return mlir::function_interface_impl::parseFunctionOp(
+      parser, result, /*allowVariadic=*/false,
+      getFunctionTypeAttrName(result.name), buildFuncType,
+      getArgAttrsAttrName(result.name), getResAttrsAttrName(result.name));
+}
+
+void ProcOp::print(mlir::OpAsmPrinter &p) {
+  mlir::function_interface_impl::printFunctionOp(
+      p, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
+      getArgAttrsAttrName(), getResAttrsAttrName());
+}
+
+//===----------------------------------------------------------------------===//
 // GenericCallOp
 //===----------------------------------------------------------------------===//
 
@@ -274,17 +303,42 @@ void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
+mlir::ParseResult ReturnOp::parse(mlir::OpAsmParser &parser,
+                                  mlir::OperationState &result) {
+  mlir::OpAsmParser::UnresolvedOperand operand;
+  mlir::Type type;
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return mlir::failure();
+  auto optOperand = parser.parseOptionalOperand(operand);
+  if (optOperand.has_value()) {
+    if (*optOperand || parser.parseColonType(type) ||
+        parser.resolveOperand(operand, type, result.operands))
+      return mlir::failure();
+  }
+  return mlir::success();
+}
+
+void ReturnOp::print(mlir::OpAsmPrinter &p) {
+  if (getNumOperands() > 0)
+    p << " " << getOperand(0) << " : " << getOperand(0).getType();
+}
+
 llvm::LogicalResult ReturnOp::verify() {
-  // We know that the parent operation is a function, because of the 'HasParent'
-  // trait attached to the operation definition.
-  auto function = cast<FuncOp>((*this)->getParentOp());
+  mlir::Operation *parent = (*this)->getParentOp();
+  mlir::FunctionType funcType;
+  if (auto func = mlir::dyn_cast<FuncOp>(parent))
+    funcType = func.getFunctionType();
+  else if (auto proc = mlir::dyn_cast<ProcOp>(parent))
+    funcType = proc.getFunctionType();
+  else
+    return emitOpError() << "expects parent to be ada.func or ada.proc";
 
   /// ReturnOps can only have a single optional operand.
   if (getNumOperands() > 1)
     return emitOpError() << "expects at most 1 return operand";
 
   // The operand number and types must match the function signature.
-  const auto &results = function.getFunctionType().getResults();
+  const auto &results = funcType.getResults();
   if (getNumOperands() != results.size())
     return emitOpError() << "does not return the same number of values ("
                          << getNumOperands() << ") as the enclosing function ("

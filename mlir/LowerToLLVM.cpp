@@ -282,6 +282,20 @@ struct FuncOpLowering : public OpConversionPattern<ada::FuncOp> {
   }
 };
 
+struct ProcOpLowering : public OpConversionPattern<ada::ProcOp> {
+  using OpConversionPattern<ada::ProcOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::ProcOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
+                                                    op.getFunctionType());
+    rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 void AdaToLLVMLoweringPass::runOnOperation() {
   // The first thing to define is the conversion target. This will define the
   // final target for this lowering. For this lowering, we are only targeting
@@ -321,7 +335,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   // The only remaining operation to lower from the `toy` dialect, is the
   // PrintOp.
-  patterns.add<ReturnOpLowering, FuncOpLowering,
+  patterns.add<ReturnOpLowering, FuncOpLowering, ProcOpLowering,
                AddOpLowering, SubOpLowering, MulOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This

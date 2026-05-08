@@ -136,6 +136,10 @@ private:
       else
         return;
     }
+    case ada_assign_stmt:
+      if (mlir::failed(mlirGenAssign(moduleAST)))
+        return;
+      break;
     default:
       break;
     }
@@ -243,17 +247,32 @@ private:
     return nullptr;
   }
 
-  /// Emit a new function and add it to the MLIR module.
-  mlir::ada::FuncOp mlirGenSubpBody(ada_node &subp_body) {
+  /// Emit a new function or procedure and add it to the MLIR module.
+  mlir::Operation *mlirGenSubpBody(ada_node &subp_body) {
     // Create a scope in the symbol table to hold variable declarations.
     ScopedHashTableScope<llvm::StringRef, mlir::Value> varScope(symbolTable);
 
     ada_node ada_subp_spec;
-    ada_base_subp_body_f_subp_spec (&subp_body, &ada_subp_spec);
+    ada_base_subp_body_f_subp_spec(&subp_body, &ada_subp_spec);
+
+    ada_node ret_type_expr;
+    ada_subp_spec_f_subp_returns(&ada_subp_spec, &ret_type_expr);
+    bool isProc = ada_node_is_null(&ret_type_expr);
 
     builder.setInsertionPointToEnd(theModule.getBody());
-    mlir::ada::FuncOp function = mlirGenSubpSpec(ada_subp_spec);
-    mlir::Block &entryBlock = function.front();
+    mlir::Operation *op;
+    mlir::Block *entryBlock;
+    if (isProc) {
+      mlir::ada::ProcOp proc = mlirGenProcSpec(ada_subp_spec);
+      if (!proc) return nullptr;
+      op = proc;
+      entryBlock = &proc.front();
+    } else {
+      mlir::ada::FuncOp function = mlirGenSubpSpec(ada_subp_spec);
+      if (!function) return nullptr;
+      op = function;
+      entryBlock = &function.front();
+    }
 
     std::vector<ada_node> args_v;
 
@@ -286,32 +305,53 @@ private:
 
     // Declare all the function arguments in the symbol table.
     for (const auto nameValue :
-           llvm::zip(args_v, entryBlock.getArguments())) {
+           llvm::zip(args_v, entryBlock->getArguments())) {
       ada_node p = std::get<0>(nameValue);
-
-      //ada_node names;
-      //ada_node_child(p, 0, p);
-      //ada_param_spec_f_ids(p, &names);
-      //ada_node name;
-      //ada_node_child(&names, 0, &name);
-
-        if (failed(declare(libadalang::getName(/*&name*/&p).data(),
-                           std::get<1>(nameValue))))
-
-          return nullptr;
-        // Set location of function parameters
-        std::get<1>(nameValue).setLoc(loc(p));
-
+      if (failed(declare(libadalang::getName(&p).data(),
+                         std::get<1>(nameValue))))
+        return nullptr;
+      std::get<1>(nameValue).setLoc(loc(p));
     }
 
-    builder.setInsertionPointToStart(&entryBlock);
-    //          builder.create<mlir::ada::ReturnOp>(loc(moduleAST));
+    builder.setInsertionPointToStart(entryBlock);
 
     ada_node stmts;
-    ada_subp_body_f_stmts (&subp_body, &stmts);
+    ada_subp_body_f_stmts(&subp_body, &stmts);
     visit(stmts);
 
-    return function;
+    // Procedures have no explicit return statement; add an implicit one.
+    if (isProc)
+      builder.create<mlir::ada::ReturnOp>(loc(subp_body),
+                                          ArrayRef<mlir::Value>{});
+
+    return op;
+  }
+
+  /// Create an ada.proc with the signature derived from the Ada subprogram spec.
+  mlir::ada::ProcOp mlirGenProcSpec(ada_node &subp_spec) {
+    auto location = loc(subp_spec);
+
+    ada_node name;
+    ada_subp_spec_f_subp_name(&subp_spec, &name);
+
+    ada_node_array params;
+    ada_node ids;
+    ada_base_subp_spec_p_params(&subp_spec, &params);
+
+    llvm::SmallVector<mlir::Type, 4> argTypes;
+    for (int i = 0; i < params->n; i++) {
+      ada_node type_expr;
+      ada_param_spec_f_type_expr(&params->items[i], &type_expr);
+      mlir::Type paramType = getMLIRType(type_expr);
+      ada_param_spec_f_ids(&params->items[i], &ids);
+      for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
+        argTypes.push_back(paramType);
+    }
+
+    auto funcType = builder.getFunctionType(argTypes, {});
+    return builder.create<mlir::ada::ProcOp>(location,
+                                             libadalang::getName(&name).data(),
+                                             funcType);
   }
 
   /// Create the prototype for an MLIR function with as many arguments as the
@@ -346,6 +386,33 @@ private:
     return builder.create<mlir::ada::FuncOp>(location,
                                              libadalang::getName(&name).data(),
                                              funcType);
+  }
+
+  /// Emit an assignment statement. In SSA form this rebinds the name to the
+  /// new value; out-parameter write-back semantics are not yet implemented.
+  llvm::LogicalResult mlirGenAssign(ada_node &assign_stmt) {
+    ada_node dest_node, expr_node;
+    ada_assign_stmt_f_dest(&assign_stmt, &dest_node);
+    ada_assign_stmt_f_expr(&assign_stmt, &expr_node);
+
+    mlir::Value rhs = visit_expr(expr_node);
+    if (!rhs)
+      return mlir::failure();
+
+    if (ada_node_kind(&dest_node) != ada_identifier) {
+      emitError(loc(assign_stmt), "unsupported assignment destination");
+      return mlir::failure();
+    }
+
+    auto name = libadalang::getName(&dest_node);
+    if (!symbolTable.count(name.data())) {
+      emitError(loc(dest_node), "unknown variable '")
+          << name.data() << "'";
+      return mlir::failure();
+    }
+
+    symbolTable.insert(name.data(), rhs);
+    return mlir::success();
   }
 
   /// Emit a return operation. This will return failure if any generation fails.
