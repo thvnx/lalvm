@@ -50,6 +50,8 @@ if(NOT LIBADALANG_INCLUDE_DIR)
   message(FATAL_ERROR "LIBADALANG_INCLUDE_DIR must be set, e.g. -DLIBADALANG_INCLUDE_DIR=/path/to/libadalang/build/src")
 endif()
 include_directories(${LIBADALANG_INCLUDE_DIR})
+# TODO: replace global include_directories with target_include_directories(lalvm ...)
+# so that source-relative paths are scoped to the lalvm target only.
 include_directories(mlir parser)
 
 
@@ -64,7 +66,8 @@ add_llvm_executable(lalvm
   AdaOpsIncGen
   )
 
-# TODO clean library includes
+# TODO: replace catch-all dialect/conversion/extension lib sets with an explicit
+# minimal list to reduce binary size and link time.
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
