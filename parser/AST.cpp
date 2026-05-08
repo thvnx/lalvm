@@ -114,14 +114,11 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename) {
   }
 }
 
-libadalang::AdaAST::AdaAST(const AdaAST &ast) {
-  filename = ast.filename;
-  context = ast.context;
+libadalang::AdaAST::AdaAST(const AdaAST &ast)
+    : filename(ast.filename), context(ast.context), unit(ast.unit),
+      root(ast.root), valid(ast.valid) {
   if (context)
     ada_context_incref(context);
-  unit = ast.unit;
-  root = ast.root;
-  valid = ast.valid;
 }
 
 libadalang::AdaAST::~AdaAST() {
