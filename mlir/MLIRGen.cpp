@@ -228,7 +228,32 @@ private:
     str[length] = '\0';
     int64_t value = std::stoll(str);
     ada_big_integer_decref(bigint);
-    return builder.create<mlir::arith::ConstantIntOp>(loc(node), value, 32);
+
+    // p_expression_type on an integer literal returns universal_integer
+    // (Libadalang's "universal_int_type_"), not the concrete type.
+    // When that happens, p_expected_expression_type gives the type required
+    // by the surrounding context (e.g. the return type of the enclosing function).
+    ada_node type_decl;
+    if (!ada_expr_p_expression_type(&node, &type_decl) || ada_node_is_null(&type_decl)) {
+      emitError(loc(node), "failed to resolve type of integer literal");
+      return nullptr;
+    }
+    ada_node type_name;
+    if (ada_base_type_decl_f_name(&type_decl, &type_name) &&
+        !ada_node_is_null(&type_name) &&
+        libadalang::getName(&type_name) == "universal_int_type_") {
+      if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
+          ada_node_is_null(&type_decl)) {
+        emitError(loc(node), "failed to resolve expected type of integer literal");
+        return nullptr;
+      }
+    }
+    mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
+    if (!type)
+      return nullptr;
+
+    unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
+    return builder.create<mlir::arith::ConstantIntOp>(loc(node), value, width);
   }
 
   mlir::Value visit_expr(ada_node &expr) {
@@ -440,18 +465,10 @@ private:
   }
 
 
-  /// Resolve an Ada type expression (e.g. a SubtypeIndication node like
-  /// "Long_Integer") to the corresponding MLIR type using Libadalang's
-  /// semantic analysis. Falls back to i32 on failure or unknown types.
-  mlir::Type getMLIRType(ada_node &type_expr) {
-    // p_designated_type_decl resolves a type expression to its declaration.
-    // This works on SubtypeIndication nodes (parameter / return types), unlike
-    // p_expression_type which only works on value expressions.
-    ada_node type_decl;
-    if (!ada_type_expr_p_designated_type_decl(&type_expr, &type_decl) ||
-        ada_node_is_null(&type_decl))
-      return builder.getI32Type();
-
+  /// Map a type declaration node to an MLIR type. Follows the subtype chain
+  /// to the canonical base type, then matches its name against known Ada types.
+  /// diagLoc is used only for the "unsupported type" warning.
+  mlir::Type getMLIRTypeFromDecl(ada_node &type_decl, mlir::Location diagLoc) {
     // Follow the subtype chain to the canonical (base) type so that subtypes
     // of Integer map to the same MLIR type as Integer itself.
     // TODO: nullptr would be the correct origin but crashes with a
@@ -465,8 +482,10 @@ private:
     // lower-cased text we use to drive the mapping below.
     ada_node type_name;
     if (!ada_base_type_decl_f_name(&canon_type, &type_name) ||
-        ada_node_is_null(&type_name))
-      return builder.getI32Type();
+        ada_node_is_null(&type_name)) {
+      mlir::emitError(diagLoc, "failed to get name of type declaration");
+      return {};
+    }
 
     llvm::StringRef name = libadalang::getName(&type_name);
     if (name == "integer")       return builder.getI32Type();
@@ -475,12 +494,26 @@ private:
     if (name == "float")         return builder.getF32Type();
     if (name == "long_float")    return builder.getF64Type();
 
-    mlir::emitWarning(loc(type_expr), "unsupported Ada type '")
-        << name << "', defaulting to i32";
-    return builder.getI32Type();
+    mlir::emitError(diagLoc, "unsupported Ada type '") << name << "'";
+    return {};
   }
 
-  mlir::Type getType() { return builder.getI32Type(); }
+  /// Resolve an Ada type expression (e.g. a SubtypeIndication node like
+  /// "Long_Integer") to the corresponding MLIR type. Returns a null type
+  /// and emits an error on failure.
+  mlir::Type getMLIRType(ada_node &type_expr) {
+    // p_designated_type_decl resolves a type expression to its declaration.
+    // This works on SubtypeIndication nodes (parameter / return types), unlike
+    // p_expression_type which only works on value expressions.
+    ada_node type_decl;
+    if (!ada_type_expr_p_designated_type_decl(&type_expr, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
+      mlir::emitError(loc(type_expr), "failed to resolve type expression");
+      return {};
+    }
+
+    return getMLIRTypeFromDecl(type_decl, loc(type_expr));
+  }
 
 };
 
