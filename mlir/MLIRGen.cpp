@@ -509,9 +509,13 @@ private:
 
     ada_node ret_type_expr;
     ada_subp_spec_f_subp_returns(&subp_spec, &ret_type_expr);
-    mlir::Type retType = ada_node_is_null(&ret_type_expr)
-                             ? builder.getI32Type()
-                             : getMLIRType(ret_type_expr);
+    if (ada_node_is_null(&ret_type_expr)) {
+      mlir::emitError(location, "function has no return type");
+      return nullptr;
+    }
+    mlir::Type retType = getMLIRType(ret_type_expr);
+    if (!retType)
+      return nullptr;
     auto funcType = builder.getFunctionType(argTypes, {retType});
     return builder.create<mlir::ada::FuncOp>(location,
                                              libadalang::getName(&name).data(),
