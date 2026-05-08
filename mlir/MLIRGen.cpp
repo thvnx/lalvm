@@ -45,6 +45,13 @@ using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
 
+// NOTE: Integer arithmetic limitation
+// Ada defines integer arithmetic over mathematical integers with range checks
+// that raise Constraint_Error on overflow. This implementation lowers to
+// arith.addi/subi/muli, which use two's-complement wrapping semantics with no
+// overflow check. Any Ada code relying on Constraint_Error for integer overflow
+// will compile silently but produce incorrect results at runtime.
+
 namespace {
 
 /// Walks a Libadalang AST and emits Ada dialect MLIR operations into a module.
