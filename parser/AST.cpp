@@ -117,15 +117,18 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename) {
 libadalang::AdaAST::AdaAST(const AdaAST &ast) {
   filename = ast.filename;
   context = ast.context;
-  ada_context_incref(context);
+  if (context)
+    ada_context_incref(context);
   unit = ast.unit;
   root = ast.root;
   valid = ast.valid;
 }
 
 libadalang::AdaAST::~AdaAST() {
-  ada_context_decref(context);
-  abort_on_exception();
+  if (context)
+    ada_context_decref(context);
+  // abort_on_exception() intentionally omitted: destructors must not throw or
+  // call exit(), and a failure in decref is unrecoverable anyway.
 }
 
 void libadalang::dump(ada_node *node) { dump_image(node, 0); }

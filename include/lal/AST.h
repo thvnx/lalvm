@@ -21,9 +21,9 @@ std::string getName(ada_node *node);
 /// The AdaAST class handles an AST produced by Libadalang.
 class AdaAST {
   llvm::StringRef filename;
-  ada_analysis_context context;
-  ada_analysis_unit unit;
-  ada_node root;
+  ada_analysis_context context = nullptr;
+  ada_analysis_unit unit = nullptr;
+  ada_node root = {};
   bool valid = true;
 
 public:
