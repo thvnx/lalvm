@@ -26,6 +26,7 @@
 #include <functional>
 #include <numeric>
 #include <optional>
+#include <cerrno>
 #include <vector>
 
 
@@ -226,8 +227,14 @@ private:
     size_t length;
     ada_text_to_utf8(&text, &str, &length);
     str[length] = '\0';
-    int64_t value = std::stoll(str);
     ada_big_integer_decref(bigint);
+    errno = 0;
+    char *endptr;
+    int64_t value = static_cast<int64_t>(std::strtoll(str, &endptr, 10));
+    if (errno == ERANGE) {
+      emitError(loc(node), "integer literal ") << str << " out of range for i64";
+      return nullptr;
+    }
 
     // p_expression_type on an integer literal returns universal_integer
     // (Libadalang's "universal_int_type_"), not the concrete type.
@@ -253,6 +260,17 @@ private:
       return nullptr;
 
     unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
+    // Reject literals that don't fit in the target type.
+    // Values outside i64 range are already caught above via std::stoll.
+    if (width < 64) {
+      int64_t maxVal = (1LL << (width - 1)) - 1;
+      int64_t minVal = -(1LL << (width - 1));
+      if (value < minVal || value > maxVal) {
+        emitError(loc(node), "integer literal ") << value
+            << " out of range for i" << width;
+        return nullptr;
+      }
+    }
     return builder.create<mlir::arith::ConstantIntOp>(loc(node), value, width);
   }
 

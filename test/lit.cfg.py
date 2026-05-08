@@ -10,3 +10,5 @@ config.substitutions.append(('%lalvm',
     os.path.join(config.lalvm_tools_dir, 'lalvm')))
 config.substitutions.append(('%FileCheck',
     os.path.join(config.llvm_tools_dir, 'FileCheck')))
+config.substitutions.append(('%not',
+    os.path.join(config.llvm_tools_dir, 'not')))
