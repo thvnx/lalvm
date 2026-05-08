@@ -68,7 +68,8 @@ public:
     //   mlirGen(f);
     // TODO: convert ada_node to C++ to use overloading instead of this visit
     // function dump(&moduleAST, 0);
-    visit(moduleAST);
+    if (mlir::failed(visit(moduleAST)))
+      return nullptr;
 
     // Verify the module after we have finished constructing it, this will check
     // the structural properties of the IR and invoke any specific verifiers we
@@ -141,18 +142,18 @@ private:
   // Known limitation: unrecognised top-level node kinds (ada_package_body,
   // ada_compilation_unit, etc.) are silently skipped. A file containing only
   // a package will produce an empty module with no diagnostic.
-  void visit(ada_node &moduleAST) {
+  mlir::LogicalResult visit(ada_node &moduleAST) {
     switch (ada_node_kind(&moduleAST)) {
     case ada_subp_body:
-      mlirGenSubpBody(moduleAST);
-      return;
+      if (!mlirGenSubpBody(moduleAST))
+        return mlir::failure();
+      return mlir::success();
     case ada_return_stmt:
-      (void)mlirGenReturn(moduleAST);
-      return;
+      return mlirGenReturn(moduleAST);
     case ada_assign_stmt:
       if (mlir::failed(mlirGenAssign(moduleAST)))
-        return;
-      break;
+        return mlir::failure();
+      return mlir::success();
     default:
       break;
     }
@@ -162,19 +163,37 @@ private:
       ada_node child;
       if (ada_node_child(&moduleAST, i, &child) == 0)
         llvm::errs() << "Error while getting a child (MLIRGen::visit)\n";
-      visit(child);
+      if (mlir::failed(visit(child)))
+        return mlir::failure();
     }
+    return mlir::success();
   }
 
   /// This is a reference to a variable in an expression. The variable is
   /// expected to have been declared and so should have a value in the symbol
   /// table, otherwise emit an error and return nullptr.
   mlir::Value mlirGenVariable(ada_node &expr) {
-    if (auto variable = symbolTable.lookup(libadalang::getName(&expr).data()))
+    auto name = libadalang::getName(&expr);
+    if (auto variable = symbolTable.lookup(name.data()))
       return variable;
 
-    emitError(loc(expr), "error: unknown variable '")
-        << libadalang::getName(&expr).data() << "'";
+    // Distinguish between a variable that is declared but has no initializer
+    // (not yet in the symbol table) and one that is genuinely undeclared.
+    ada_node ref_decl;
+    if (ada_name_p_referenced_decl(&expr, 0, &ref_decl) &&
+        !ada_node_is_null(&ref_decl) &&
+        ada_node_kind(&ref_decl) == ada_object_decl) {
+      ada_node default_expr;
+      ada_object_decl_f_default_expr(&ref_decl, &default_expr);
+      if (ada_node_is_null(&default_expr)) {
+        // TODO: downgrade to a warning once the alloca-based model is in place.
+        emitError(loc(ref_decl), "variable \"")
+            << name << "\" is read but never assigned";
+        return nullptr;
+      }
+    }
+
+    emitError(loc(expr), "unknown variable '") << name << "'";
     return nullptr;
   }
 
@@ -386,6 +405,74 @@ private:
     return nullptr;
   }
 
+  /// Emit a single initialized variable declaration from a declarative part.
+  /// Declarations without an initializer are silently skipped (the variable
+  /// simply won't be in the symbol table; a later reference will produce an
+  /// "unknown variable" error). Constants are not yet supported and are also
+  /// skipped.
+  ///
+  /// Supporting uninitialized scalar variables would require switching from
+  /// the current pure-SSA model to an alloca-based model: each variable would
+  /// be represented by a stack slot (llvm.alloca), reads would become
+  /// llvm.load, and writes llvm.store — the same strategy used by clang and
+  /// GNAT for stack locals before mem2reg promotes them to SSA values.
+  llvm::LogicalResult mlirGenObjectDecl(ada_node &object_decl) {
+    ada_node default_expr;
+    ada_object_decl_f_default_expr(&object_decl, &default_expr);
+
+    if (ada_node_is_null(&default_expr))
+      return mlir::success();
+
+    mlir::Value init = visit_expr(default_expr);
+    if (!init)
+      return mlir::failure();
+
+    ada_node ids;
+    ada_object_decl_f_ids(&object_decl, &ids);
+    unsigned count = ada_node_children_count(&ids);
+    for (unsigned i = 0; i < count; ++i) {
+      ada_node id;
+      if (ada_node_child(&ids, i, &id) == 0) {
+        llvm::errs() << "Error while getting declared identifier\n";
+        return mlir::failure();
+      }
+      auto name = libadalang::getName(&id);
+      if (mlir::failed(declare(name.data(), init))) {
+        emitError(loc(id), "variable '") << name << "' already declared";
+        return mlir::failure();
+      }
+    }
+    return mlir::success();
+  }
+
+  /// Emit initialized variable declarations from a subprogram's declarative
+  /// part. Only ObjectDecl nodes with an initializer expression are emitted;
+  /// uninitialized variables, constants, types, subprograms, etc. are skipped.
+  /// The AST structure is: DeclarativePart → AdaNodeList → ObjectDecl...
+  llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
+    unsigned listCount = ada_node_children_count(&decls);
+    for (unsigned i = 0; i < listCount; ++i) {
+      ada_node list;
+      if (ada_node_child(&decls, i, &list) == 0) {
+        llvm::errs() << "Error while getting declarative list\n";
+        return mlir::failure();
+      }
+      unsigned count = ada_node_children_count(&list);
+      for (unsigned j = 0; j < count; ++j) {
+        ada_node decl;
+        if (ada_node_child(&list, j, &decl) == 0) {
+          llvm::errs() << "Error while getting declaration\n";
+          return mlir::failure();
+        }
+        if (ada_node_kind(&decl) != ada_object_decl)
+          continue;
+        if (mlir::failed(mlirGenObjectDecl(decl)))
+          return mlir::failure();
+      }
+    }
+    return mlir::success();
+  }
+
   /// Lower one Ada subprogram body to an ada.func or ada.proc operation.
   /// This is the main codegen entry point for a subprogram: it creates the
   /// function op, binds argument SSA values in the symbol table, then walks
@@ -446,9 +533,18 @@ private:
 
     builder.setInsertionPointToStart(entryBlock);
 
+    ada_node decls;
+    ada_subp_body_f_decls(&subp_body, &decls);
+    if (!ada_node_is_null(&decls))
+      if (mlir::failed(mlirGenDeclarativePart(decls)))
+        return nullptr;
+
     ada_node stmts;
     ada_subp_body_f_stmts(&subp_body, &stmts);
-    visit(stmts);
+    if (mlir::failed(visit(stmts))) {
+      op->erase();
+      return nullptr;
+    }
 
     // Procedures have no explicit return statement; add an implicit one.
     if (isProc)
