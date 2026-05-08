@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20.0)
-project(standalone-dialect LANGUAGES CXX C)
+project(lalvm LANGUAGES CXX C)
 
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 
@@ -50,10 +50,7 @@ if(NOT LIBADALANG_INCLUDE_DIR)
   message(FATAL_ERROR "LIBADALANG_INCLUDE_DIR must be set, e.g. -DLIBADALANG_INCLUDE_DIR=/path/to/libadalang/build/src")
 endif()
 include_directories(${LIBADALANG_INCLUDE_DIR})
-#add_subdirectory(lib)
-
 include_directories(mlir parser)
-link_directories(lib)
 
 
 add_llvm_executable(lalvm
