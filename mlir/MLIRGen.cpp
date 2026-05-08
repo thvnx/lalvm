@@ -145,12 +145,9 @@ private:
     case ada_subp_body:
       mlirGenSubpBody(moduleAST);
       return;
-    case ada_return_stmt: {
-      if(mlir::succeeded(mlirGenReturn(moduleAST)))
-        break;
-      else
-        return;
-    }
+    case ada_return_stmt:
+      (void)mlirGenReturn(moduleAST);
+      return;
     case ada_assign_stmt:
       if (mlir::failed(mlirGenAssign(moduleAST)))
         return;
@@ -547,16 +544,17 @@ private:
   llvm::LogicalResult mlirGenReturn(ada_node &return_stmt) {
     auto location = loc(return_stmt);
 
-    mlir::Value expr = nullptr;
-    //if (ret.getExpr().has_value()) {//TODO in ada return op always has a value, keep a check thout?
-     // if (!(expr = mlirGen(**ret.getExpr())))
-     //   return mlir::failure();
-    //}
     ada_node return_expr;
     ada_return_stmt_f_return_expr(&return_stmt, &return_expr);
-    expr = visit_expr(return_expr);
 
-    // Otherwise, this return operation has zero operands.
+    // In Ada, a procedure return carries no value; only function returns do.
+    mlir::Value expr = nullptr;
+    if (!ada_node_is_null(&return_expr)) {
+      expr = visit_expr(return_expr);
+      if (!expr)
+        return mlir::failure();
+    }
+
     builder.create<mlir::ada::ReturnOp>(location,
                              expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
     return mlir::success();
