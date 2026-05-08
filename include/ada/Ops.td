@@ -131,7 +131,10 @@ def FuncOp : Ada_Op<"func", [
 
 // Ada procedures are like functions but with no return value. We use a separate
 // op (rather than a FuncOp with empty result list) so that the verifier can
-// enforce that ada.return inside a procedure carries no operand.
+// enforce that ada.return inside a procedure carries no operand. That
+// enforcement is implemented in ReturnOp::verify, which checks that the number
+// of return operands matches the enclosing function's result count (zero for
+// a procedure).
 def ProcOp : Ada_Op<"proc", [
     FunctionOpInterface, IsolatedFromAbove
   ]> {

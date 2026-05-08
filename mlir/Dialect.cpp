@@ -254,9 +254,9 @@ llvm::LogicalResult ReturnOp::verify() {
   auto resultType = results.front();
 
   if (inputType != resultType)
-    return emitError() << "type of return operand (" << inputType
-                       << ") doesn't match function result type (" << resultType
-                       << ")";
+    return emitOpError() << "type of return operand (" << inputType
+                         << ") doesn't match function result type ("
+                         << resultType << ")";
   return mlir::success();
 
 }
