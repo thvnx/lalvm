@@ -432,6 +432,7 @@ private:
         args_v.push_back(child);
       }
     }
+    ada_node_array_dec_ref(params);
 
     // Declare all the function arguments in the symbol table.
     for (const auto nameValue :
@@ -477,6 +478,7 @@ private:
       for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
         argTypes.push_back(paramType);
     }
+    ada_node_array_dec_ref(params);
 
     auto funcType = builder.getFunctionType(argTypes, {});
     return builder.create<mlir::ada::ProcOp>(location,
@@ -506,6 +508,7 @@ private:
       for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
         argTypes.push_back(paramType);
     }
+    ada_node_array_dec_ref(params);
 
     ada_node ret_type_expr;
     ada_subp_spec_f_subp_returns(&subp_spec, &ret_type_expr);
