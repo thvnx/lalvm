@@ -44,7 +44,7 @@ link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(include)
-include_directories(/home/thevenoux/code/AdaCore/ancr/src/libadalang/build/src/)
+include_directories(/home/thevenoux/workspace/pe-dev/home/ancr/src/libadalang/build/src)
 #add_subdirectory(lib)
 
 include_directories(mlir parser)
