@@ -274,12 +274,70 @@ private:
     return builder.create<mlir::arith::ConstantIntOp>(loc(node), value, width);
   }
 
+  mlir::Value mlirGenRealLiteral(ada_node &node) {
+    // Unlike ada_int_literal, ada_real_literal has no p_denoted_value in the
+    // C API, so we extract the value by reading the literal's source text.
+    ada_text text;
+    ada_node_text(&node, &text);
+    char *str;
+    size_t length;
+    ada_text_to_utf8(&text, &str, &length);
+
+    // Ada allows underscores as digit separators; strip them in-place.
+    size_t j = 0;
+    for (size_t i = 0; i < length; ++i)
+      if (str[i] != '_') str[j++] = str[i];
+    str[j] = '\0';
+
+    errno = 0;
+    char *endptr;
+    double value = std::strtod(str, &endptr);
+    if (errno == ERANGE || std::isinf(value)) {
+      emitError(loc(node), "real literal ") << str << " out of range for f64";
+      return nullptr;
+    }
+
+    // Real literals have universal_real type; fall back to the expected type
+    // to get the concrete type required by the surrounding context.
+    ada_node type_decl;
+    if (!ada_expr_p_expression_type(&node, &type_decl) || ada_node_is_null(&type_decl)) {
+      emitError(loc(node), "failed to resolve type of real literal");
+      return nullptr;
+    }
+    ada_node type_name;
+    if (ada_base_type_decl_f_name(&type_decl, &type_name) &&
+        !ada_node_is_null(&type_name) &&
+        libadalang::getName(&type_name) == "universal_real_type_") {
+      if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
+          ada_node_is_null(&type_decl)) {
+        emitError(loc(node), "failed to resolve expected type of real literal");
+        return nullptr;
+      }
+    }
+    mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
+    if (!type)
+      return nullptr;
+
+    // Reject values that overflow f32 (a double-precision parse is always
+    // needed first; then we check if the value fits in the narrower type).
+    auto floatType = mlir::cast<mlir::FloatType>(type);
+    if (floatType.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
+      emitError(loc(node), "real literal ") << str << " out of range for f32";
+      return nullptr;
+    }
+
+    return builder.create<mlir::arith::ConstantOp>(loc(node),
+        builder.getFloatAttr(type, value));
+  }
+
   mlir::Value visit_expr(ada_node &expr) {
     switch (ada_node_kind (&expr)) {
     case ada_identifier:
       return mlirGenVariable(expr);
     case ada_int_literal:
       return mlirGenIntLiteral(expr);
+    case ada_real_literal:
+      return mlirGenRealLiteral(expr);
     case ada_bin_op:
       return mlirGenBinOp(expr);
     default:
