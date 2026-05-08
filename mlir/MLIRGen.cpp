@@ -311,17 +311,6 @@ private:
     ada_subp_body_f_stmts (&subp_body, &stmts);
     visit(stmts);
 
-    mlir::ada::ReturnOp returnOp;
-    if (!entryBlock.empty())
-      returnOp = dyn_cast<mlir::ada::ReturnOp>(entryBlock.back());
-    if (!returnOp) {
-      //builder.create<mlir::ada::ReturnOp>(loc(subp_body));
-    } else if (returnOp.hasOperand()) {
-      // Otherwise, if this return operation has an operand then add a result to
-      // the function.
-      function.setType(builder.getFunctionType(
-                                               function.getFunctionType().getInputs(), getType()));
-    }
     return function;
   }
 
@@ -334,21 +323,26 @@ private:
     ada_node name;
     ada_subp_spec_f_subp_name (&subp_spec, &name);
 
-    size_t n = 0;
     ada_node_array params;
     ada_node ids;
-    ada_base_subp_spec_p_params (&subp_spec, &params);
+    ada_base_subp_spec_p_params(&subp_spec, &params);
 
+    llvm::SmallVector<mlir::Type, 4> argTypes;
     for (int i = 0; i < params->n; i++) {
+      ada_node type_expr;
+      ada_param_spec_f_type_expr(&params->items[i], &type_expr);
+      mlir::Type paramType = getMLIRType(type_expr);
       ada_param_spec_f_ids(&params->items[i], &ids);
-      n+=ada_node_children_count(&ids);
+      for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
+        argTypes.push_back(paramType);
     }
 
-    // This is a generic function, the return type will be inferred later (not in ada).
-    // Arguments type are uniformly unranked tensors.
-    llvm::SmallVector<mlir::Type, 4> argTypes(n, getType(/*VarType{}*/));
-    llvm::SmallVector<mlir::Type, 1> retTypes(1, getType(/*VarType{}*/));
-    auto funcType = builder.getFunctionType(argTypes, retTypes);
+    ada_node ret_type_expr;
+    ada_subp_spec_f_subp_returns(&subp_spec, &ret_type_expr);
+    mlir::Type retType = ada_node_is_null(&ret_type_expr)
+                             ? builder.getI32Type()
+                             : getMLIRType(ret_type_expr);
+    auto funcType = builder.getFunctionType(argTypes, {retType});
     return builder.create<mlir::ada::FuncOp>(location,
                                              libadalang::getName(&name).data(),
                                              funcType);
@@ -374,20 +368,36 @@ private:
   }
 
 
-  /// Build a tensor type from a list of shape dimensions.
-  mlir::Type getType(ArrayRef<int64_t> shape) {
-    // If the shape is empty, then this type is unranked.
-    if (shape.empty())
-      return mlir::UnrankedTensorType::get(builder.getF64Type());
+  /// Resolve an Ada type expression node to an MLIR type.
+  mlir::Type getMLIRType(ada_node &type_expr) {
+    ada_node type_decl;
+    if (!ada_expr_p_expression_type(&type_expr, &type_decl) ||
+        ada_node_is_null(&type_decl))
+      return builder.getI32Type();
 
-    // Otherwise, we use the given shape.
-    //return mlir::RankedTensorType::get(shape, builder.getF64Type());
-    return builder.getIntegerType(32);
+    ada_node canon_type;
+    if (!ada_base_type_decl_p_canonical_type(&type_decl, nullptr, &canon_type) ||
+        ada_node_is_null(&canon_type))
+      canon_type = type_decl;
+
+    ada_node type_name;
+    if (!ada_base_type_decl_f_name(&canon_type, &type_name) ||
+        ada_node_is_null(&type_name))
+      return builder.getI32Type();
+
+    llvm::StringRef name = libadalang::getName(&type_name);
+    if (name == "integer")       return builder.getI32Type();
+    if (name == "long_integer")  return builder.getI64Type();
+    if (name == "short_integer") return builder.getIntegerType(16);
+    if (name == "float")         return builder.getF32Type();
+    if (name == "long_float")    return builder.getF64Type();
+
+    mlir::emitWarning(loc(type_expr), "unsupported Ada type '")
+        << name << "', defaulting to i32";
+    return builder.getI32Type();
   }
 
-  /// Build an MLIR type from a Toy AST variable type (forward to the generic
-  /// getType above).
-  mlir::Type getType(/*const VarType &type*/) { return getType(/*type.shape*/1); }
+  mlir::Type getType() { return builder.getI32Type(); }
 
 };
 
