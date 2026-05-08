@@ -51,7 +51,18 @@ The compiler is organized in three layers:
 
 Ada parsing is handled by [Libadalang](https://github.com/AdaCore/libadalang) through its C API (`include/lal/AST.h`, `parser/AST.cpp`).
 
+## Testing
+
+Tests use [lit](https://llvm.org/docs/CommandGuide/lit.html) and FileCheck. Each test
+file in `test/` carries its own `RUN` and `CHECK` directives.
+
+```sh
+pip install lit   # one-time
+cmake --build build --target check-lalvm
+```
+
 ## Dependencies
 
 - LLVM/MLIR 21
 - Libadalang
+- lit (for running tests)

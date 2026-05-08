@@ -13,7 +13,8 @@ cmake -G Ninja .. \
     -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" \
     -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold" \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DLLVM_ENABLE_ASSERTIONS=ON
+    -DLLVM_ENABLE_ASSERTIONS=ON \
+    -DLLVM_EXTERNAL_LIT=$(which lit)
 
 cmake --build .
 popd

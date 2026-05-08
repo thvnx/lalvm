@@ -94,7 +94,8 @@ int dumpMLIR(libadalang::AdaAST ast) {
     if (!module)
       return 1;
 
-    module->dump();
+    module->print(llvm::outs());
+    llvm::outs() << "\n";
     return 0;
   }
 
@@ -249,7 +250,7 @@ int dumpLLVMIR(mlir::ModuleOp module) {
   //   llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
   //   return -1;
   // }
-  llvm::errs() << *llvmModule << "\n";
+  llvm::outs() << *llvmModule << "\n";
   return 0;
 }
 
