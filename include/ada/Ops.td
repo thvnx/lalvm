@@ -44,7 +44,7 @@ class Ada_Op<string mnemonic, list<Trait> traits = []> :
 // SameOperandsAndResultType constrains the op so that all operands and the
 // result share one type. It also auto-generates build(Value lhs, Value rhs)
 // that infers the result type from the operands, so no custom builder is needed.
-def AddOp : Ada_Op<"add", [SameOperandsAndResultType]> {
+def AddOp : Ada_Op<"add", [Pure, SameOperandsAndResultType]> {
   let summary = "addition operation";
 
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
@@ -57,7 +57,7 @@ def AddOp : Ada_Op<"add", [SameOperandsAndResultType]> {
 // SubOp
 //===----------------------------------------------------------------------===//
 
-def SubOp : Ada_Op<"sub", [SameOperandsAndResultType]> {
+def SubOp : Ada_Op<"sub", [Pure, SameOperandsAndResultType]> {
   let summary = "subtraction operation";
 
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
@@ -165,7 +165,7 @@ def ProcOp : Ada_Op<"proc", [
 // MulOp
 //===----------------------------------------------------------------------===//
 
-def MulOp : Ada_Op<"mul", [SameOperandsAndResultType]> {
+def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
   let summary = "multiplication operation";
 
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
@@ -179,9 +179,9 @@ def MulOp : Ada_Op<"mul", [SameOperandsAndResultType]> {
 //===----------------------------------------------------------------------===//
 
 // Terminator marks this op as the mandatory last op in a basic block.
-// Pure means it has no side effects and can be removed if its result is unused
-// (vacuously true here since ada.return produces no results).
-def ReturnOp : Ada_Op<"return", [Pure, Terminator]> {
+// Pure is intentionally absent: terminators transfer control flow and must
+// not be eliminated by dead-code elimination.
+def ReturnOp : Ada_Op<"return", [Terminator]> {
   let summary = "return operation";
   let description = [{
     The "return" operation represents a return operation within a function.
