@@ -17,6 +17,8 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
+#define DEBUG_TYPE MLIRGEN_DEBUG
+
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
@@ -105,9 +107,7 @@ private:
 
     //TODO find a way on how to enable -debug command line option support:
     // requires a debug build of LLVM
-#define DEBUG_TYPE MLIRGEN_DEBUG
     LLVM_DEBUG(llvm::dbgs() << loc.line << ":" << loc.column << " (" << filename << ")");
-#undef  DEBUG_TYPE
 
     // getStringAttr copies the string into the MLIR context, so filename can
     // be freed immediately.
@@ -121,9 +121,7 @@ private:
   /// Declare a variable in the current scope, return success if the variable
   /// wasn't declared yet.
   llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
-#define DEBUG_TYPE MLIRGEN_DEBUG
     LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data());
-#undef  DEBUG_TYPE
     if (symbolTable.count(var))
       return mlir::failure();
     symbolTable.insert(stringSaver.save(var), value);
