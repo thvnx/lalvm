@@ -95,7 +95,9 @@ struct NumericBinaryOpLowering : public OpRewritePattern<AdaOp> {
     else if (mlir::isa<mlir::FloatType>(type))
       rewriter.replaceOpWithNewOp<FloatOp>(op, op->getOperands());
     else
-      return failure();
+      return rewriter.notifyMatchFailure(op, [type](Diagnostic &diag) {
+        diag << "unsupported operand type: " << type;
+      });
     return success();
   }
 };
