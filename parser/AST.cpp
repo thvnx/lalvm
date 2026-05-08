@@ -1,20 +1,20 @@
 #include "lal/AST.h"
 
 #include "llvm/Support/ErrorOr.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
-
-// TODO concert fprintf to stderr to llvm::errs()
 
 static bool print_exception(bool or_silent) {
   const ada_exception *exc = ada_get_last_exception();
   if (exc != NULL) {
     char *exc_name = ada_exception_name(exc->kind);
-    printf("Got an exception (%s):\n  %s\n", exc_name, exc->information);
+    llvm::errs() << "Got an exception (" << exc_name << "):\n  "
+                 << exc->information << "\n";
     free(exc_name);
     return true;
   } else if (!or_silent)
-    fputs("Got no exception\n", stderr);
+    llvm::errs() << "Got no exception\n";
   return false;
 }
 
@@ -24,60 +24,53 @@ static void abort_on_exception(void) {
 }
 
 static void print_indent(int level) {
-  int i;
-  for (i = 0; i < level; ++i)
-    printf("| ");
+  for (int i = 0; i < level; ++i)
+    llvm::outs() << "| ";
 }
 
-static void fprint_text(FILE *stream, ada_text text, bool with_quotes) {
-  unsigned i;
-
+static void fprint_text(llvm::raw_ostream &stream, ada_text text,
+                        bool with_quotes) {
   if (with_quotes)
-    fputc('"', stream);
+    stream << '"';
 
-  for (i = 0; i < text.length; i++) {
+  for (unsigned i = 0; i < text.length; i++) {
     uint32_t c = text.chars[i];
 
     if ((with_quotes && c == '"') || c == '\\')
-      fprintf(stream, "\\%c", (char)c);
-    else if (0x20 <= c && c <= 0x7f) {
-      fputc(c, stream);
-    } else if (c <= 0xff) {
-      fprintf(stream, "\\x");
-      fprintf(stream, "%02x", c);
-    } else if (c <= 0xffff) {
-      fprintf(stream, "\\u%04x", c);
-    } else {
-      fprintf(stream, "\\U%08x", c);
-    }
+      stream << '\\' << (char)c;
+    else if (0x20 <= c && c <= 0x7f)
+      stream << (char)c;
+    else if (c <= 0xff)
+      stream << llvm::format("\\x%02x", c);
+    else if (c <= 0xffff)
+      stream << llvm::format("\\u%04x", c);
+    else
+      stream << llvm::format("\\U%08x", c);
   }
 
   if (with_quotes)
-    fputc('"', stream);
+    stream << '"';
 }
 
 static void dump_image(ada_node *node, int level) {
-  ada_text img;
-  unsigned i, count;
-
   if (ada_node_is_null(node)) {
     print_indent(level);
-    printf("<null node>\n");
+    llvm::outs() << "<null node>\n";
     return;
   }
 
+  ada_text img;
   ada_node_image(node, &img);
   print_indent(level);
-  fprint_text(stdout, img, false);
-  printf("\n");
+  fprint_text(llvm::outs(), img, false);
+  llvm::outs() << "\n";
   ada_destroy_text(&img);
 
-  count = ada_node_children_count(node);
-  for (i = 0; i < count; ++i) {
+  unsigned count = ada_node_children_count(node);
+  for (unsigned i = 0; i < count; ++i) {
     ada_node child;
-
     if (ada_node_child(node, i, &child) == 0)
-      fprintf(stderr, "Error while getting a child");
+      llvm::errs() << "Error while getting a child";
     dump_image(&child, level + 1);
   }
 }
@@ -141,13 +134,12 @@ std::string libadalang::getName(ada_node *node) {
     return result;
   }
   default: {
-    // TODO use llvm::errs to print the error
-    std::cerr << "Can't get name of node: ";
     ada_text img;
     ada_node_image(node, &img);
-    fprint_text(stderr, img, false);
+    llvm::errs() << "Can't get name of node: ";
+    fprint_text(llvm::errs(), img, false);
+    llvm::errs() << "\n";
     ada_destroy_text(&img);
-    std::cerr << std::endl;
     return {};
   }
   }

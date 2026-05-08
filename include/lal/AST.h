@@ -2,7 +2,6 @@
 #define LAL_AST_H
 
 #include <cstring>
-#include <iostream>
 #include <string>
 
 #include "llvm/ADT/StringRef.h"

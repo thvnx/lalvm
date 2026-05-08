@@ -15,6 +15,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
@@ -159,7 +160,7 @@ private:
       {
         ada_node child;
         if (ada_node_child(&moduleAST, i, &child) == 0)
-          std::cerr << "Error while getting a child (MLIRGen::visit)";;
+          llvm::errs() << "Error while getting a child (MLIRGen::visit)\n";
         visit(child);
       }
   }
@@ -213,9 +214,9 @@ private:
     case ada_op_mult:
       return builder.create<mlir::ada::MulOp>(location, lhs, rhs);
     default:
-      std::cerr << "Error while visiting unsupported binop: ";
+      llvm::errs() << "Error while visiting unsupported binop: ";
       libadalang::dump(&op);
-      std::cerr << "\n";
+      llvm::errs() << "\n";
     }
 
     emitError(location, "invalid binary operator: ");
@@ -353,9 +354,9 @@ private:
     case ada_bin_op:
       return mlirGenBinOp(expr);
     default:
-      std::cerr << "Error while visiting unsupported expression: ";
+      llvm::errs() << "Error while visiting unsupported expression: ";
       libadalang::dump(&expr);
-      std::cerr << "\n";
+      llvm::errs() << "\n";
     }
 
     return nullptr;
