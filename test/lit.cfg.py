@@ -5,6 +5,7 @@ config.name = 'lalvm'
 config.test_format = lit.formats.ShTest(True)
 config.suffixes = ['.adb', '.mlir']
 config.test_source_root = os.path.dirname(__file__)
+config.test_exec_root = config.lalvm_obj_root
 
 config.substitutions.append(('%lalvm',
     os.path.join(config.lalvm_tools_dir, 'lalvm')))
