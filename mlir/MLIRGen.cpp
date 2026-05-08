@@ -235,6 +235,7 @@ private:
     char *buf;
     size_t length;
     ada_text_to_utf8(&text, &buf, &length);
+    ada_destroy_text(&text);
     std::string literal(buf, length);
     free(buf);
     ada_big_integer_decref(bigint);
@@ -298,6 +299,7 @@ private:
     char *buf;
     size_t length;
     ada_text_to_utf8(&text, &buf, &length);
+    ada_destroy_text(&text);
     // Ada allows underscores as digit separators; strip them while copying.
     std::string literal;
     literal.reserve(length);
