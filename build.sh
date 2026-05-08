@@ -6,6 +6,7 @@ mkdir -p build
 pushd build
 
 cmake -G Ninja .. \
+    -DLIBADALANG_INCLUDE_DIR=/home/thevenoux/workspace/pe-dev/home/ancr/src/libadalang/build/src \
     -DMLIR_DIR=/usr/lib/llvm-21/lib/cmake/mlir \
     -DCMAKE_C_COMPILER=clang-21 \
     -DCMAKE_CXX_COMPILER=clang++-21 \

@@ -45,7 +45,11 @@ add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(include)
 add_subdirectory(test)
-include_directories(/home/thevenoux/workspace/pe-dev/home/ancr/src/libadalang/build/src)
+set(LIBADALANG_INCLUDE_DIR "" CACHE PATH "Directory containing libadalang.h (typically libadalang/build/src)")
+if(NOT LIBADALANG_INCLUDE_DIR)
+  message(FATAL_ERROR "LIBADALANG_INCLUDE_DIR must be set, e.g. -DLIBADALANG_INCLUDE_DIR=/path/to/libadalang/build/src")
+endif()
+include_directories(${LIBADALANG_INCLUDE_DIR})
 #add_subdirectory(lib)
 
 include_directories(mlir parser)
