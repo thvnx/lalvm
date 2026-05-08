@@ -248,7 +248,8 @@ struct BinaryOpLowering : public ConversionPattern {
   }
 };
 using AddOpLowering = BinaryOpLowering<ada::AddOp, arith::AddIOp>;
-//using MulOpLowering = BinaryOpLowering<toy::MulOp, arith::MulFOp>;
+using SubOpLowering = BinaryOpLowering<ada::SubOp, arith::SubIOp>;
+using MulOpLowering = BinaryOpLowering<ada::MulOp, arith::MulIOp>;
 
 //===----------------------------------------------------------------------===//
 // ToyToAffine RewritePatterns: Func operations
@@ -320,7 +321,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   // The only remaining operation to lower from the `toy` dialect, is the
   // PrintOp.
-  patterns.add</*PrintOpLowering*/ReturnOpLowering, FuncOpLowering, AddOpLowering>(&getContext());
+  patterns.add<ReturnOpLowering, FuncOpLowering,
+               AddOpLowering, SubOpLowering, MulOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

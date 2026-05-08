@@ -111,6 +111,23 @@ def AddOp : Ada_Op<"add"> {
 }
 
 //===----------------------------------------------------------------------===//
+// SubOp
+//===----------------------------------------------------------------------===//
+
+def SubOp : Ada_Op<"sub"> {
+  let summary = "integer subtraction operation";
+
+  let arguments = (ins I32:$lhs, I32:$rhs);
+  let results = (outs I32);
+
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins "Value":$lhs, "Value":$rhs)>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 
@@ -207,14 +224,10 @@ def GenericCallOp : Ada_Op<"generic_call"> {
 //===----------------------------------------------------------------------===//
 
 def MulOp : Ada_Op<"mul"> {
-  let summary = "element-wise multiplication operation";
-  let description = [{
-    The "mul" operation performs element-wise multiplication between two
-    tensors. The shapes of the tensor operands are expected to match.
-  }];
+  let summary = "integer multiplication operation";
 
-  let arguments = (ins F64Tensor:$lhs, F64Tensor:$rhs);
-  let results = (outs F64Tensor);
+  let arguments = (ins I32:$lhs, I32:$rhs);
+  let results = (outs I32);
 
   // Indicate that the operation has a custom parser and printer method.
   let hasCustomAssemblyFormat = 1;

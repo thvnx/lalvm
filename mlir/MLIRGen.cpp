@@ -194,8 +194,10 @@ private:
     switch (ada_node_kind (&op)) {
     case ada_op_plus:
       return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
-    // case '*':
-    //   return builder.create<MulOp>(location, lhs, rhs);
+    case ada_op_minus:
+      return builder.create<mlir::ada::SubOp>(location, lhs, rhs);
+    case ada_op_mult:
+      return builder.create<mlir::ada::MulOp>(location, lhs, rhs);
     default:
       std::cerr << "Error while visiting unsupported binop: ";
       libadalang::dump(&op);
