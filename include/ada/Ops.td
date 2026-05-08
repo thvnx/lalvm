@@ -1,4 +1,4 @@
-//===- Ops.td - Toy dialect operation definitions ----------*- tablegen -*-===//
+//===- Ops.td - Ada dialect operation definitions ----------*- tablegen -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -59,6 +59,19 @@ def AddOp : Ada_Op<"add", [Pure, SameOperandsAndResultType]> {
 
 def SubOp : Ada_Op<"sub", [Pure, SameOperandsAndResultType]> {
   let summary = "subtraction operation";
+
+  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
+  let results = (outs AnyType);
+
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// MulOp
+//===----------------------------------------------------------------------===//
+
+def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
+  let summary = "multiplication operation";
 
   let arguments = (ins AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType);
@@ -162,19 +175,6 @@ def ProcOp : Ada_Op<"proc", [
 
   let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// MulOp
-//===----------------------------------------------------------------------===//
-
-def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
-  let summary = "multiplication operation";
-
-  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
-  let results = (outs AnyType);
-
-  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//

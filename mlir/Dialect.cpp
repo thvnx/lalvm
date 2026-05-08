@@ -122,6 +122,17 @@ mlir::ParseResult SubOp::parse(mlir::OpAsmParser &parser,
 void SubOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 
 //===----------------------------------------------------------------------===//
+// MulOp
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult MulOp::parse(mlir::OpAsmParser &parser,
+                               mlir::OperationState &result) {
+  return parseBinaryOp(parser, result);
+}
+
+void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
+
+//===----------------------------------------------------------------------===//
 // ProcOp
 //===----------------------------------------------------------------------===//
 
@@ -187,17 +198,6 @@ void FuncOp::print(mlir::OpAsmPrinter &p) {
       p, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
       getArgAttrsAttrName(), getResAttrsAttrName());
 }
-
-//===----------------------------------------------------------------------===//
-// MulOp
-//===----------------------------------------------------------------------===//
-
-mlir::ParseResult MulOp::parse(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
-  return parseBinaryOp(parser, result);
-}
-
-void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
