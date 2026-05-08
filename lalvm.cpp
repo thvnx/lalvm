@@ -65,7 +65,7 @@ emitAction("emit",
 int dumpAST(libadalang::AdaAST ast) {
   if (inputType == InputType::MLIR) {
     llvm::errs() << "Can't dump a Libadalang AST when the input is MLIR\n";
-    return 5;
+    return 1;
   }
 
   if (!ast.isValid())
@@ -86,7 +86,7 @@ int dumpMLIR(libadalang::AdaAST ast) {
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
     if (!ast.isValid())
-      return 6;
+      return 1;
     mlir::OwningOpRef<mlir::ModuleOp> module = ada::mlirGen(context, ast.getUnitRootNode());
     if (!module)
       return 1;
@@ -101,7 +101,7 @@ int dumpMLIR(libadalang::AdaAST ast) {
     llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
   if (std::error_code ec = fileOrErr.getError()) {
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";
-    return -1;
+    return 1;
   }
 
   // Parse the input mlir.
@@ -111,7 +111,7 @@ int dumpMLIR(libadalang::AdaAST ast) {
     mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
   if (!module) {
     llvm::errs() << "Error can't load file " << inputFilename << "\n";
-    return 3;
+    return 1;
   }
 
   module->dump();
@@ -125,7 +125,7 @@ int loadMLIR(libadalang::AdaAST ast,
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
     if (!ast.isValid())
-      return 6;
+      return 1;
     module = ada::mlirGen(context, ast.getUnitRootNode());
     return !module ? 1 : 0;
   }
@@ -135,7 +135,7 @@ int loadMLIR(libadalang::AdaAST ast,
       llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
   if (std::error_code ec = fileOrErr.getError()) {
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";
-    return -1;
+    return 1;
   }
 
   // Parse the input mlir.
@@ -144,7 +144,7 @@ int loadMLIR(libadalang::AdaAST ast,
   module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
   if (!module) {
     llvm::errs() << "Error can't load file " << inputFilename << "\n";
-    return 3;
+    return 1;
   }
   return 0;
 }
@@ -164,7 +164,7 @@ int loadAndProcessMLIR(libadalang::AdaAST ast,
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
 
   if (mlir::failed(pm.run(*module)))
-    return 8;
+    return 1;
   return 0;
 }
 
@@ -178,7 +178,7 @@ int dumpLLVMIR(mlir::ModuleOp module) {
   auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
   if (!llvmModule) {
     llvm::errs() << "Failed to emit LLVM IR\n";
-    return -1;
+    return 1;
   }
 
   // Initialize LLVM targets.
@@ -189,13 +189,13 @@ int dumpLLVMIR(mlir::ModuleOp module) {
   auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
   if (!tmBuilderOrError) {
     llvm::errs() << "Could not create JITTargetMachineBuilder\n";
-    return -1;
+    return 1;
   }
 
   auto tmOrError = tmBuilderOrError->createTargetMachine();
   if (!tmOrError) {
     llvm::errs() << "Could not create TargetMachine\n";
-    return -1;
+    return 1;
   }
   mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(),
                                                         tmOrError.get().get());
@@ -236,6 +236,7 @@ int main(int argc, char **argv) {
     }
     default:
       llvm::errs() << "No action specified (parsing only?), use --emit=<action>\n";
+      return 1;
   }
 
   return 0;
