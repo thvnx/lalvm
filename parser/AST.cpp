@@ -14,7 +14,7 @@ static bool print_exception(bool or_silent) {
     free(exc_name);
     return true;
   } else if (!or_silent)
-    puts("Got no exception\n");
+    fputs("Got no exception\n", stderr);
   return false;
 }
 
