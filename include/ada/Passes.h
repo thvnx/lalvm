@@ -1,4 +1,4 @@
-//===- Passes.h - Toy Passes Definition -----------------------------------===//
+//===- Passes.h - Ada Passes Definition -----------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file exposes the entry points to create compiler passes for Toy.
+// This file exposes the entry points to create compiler passes for Ada.
 //
 //===----------------------------------------------------------------------===//
 
@@ -19,17 +19,11 @@ namespace mlir {
 class Pass;
 
 namespace ada {
-//std::unique_ptr<Pass> createShapeInferencePass();
 
-/// Create a pass for lowering to operations in the `Affine` and `Std` dialects,
-/// for a subset of the Toy IR (e.g. matmul).
-//std::unique_ptr<mlir::Pass> createLowerToAffinePass();
-
-/// Create a pass for lowering operations the remaining `Toy` operations, as
-/// well as `Affine` and `Std`, to the LLVM dialect for codegen.
+/// Create a pass for lowering Ada dialect operations to the LLVM dialect.
 std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
 
-} // namespace toy
+} // namespace ada
 } // namespace mlir
 
 #endif // ADA_PASSES_H

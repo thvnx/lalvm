@@ -19,11 +19,11 @@ class ModuleAST;
 
 mlir::Value visit_expr(ada_node &expr);
 
-/// Emit IR for the given Toy moduleAST, returns a newly created MLIR module
+/// Emit IR for the given Ada source, returns a newly created MLIR module
 /// or nullptr on failure.
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
                                           ada_node &moduleAST);
 
-} // namespace toy
+} // namespace ada
 
 #endif // ADA_MLIRGEN_H

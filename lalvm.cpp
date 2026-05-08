@@ -124,7 +124,7 @@ int dumpMLIR(libadalang::AdaAST ast) {
 int loadMLIR(libadalang::AdaAST ast,
              mlir::MLIRContext &context,
              mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  // Handle '.toy' input to the compiler.
+  // Handle '.ad[bs]' input to the compiler.
   if (inputType != InputType::MLIR &&
       !llvm::StringRef(inputFilename).ends_with(".mlir")) {
     if (!ast.isValid())
@@ -159,46 +159,7 @@ int loadAndProcessMLIR(libadalang::AdaAST ast,
     return error;
 
   mlir::PassManager pm(module.get()->getName());
-  // Apply any generic pass manager command line options and run the pipeline.
-  //if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
-  //  return 4;
-
-  // // Check to see what granularity of MLIR we are compiling to.
-  // bool isLoweringToAffine = emitAction >= Action::DumpMLIRAffine;
-  // bool isLoweringToLLVM = emitAction >= Action::DumpMLIRLLVM;
-
-  // if (enableOpt || isLoweringToAffine) {
-  //   // Inline all functions into main and then delete them.
-  //   pm.addPass(mlir::createInlinerPass());
-
-  //   // Now that there is only one function, we can infer the shapes of each of
-  //   // the operations.
-  //   mlir::OpPassManager &optPM = pm.nest<mlir::toy::FuncOp>();
-  //   optPM.addPass(mlir::createCanonicalizerPass());
-  //   optPM.addPass(mlir::toy::createShapeInferencePass());
-  //   optPM.addPass(mlir::createCanonicalizerPass());
-  //   optPM.addPass(mlir::createCSEPass());
-  // }
-
-  // if (isLoweringToAffine) {
-  //   // Partially lower the toy dialect.
-  //   pm.addPass(mlir::toy::createLowerToAffinePass());
-
-  //   // Add a few cleanups post lowering.
-  //   mlir::OpPassManager &optPM = pm.nest<mlir::func::FuncOp>();
-  //   optPM.addPass(mlir::createCanonicalizerPass());
-  //   optPM.addPass(mlir::createCSEPass());
-
-  //   // Add optimizations if enabled.
-  //   if (enableOpt) {
-  //     optPM.addPass(mlir::affine::createLoopFusionPass());
-  //     optPM.addPass(mlir::affine::createAffineScalarReplacementPass());
-  //   }
-  // }
-
-  //if (isLoweringToLLVM) {
-    // Finish lowering the toy IR to the LLVM dialect.
-    pm.addPass(mlir::ada::createLowerToLLVMPass());
+  pm.addPass(mlir::ada::createLowerToLLVMPass());
     // This is necessary to have line tables emitted and basic
     // debugger working. In the future we will add proper debug information
     // emission directly from our frontend.

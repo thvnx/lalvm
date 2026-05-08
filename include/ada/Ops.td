@@ -44,50 +44,6 @@ class Ada_Op<string mnemonic, list<Trait> traits = []> :
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-// We define a toy operation by inheriting from our base 'Ada_Op' class above.
-// Here we provide the mnemonic and a list of traits for the operation. The
-// constant operation is marked as 'Pure' as it is a pure operation
-// and may be removed if dead.
-def ConstantOp : Ada_Op<"constant", [Pure]> {
-  // Provide a summary and description for this operation. This can be used to
-  // auto-generate documentation of the operations within our dialect.
-  let summary = "constant";
-  let description = [{
-    Constant operation turns a literal into an SSA value. The data is attached
-    to the operation as an attribute. For example:
-
-    ```mlir
-      %0 = toy.constant dense<[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]>
-                        : tensor<2x3xf64>
-    ```
-  }];
-
-  // The constant operation takes an attribute as the only input.
-  let arguments = (ins F64ElementsAttr:$value);
-
-  // The constant operation returns a single value of TensorType.
-  let results = (outs F64Tensor);
-
-  // Indicate that the operation has a custom parser and printer method.
-  let hasCustomAssemblyFormat = 1;
-
-  // Add custom build methods for the constant operation. These method populates
-  // the `state` that MLIR uses to create operations, i.e. these are used when
-  // using `builder.create<ConstantOp>(...)`.
-  let builders = [
-    // Build a constant with a given constant tensor value.
-    OpBuilder<(ins "DenseElementsAttr":$value), [{
-      build($_builder, $_state, value.getType(), value);
-    }]>,
-
-    // Build a constant with a given constant floating-point value.
-    OpBuilder<(ins "double":$value)>
-  ];
-
-  // Indicate that additional verification for this operation is necessary.
-  let hasVerifier = 1;
-}
-
 //===----------------------------------------------------------------------===//
 // AddOp
 //===----------------------------------------------------------------------===//
@@ -204,45 +160,6 @@ def ProcOp : Ada_Op<"proc", [
 }
 
 //===----------------------------------------------------------------------===//
-// GenericCallOp
-//===----------------------------------------------------------------------===//
-
-def GenericCallOp : Ada_Op<"generic_call"> {
-  let summary = "generic call operation";
-  let description = [{
-    Generic calls represent calls to a user defined function that needs to
-    be specialized for the shape of its arguments. The callee name is attached
-    as a symbol reference via an attribute. The arguments list must match the
-    arguments expected by the callee. For example:
-
-    ```mlir
-     %4 = toy.generic_call @my_func(%1, %3)
-           : (tensor<2x3xf64>, tensor<2x3xf64>) -> tensor<*xf64>
-    ```
-
-    This is only valid if a function named "my_func" exists and takes two
-    arguments.
-  }];
-
-  // The generic call operation takes a symbol reference attribute as the
-  // callee, and inputs for the call.
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<F64Tensor>:$inputs);
-
-  // The generic call operation returns a single value of TensorType.
-  let results = (outs F64Tensor);
-
-  // Specialize assembly printing and parsing using a declarative format.
-  let assemblyFormat = [{
-    $callee `(` $inputs `)` attr-dict `:` functional-type($inputs, results)
-  }];
-
-  // Add custom build methods for the generic call operation.
-  let builders = [
-    OpBuilder<(ins "StringRef":$callee, "ArrayRef<Value>":$arguments)>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
 // MulOp
 //===----------------------------------------------------------------------===//
 
@@ -255,48 +172,6 @@ def MulOp : Ada_Op<"mul", [SameOperandsAndResultType]> {
   let hasCustomAssemblyFormat = 1;
   // No custom builder: SameOperandsAndResultType auto-generates
   // build(Value lhs, Value rhs) inferring result type from operands.
-}
-
-//===----------------------------------------------------------------------===//
-// PrintOp
-//===----------------------------------------------------------------------===//
-
-def PrintOp : Ada_Op<"print"> {
-  let summary = "print operation";
-  let description = [{
-    The "print" builtin operation prints a given input tensor, and produces
-    no results.
-  }];
-
-  // The print operation takes an input tensor to print.
-  let arguments = (ins F64Tensor:$input);
-
-  let assemblyFormat = "$input attr-dict `:` type($input)";
-}
-
-//===----------------------------------------------------------------------===//
-// ReshapeOp
-//===----------------------------------------------------------------------===//
-
-def ReshapeOp : Ada_Op<"reshape"> {
-  let summary = "tensor reshape operation";
-  let description = [{
-    Reshape operation is transforming its input tensor into a new tensor with
-    the same number of elements but different shapes. For example:
-
-    ```mlir
-       %0 = toy.reshape (%arg1 : tensor<10xf64>) to tensor<5x2xf64>
-    ```
-  }];
-
-  let arguments = (ins F64Tensor:$input);
-
-  // We expect that the reshape operation returns a statically shaped tensor.
-  let results = (outs StaticShapeTensorOf<[F64]>);
-
-  let assemblyFormat = [{
-    `(` $input `:` type($input) `)` attr-dict `to` type(results)
-  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -331,29 +206,6 @@ def ReturnOp : Ada_Op<"return", [Pure, Terminator]> {
   }];
 
   // Invoke a static verify method to verify this return operation.
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// TransposeOp
-//===----------------------------------------------------------------------===//
-
-def TransposeOp : Ada_Op<"transpose"> {
-  let summary = "transpose operation";
-
-  let arguments = (ins F64Tensor:$input);
-  let results = (outs F64Tensor);
-
-  let assemblyFormat = [{
-    `(` $input `:` type($input) `)` attr-dict `to` type(results)
-  }];
-
-  // Allow building a TransposeOp with from the input operand.
-  let builders = [
-    OpBuilder<(ins "Value":$input)>
-  ];
-
-  // Invoke a static verify method to verify this transpose operation.
   let hasVerifier = 1;
 }
 

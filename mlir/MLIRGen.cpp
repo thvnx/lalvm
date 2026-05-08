@@ -4,7 +4,6 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LogicalResult.h"
-//#include "toy/AST.h"
 #include "ada/Dialect.h"
 
 #include "mlir/IR/Builders.h"
@@ -12,7 +11,6 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
-//#include "toy/Lexer.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
@@ -45,17 +43,12 @@ using llvm::Twine;
 
 namespace {
 
-/// Implementation of a simple MLIR emission from the Toy AST.
-///
-/// This will emit operations that are specific to the Toy language, preserving
-/// the semantics of the language and (hopefully) allow to perform accurate
-/// analysis and transformation based on these high level semantics.
+/// Implementation of MLIR emission from the Ada AST.
 class MLIRGenImpl {
 public:
   MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
 
-  /// Public API: convert the AST for a Toy module (source file) to an MLIR
-  /// Module operation.
+  /// Public API: convert the AST for an Ada source file to an MLIR Module.
   mlir::ModuleOp mlirGen(ada_node &moduleAST) {
     // We create an empty MLIR module and codegen functions one at a time and
     // add them to the module.
@@ -69,7 +62,7 @@ public:
 
     // Verify the module after we have finished constructing it, this will check
     // the structural properties of the IR and invoke any specific verifiers we
-    // have on the Toy operations.
+    // have on the Ada operations.
     if (failed(mlir::verify(theModule))) {
       theModule.emitError("module verification error");
       return nullptr;
@@ -79,7 +72,7 @@ public:
   }
 
 private:
-  /// A "module" matches a Toy source file: containing a list of functions.
+  /// A "module" matches an Ada source file: containing a list of subprograms.
   mlir::ModuleOp theModule;
 
   /// The builder is a helper class to create IR inside a function. The builder
@@ -483,4 +476,4 @@ mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
   return MLIRGenImpl(context).mlirGen(moduleAST);
 }
 
-} // namespace toy
+} // namespace ada

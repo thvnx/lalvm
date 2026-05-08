@@ -8,12 +8,12 @@
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
-/// Include the auto-generated header file containing the declaration of the toy
+/// Include the auto-generated header file containing the declaration of the Ada
 /// dialect.
 #include "ada/Dialect.h.inc"
 
 /// Include the auto-generated header file containing the declarations of the
-/// toy operations.
+/// Ada operations.
 #define GET_OP_CLASSES
 #include "ada/Ops.h.inc"
 

@@ -1,4 +1,4 @@
-//===- Dialect.cpp - Toy IR Dialect registration in MLIR ------------------===//
+//===- Dialect.cpp - Ada dialect registration in MLIR ---------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the dialect for the Toy IR: custom type parsing and
+// This file implements the Ada dialect: custom assembly format and
 // operation verification.
 //
 //===----------------------------------------------------------------------===//
@@ -26,7 +26,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
-#include <algorithm>
 #include <string>
 
 using namespace mlir;
@@ -35,7 +34,7 @@ using namespace mlir::ada;
 #include "ada/Dialect.cpp.inc"
 
 //===----------------------------------------------------------------------===//
-// ToyDialect
+// AdaDialect
 //===----------------------------------------------------------------------===//
 
 /// Dialect initialization, the instance will be owned by the context. This is
@@ -48,7 +47,7 @@ void AdaDialect::initialize() {
 }
 
 //===----------------------------------------------------------------------===//
-// Toy Operations
+// Ada Operations
 //===----------------------------------------------------------------------===//
 
 /// A generalized parser for binary operations. This parses the different forms
@@ -100,76 +99,6 @@ static void printBinaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
 }
 
 //===----------------------------------------------------------------------===//
-// ConstantOp
-//===----------------------------------------------------------------------===//
-
-/// Build a constant operation.
-/// The builder is passed as an argument, so is the state that this method is
-/// expected to fill in order to build the operation.
-void ConstantOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                       double value) {
-  auto dataType = RankedTensorType::get({}, builder.getF64Type());
-  auto dataAttribute = DenseElementsAttr::get(dataType, value);
-  ConstantOp::build(builder, state, dataType, dataAttribute);
-}
-
-/// The 'OpAsmParser' class provides a collection of methods for parsing
-/// various punctuation, as well as attributes, operands, types, etc. Each of
-/// these methods returns a `ParseResult`. This class is a wrapper around
-/// `LogicalResult` that can be converted to a boolean `true` value on failure,
-/// or `false` on success. This allows for easily chaining together a set of
-/// parser rules. These rules are used to populate an `mlir::OperationState`
-/// similarly to the `build` methods described above.
-mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser,
-                                    mlir::OperationState &result) {
-  mlir::DenseElementsAttr value;
-  if (parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseAttribute(value, "value", result.attributes))
-    return failure();
-
-  result.addTypes(value.getType());
-  return success();
-}
-
-/// The 'OpAsmPrinter' class is a stream that allows for formatting
-/// strings, attributes, operands, types, etc.
-void ConstantOp::print(mlir::OpAsmPrinter &printer) {
-  printer << " ";
-  printer.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"value"});
-  printer << getValue();
-}
-
-/// Verifier for the constant operation. This corresponds to the
-/// `let hasVerifier = 1` in the op definition.
-llvm::LogicalResult ConstantOp::verify() {
-  // If the return type of the constant is not an unranked tensor, the shape
-  // must match the shape of the attribute holding the data.
-  auto resultType = llvm::dyn_cast<mlir::RankedTensorType>(getResult().getType());
-  if (!resultType)
-    return success();
-
-  // Check that the rank of the attribute type matches the rank of the constant
-  // result type.
-  auto attrType = llvm::cast<mlir::RankedTensorType>(getValue().getType());
-  if (attrType.getRank() != resultType.getRank()) {
-    return emitOpError("return type must match the one of the attached value "
-                       "attribute: ")
-           << attrType.getRank() << " != " << resultType.getRank();
-  }
-
-  // Check that each of the dimensions match between the two types.
-  for (int dim = 0, dimE = attrType.getRank(); dim < dimE; ++dim) {
-    if (attrType.getShape()[dim] != resultType.getShape()[dim]) {
-      return emitOpError(
-                 "return type shape mismatches its attribute at dimension ")
-             << dim << ": " << attrType.getShape()[dim]
-             << " != " << resultType.getShape()[dim];
-    }
-  }
-  return mlir::success();
-}
-
-//===----------------------------------------------------------------------===//
 // AddOp
 //===----------------------------------------------------------------------===//
 
@@ -218,19 +147,6 @@ void ProcOp::print(mlir::OpAsmPrinter &p) {
   mlir::function_interface_impl::printFunctionOp(
       p, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
       getArgAttrsAttrName(), getResAttrsAttrName());
-}
-
-//===----------------------------------------------------------------------===//
-// GenericCallOp
-//===----------------------------------------------------------------------===//
-
-void GenericCallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                          StringRef callee, ArrayRef<mlir::Value> arguments) {
-  // Generic call always returns an unranked Tensor initially.
-  state.addTypes(UnrankedTensorType::get(builder.getF64Type()));
-  state.addOperands(arguments);
-  state.addAttribute("callee",
-                     mlir::SymbolRefAttr::get(builder.getContext(), callee));
 }
 
 //===----------------------------------------------------------------------===//
@@ -332,39 +248,12 @@ llvm::LogicalResult ReturnOp::verify() {
   auto inputType = *operand_type_begin();
   auto resultType = results.front();
 
-  // Check that the result type of the function matches the operand type.
-  if (inputType == resultType || llvm::isa<mlir::UnrankedTensorType>(inputType) ||
-      llvm::isa<mlir::UnrankedTensorType>(resultType))
-    return mlir::success();
-
-  return emitError() << "type of return operand (" << inputType
-                     << ") doesn't match function result type (" << resultType
-                     << ")";
-}
-
-//===----------------------------------------------------------------------===//
-// TransposeOp
-//===----------------------------------------------------------------------===//
-
-void TransposeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                        mlir::Value value) {
-  state.addTypes(UnrankedTensorType::get(builder.getF64Type()));
-  state.addOperands(value);
-}
-
-llvm::LogicalResult TransposeOp::verify() {
-  auto inputType = llvm::dyn_cast<RankedTensorType>(getOperand().getType());
-  auto resultType = llvm::dyn_cast<RankedTensorType>(getType());
-  if (!inputType || !resultType)
-    return mlir::success();
-
-  auto inputShape = inputType.getShape();
-  if (!std::equal(inputShape.begin(), inputShape.end(),
-                  resultType.getShape().rbegin())) {
-    return emitError()
-           << "expected result shape to be a transpose of the input";
-  }
+  if (inputType != resultType)
+    return emitError() << "type of return operand (" << inputType
+                       << ") doesn't match function result type (" << resultType
+                       << ")";
   return mlir::success();
+
 }
 
 //===----------------------------------------------------------------------===//
