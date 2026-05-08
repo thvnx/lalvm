@@ -25,10 +25,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "ada/MLIRGen.h"
 #include "lal/AST.h"
-
-using namespace std;
 
 
 // Command line
@@ -48,7 +45,7 @@ namespace {
 static cl::opt<enum InputType>
 inputType("x",
           cl::init(Ada),
-          cl::desc("Decided the kind of output desired"),
+          cl::desc("Decides the kind of input to load"),
           cl::values(clEnumValN(Ada, "Ada",
                                 "load the input file as a Ada source.")),
           cl::values(clEnumValN(MLIR, "mlir",
