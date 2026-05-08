@@ -50,8 +50,9 @@ void AdaDialect::initialize() {
 // Ada Operations
 //===----------------------------------------------------------------------===//
 
-/// A generalized parser for binary operations. This parses the different forms
-/// of 'printBinaryOp' below.
+/// Shared parser for add/sub/mul. Accepts two equivalent text formats:
+///   %0 = ada.add %a, %b : i32              (all types identical — common case)
+///   %0 = ada.add %a, %b : (i32, i32) -> i32  (functional form — more explicit)
 static mlir::ParseResult parseBinaryOp(mlir::OpAsmParser &parser,
                                        mlir::OperationState &result) {
   SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
@@ -79,8 +80,8 @@ static mlir::ParseResult parseBinaryOp(mlir::OpAsmParser &parser,
   return mlir::success();
 }
 
-/// A generalized printer for binary operations. It prints in two different
-/// forms depending on if all of the types match.
+/// Shared printer for add/sub/mul. Emits the compact "… : type" form when all
+/// operand and result types are identical, and the functional form otherwise.
 static void printBinaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
   printer << " " << op->getOperands();
   printer.printOptionalAttrDict(op->getAttrs());
@@ -127,6 +128,8 @@ void SubOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 void ProcOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::FunctionType type,
                    llvm::ArrayRef<mlir::NamedAttribute> attrs) {
+  // buildWithEntryBlock is provided by FunctionOpInterface. It sets all the
+  // required attributes and creates the entry block with the right arg types.
   buildWithEntryBlock(builder, state, name, type, attrs, type.getInputs());
 }
 
@@ -200,6 +203,8 @@ void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
+// ada.return is used by both ada.func (with one operand) and ada.proc (with
+// none). The parser therefore treats the operand as optional.
 mlir::ParseResult ReturnOp::parse(mlir::OpAsmParser &parser,
                                   mlir::OperationState &result) {
   mlir::OpAsmParser::UnresolvedOperand operand;

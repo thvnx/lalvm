@@ -28,11 +28,8 @@ def Ada_Dialect : Dialect {
   let cppNamespace = "::mlir::ada";
 }
 
-// Base class for toy dialect operations. This operation inherits from the base
-// `Op` class in OpBase.td, and provides:
-//   * The parent dialect of the operation.
-//   * The mnemonic for the operation, or the name without the dialect prefix.
-//   * A list of traits for the operation.
+// Base class for all Ada dialect operations. Binds each op to the Ada dialect
+// and its mnemonic (the part after the "ada." prefix in MLIR text form).
 class Ada_Op<string mnemonic, list<Trait> traits = []> :
     Op<Ada_Dialect, mnemonic, traits>;
 
@@ -41,13 +38,12 @@ class Ada_Op<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// ConstantOp
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
 // AddOp
 //===----------------------------------------------------------------------===//
 
+// SameOperandsAndResultType constrains the op so that all operands and the
+// result share one type. It also auto-generates build(Value lhs, Value rhs)
+// that infers the result type from the operands, so no custom builder is needed.
 def AddOp : Ada_Op<"add", [SameOperandsAndResultType]> {
   let summary = "addition operation";
 
@@ -55,8 +51,6 @@ def AddOp : Ada_Op<"add", [SameOperandsAndResultType]> {
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
-  // No custom builder: SameOperandsAndResultType auto-generates
-  // build(Value lhs, Value rhs) inferring result type from operands.
 }
 
 //===----------------------------------------------------------------------===//
@@ -70,14 +64,16 @@ def SubOp : Ada_Op<"sub", [SameOperandsAndResultType]> {
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
-  // No custom builder: SameOperandsAndResultType auto-generates
-  // build(Value lhs, Value rhs) inferring result type from operands.
 }
 
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 
+// FunctionOpInterface provides the standard function-like behaviour (argument
+// types, result types, callable region). IsolatedFromAbove prevents the region
+// from capturing SSA values defined outside the function, matching Ada's
+// scoping rules and enabling independent analysis/optimization of each function.
 def FuncOp : Ada_Op<"func", [
     FunctionOpInterface, IsolatedFromAbove
   ]> {
@@ -124,6 +120,8 @@ def FuncOp : Ada_Op<"func", [
   }];
 
   let hasCustomAssemblyFormat = 1;
+  // skipDefaultBuilders: the ODS-generated default builder doesn't know how to
+  // create the entry block, so we provide our own via buildWithEntryBlock.
   let skipDefaultBuilders = 1;
 }
 
@@ -131,11 +129,15 @@ def FuncOp : Ada_Op<"func", [
 // ProcOp
 //===----------------------------------------------------------------------===//
 
+// Ada procedures are like functions but with no return value. We use a separate
+// op (rather than a FuncOp with empty result list) so that the verifier can
+// enforce that ada.return inside a procedure carries no operand.
 def ProcOp : Ada_Op<"proc", [
     FunctionOpInterface, IsolatedFromAbove
   ]> {
   let summary = "user defined procedure operation";
 
+  // Same layout as FuncOp: required by FunctionOpInterface.
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     TypeAttrOf<FunctionType>:$function_type,
@@ -170,14 +172,15 @@ def MulOp : Ada_Op<"mul", [SameOperandsAndResultType]> {
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
-  // No custom builder: SameOperandsAndResultType auto-generates
-  // build(Value lhs, Value rhs) inferring result type from operands.
 }
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
+// Terminator marks this op as the mandatory last op in a basic block.
+// Pure means it has no side effects and can be removed if its result is unused
+// (vacuously true here since ada.return produces no results).
 def ReturnOp : Ada_Op<"return", [Pure, Terminator]> {
   let summary = "return operation";
   let description = [{

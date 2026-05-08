@@ -152,6 +152,8 @@ int loadMLIR(libadalang::AdaAST ast,
   return 0;
 }
 
+// Full compilation pipeline: Ada source → Ada MLIR dialect → LLVM dialect.
+// The MLIR module is modified in place; the caller then translates it to LLVM IR.
 int loadAndProcessMLIR(libadalang::AdaAST ast,
                        mlir::MLIRContext &context,
                        mlir::OwningOpRef<mlir::ModuleOp> &module) {
@@ -159,12 +161,10 @@ int loadAndProcessMLIR(libadalang::AdaAST ast,
     return error;
 
   mlir::PassManager pm(module.get()->getName());
+  // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
-    // This is necessary to have line tables emitted and basic
-    // debugger working. In the future we will add proper debug information
-    // emission directly from our frontend.
-    pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
-  //}
+  // Attach DI scope metadata so debuggers can map LLVM IR back to source lines.
+  pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
 
   if (mlir::failed(pm.run(*module)))
     return 8;

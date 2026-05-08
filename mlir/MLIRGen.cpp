@@ -43,7 +43,8 @@ using llvm::Twine;
 
 namespace {
 
-/// Implementation of MLIR emission from the Ada AST.
+/// Walks a Libadalang AST and emits Ada dialect MLIR operations into a module.
+/// The public entry point is mlirGen() at the bottom of this file.
 class MLIRGenImpl {
 public:
   MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
@@ -80,10 +81,10 @@ private:
   /// the next operations will be introduced.
   mlir::OpBuilder builder;
 
-  /// The symbol table maps a variable name to a value in the current scope.
-  /// Entering a function creates a new scope, and the function arguments are
-  /// added to the mapping. When the processing of a function is terminated, the
-  /// scope is destroyed and the mappings created in this scope are dropped.
+  // Maps variable names to their current SSA Value within the active scope.
+  // ScopedHashTable automatically pops bindings when a scope is destroyed, which
+  // handles Ada's block scoping. In SSA form, assignment rebinds the name to a
+  // new Value rather than mutating in place.
   llvm::ScopedHashTable<StringRef, mlir::Value> symbolTable;
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
@@ -118,6 +119,10 @@ private:
     return mlir::success();
   }
 
+  // Recursive AST walker. Handles the node kinds we know how to codegen;
+  // everything else is ignored at this level and its children are visited.
+  // Returning early (without visiting children) stops descent into a subtree —
+  // used when a handler already walked it (e.g. mlirGenSubpBody visits stmts).
   void visit(ada_node &moduleAST) {
     switch (ada_node_kind (&moduleAST)) {
     case ada_subp_body:
@@ -207,6 +212,9 @@ private:
   }
 
   mlir::Value mlirGenIntLiteral(ada_node &node) {
+    // p_denoted_value gives us the evaluated integer value as a big integer.
+    // We convert it through its UTF-8 text representation since there is no
+    // direct C API to extract a 64-bit integer from ada_big_integer.
     ada_big_integer bigint;
     if (!ada_int_literal_p_denoted_value(&node, &bigint)) {
       emitError(loc(node), "failed to evaluate integer literal");
@@ -240,9 +248,13 @@ private:
     return nullptr;
   }
 
-  /// Emit a new function or procedure and add it to the MLIR module.
+  /// Lower one Ada subprogram body to an ada.func or ada.proc operation.
+  /// This is the main codegen entry point for a subprogram: it creates the
+  /// function op, binds argument SSA values in the symbol table, then walks
+  /// the statement list to emit the body.
   mlir::Operation *mlirGenSubpBody(ada_node &subp_body) {
-    // Create a scope in the symbol table to hold variable declarations.
+    // Push a new scope so that argument names and local variables are cleaned
+    // up automatically when we leave this subprogram.
     ScopedHashTableScope<llvm::StringRef, mlir::Value> varScope(symbolTable);
 
     ada_node ada_subp_spec;
@@ -428,23 +440,29 @@ private:
   }
 
 
-  /// Resolve an Ada type expression node to an MLIR type.
+  /// Resolve an Ada type expression (e.g. a SubtypeIndication node like
+  /// "Long_Integer") to the corresponding MLIR type using Libadalang's
+  /// semantic analysis. Falls back to i32 on failure or unknown types.
   mlir::Type getMLIRType(ada_node &type_expr) {
+    // p_designated_type_decl resolves a type expression to its declaration.
+    // This works on SubtypeIndication nodes (parameter / return types), unlike
+    // p_expression_type which only works on value expressions.
     ada_node type_decl;
     if (!ada_type_expr_p_designated_type_decl(&type_expr, &type_decl) ||
         ada_node_is_null(&type_decl))
       return builder.getI32Type();
 
+    // Follow the subtype chain to the canonical (base) type so that subtypes
+    // of Integer map to the same MLIR type as Integer itself.
+    // TODO: nullptr would be the correct origin but crashes with a
+    // CONSTRAINT_ERROR in libadalang-implementation-c.adb; using self for now.
     ada_node canon_type;
-    // TODO: would like to use nullptr for origin (arg 2) but fails with
-    //
-    // raised CONSTRAINT_ERROR : libadalang-implementation-c.adb:14228 access check failed
-    //
-    // using self as origin for now.
     if (!ada_base_type_decl_p_canonical_type(&type_decl, &type_decl, &canon_type) ||
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
+    // f_name gives the defining identifier of the type declaration, whose
+    // lower-cased text we use to drive the mapping below.
     ada_node type_name;
     if (!ada_base_type_decl_f_name(&canon_type, &type_name) ||
         ada_node_is_null(&type_name))

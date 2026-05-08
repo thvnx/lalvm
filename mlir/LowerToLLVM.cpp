@@ -38,6 +38,18 @@
 
 using namespace mlir;
 
+// This file implements a single lowering pass that converts the Ada dialect
+// (plus the Arith and Func dialects it relies on) directly to the LLVM dialect.
+// The pass uses FullConversion, meaning every op must be lowered — no Ada ops
+// are allowed to survive.
+//
+// Lowering chain overview:
+//   ada.func / ada.proc  →  func.func
+//   ada.return           →  func.return
+//   ada.add/sub/mul      →  arith.addi/subi/muli  (integers)
+//                           arith.addf/subf/mulf  (floats)
+//   func.func / arith.*  →  LLVM dialect  (via upstream conversion patterns)
+
 //===----------------------------------------------------------------------===//
 // AdaToLLVMLoweringPass
 //===----------------------------------------------------------------------===//
@@ -74,6 +86,9 @@ struct ReturnOpLowering : public OpRewritePattern<ada::ReturnOp> {
 // AdaToLLVM RewritePatterns: Binary operations
 //===----------------------------------------------------------------------===//
 
+// Generic lowering for binary arithmetic ops. The Ada dialect uses a single
+// op per operation (add/sub/mul) that is type-agnostic; the arith dialect
+// has separate integer and float variants, so we dispatch on the operand type.
 template <typename AdaOp, typename IntOp, typename FloatOp>
 struct NumericBinaryOpLowering : public OpRewritePattern<AdaOp> {
   using OpRewritePattern<AdaOp>::OpRewritePattern;
@@ -98,6 +113,9 @@ using MulOpLowering = NumericBinaryOpLowering<ada::MulOp, arith::MulIOp, arith::
 // AdaToLLVM RewritePatterns: Func operations
 //===----------------------------------------------------------------------===//
 
+// ada.func and ada.proc are isomorphic to func.func at this level; we just
+// swap the op type and move the region over. The upstream FuncToLLVM pass then
+// handles the func.func → llvm.func conversion.
 struct FuncOpLowering : public OpConversionPattern<ada::FuncOp> {
   using OpConversionPattern<ada::FuncOp>::OpConversionPattern;
 
@@ -143,21 +161,13 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   // The first thing to define is the conversion target. This will define the
   // final target for this lowering. For this lowering, we are only targeting
   // the LLVM dialect.
+  // LLVMConversionTarget marks all LLVM dialect ops as legal and everything
+  // else (including ada.*) as illegal, driving the full conversion.
   LLVMConversionTarget target(getContext());
-
-
-  // We define the specific operations, or dialects, that are legal targets for
-  // this lowering. In our case, we are lowering to a combination of the
-  // `Affine`, `Arith`, `Func`, and `MemRef` dialects.
-  //target.addLegalDialect<arith::ArithDialect, func::FuncDialect>();
-
   target.addLegalOp<ModuleOp>();
 
-  // During this lowering, we will also be lowering the MemRef types, that are
-  // currently being operated on, to a representation in LLVM. To perform this
-  // conversion we use a TypeConverter as part of the lowering. This converter
-  // details how one type maps to another. This is necessary now that we will be
-  // doing more complicated lowerings, involving loop region arguments.
+  // LLVMTypeConverter maps MLIR types (i32, f64, …) to their LLVM equivalents.
+  // It is threaded through the upstream conversion patterns that need it.
   LLVMTypeConverter typeConverter(&getContext());
 
   // Provide the patterns used for lowering.
