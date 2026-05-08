@@ -76,48 +76,6 @@ int dumpAST(libadalang::AdaAST ast) {
   return 0;
 }
 
-int dumpMLIR(libadalang::AdaAST ast) {
-  mlir::MLIRContext context;
-  // Load our Dialect in this MLIR Context.
-  context.getOrLoadDialect<mlir::ada::AdaDialect>();
-  context.getOrLoadDialect<mlir::arith::ArithDialect>();
-
-  // Handle '.ad[bs]' input to the compiler.
-  if (inputType != InputType::MLIR &&
-      !llvm::StringRef(inputFilename).ends_with(".mlir")) {
-    if (!ast.isValid())
-      return 1;
-    mlir::OwningOpRef<mlir::ModuleOp> module = ada::mlirGen(context, ast.getUnitRootNode());
-    if (!module)
-      return 1;
-
-    module->print(llvm::outs());
-    llvm::outs() << "\n";
-    return 0;
-  }
-
-  // Otherwise, the input is '.mlir'.
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-    llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
-  if (std::error_code ec = fileOrErr.getError()) {
-    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
-    return 1;
-  }
-
-  // Parse the input mlir.
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
-  mlir::OwningOpRef<mlir::ModuleOp> module =
-    mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
-  if (!module) {
-    llvm::errs() << "Error can't load file " << inputFilename << "\n";
-    return 1;
-  }
-
-  module->dump();
-  return 0;
-}
-
 int loadMLIR(libadalang::AdaAST ast,
              mlir::MLIRContext &context,
              mlir::OwningOpRef<mlir::ModuleOp> &module) {
@@ -149,8 +107,21 @@ int loadMLIR(libadalang::AdaAST ast,
   return 0;
 }
 
+int dumpMLIR(libadalang::AdaAST ast) {
+  mlir::MLIRContext context;
+  context.getOrLoadDialect<mlir::ada::AdaDialect>();
+  context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  mlir::OwningOpRef<mlir::ModuleOp> module;
+  if (int error = loadMLIR(ast, context, module))
+    return error;
+  module->print(llvm::outs());
+  llvm::outs() << "\n";
+  return 0;
+}
+
 // Full compilation pipeline: Ada source → Ada MLIR dialect → LLVM dialect.
 // The MLIR module is modified in place; the caller then translates it to LLVM IR.
+// Pre-condition: context must have AdaDialect and ArithDialect loaded.
 int loadAndProcessMLIR(libadalang::AdaAST ast,
                        mlir::MLIRContext &context,
                        mlir::OwningOpRef<mlir::ModuleOp> &module) {
@@ -200,14 +171,7 @@ int dumpLLVMIR(mlir::ModuleOp module) {
   mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(),
                                                         tmOrError.get().get());
 
-  // /// Optionally run an optimization pipeline over the llvm module.
-  // auto optPipeline = mlir::makeOptimizingTransformer(
-  //   /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
-  //   /*targetMachine=*/nullptr);
-  // if (auto err = optPipeline(llvmModule.get())) {
-  //   llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
-  //   return -1;
-  // }
+  // TODO: add an optional optimization pipeline via mlir::makeOptimizingTransformer.
   llvm::outs() << *llvmModule << "\n";
   return 0;
 }
