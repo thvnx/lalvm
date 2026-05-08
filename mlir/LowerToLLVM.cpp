@@ -121,6 +121,10 @@ struct FuncOpLowering : public OpConversionPattern<ada::FuncOp> {
     // Create a new func.func function, with the same region.
     auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
                                                     op.getFunctionType());
+    if (ArrayAttr argAttrs = op.getArgAttrsAttr())
+      func.setAllArgAttrs(argAttrs);
+    if (ArrayAttr resAttrs = op.getResAttrsAttr())
+      func.setAllResultAttrs(resAttrs);
     rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
     rewriter.eraseOp(op);
     return success();
@@ -135,6 +139,8 @@ struct ProcOpLowering : public OpConversionPattern<ada::ProcOp> {
                   ConversionPatternRewriter &rewriter) const final {
     auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
                                                     op.getFunctionType());
+    if (ArrayAttr argAttrs = op.getArgAttrsAttr())
+      func.setAllArgAttrs(argAttrs);
     rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
     rewriter.eraseOp(op);
     return success();
