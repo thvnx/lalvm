@@ -33,8 +33,6 @@
 #include <vector>
 
 
-//using namespace mlir::ada;
-//using namespace ada;
 
 using llvm::ArrayRef;
 using llvm::cast;
@@ -405,20 +403,6 @@ private:
     }
 
     std::vector<ada_node> args_v;
-
-    // auto protoArgs = funcAST.getProto()->getArgs();
-    // ada_node params, params_l;
-    // ada_subp_spec_f_subp_params (&ada_subp_spec, &params);
-    // ada_params_f_params (&params, &params_l);
-
-    // unsigned i, count = ada_node_children_count(&params_l);
-    // for (i = 0; i < count; ++i)
-    //   {
-    //     ada_node child;
-    //     //TODO check return value
-    //     ada_node_child(&params, i, &child);
-    //     args_v.push_back(&child);
-    //   }
 
     ada_node_array params;
     ada_node ids;
