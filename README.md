@@ -10,9 +10,23 @@ Ada source → Libadalang AST → Ada MLIR dialect → Intermediate dialects →
 
 ## Building
 
+Copy the example user presets file and fill in the paths for your environment:
+
 ```sh
-./build.sh
+cp CMakeUserPresets.json.example CMakeUserPresets.json
+# edit CMakeUserPresets.json: set LIBADALANG_INCLUDE_DIR, MLIR_DIR, compilers, lit
 ```
+
+Then configure and build:
+
+```sh
+cmake --preset=debug
+cmake --build --preset=debug
+```
+
+`CMakeUserPresets.json` is gitignored — each developer maintains their own copy.
+`CMakePresets.json` is committed and holds the shared build settings (Ninja, Debug
+mode, assertions enabled).
 
 ## Usage
 
@@ -58,7 +72,7 @@ file in `test/` carries its own `RUN` and `CHECK` directives.
 
 ```sh
 pip install lit   # one-time
-cmake --build build --target check-lalvm
+cmake --build --preset=debug --target check-lalvm
 ```
 
 ## Dependencies

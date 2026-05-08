@@ -1,0 +1,29 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "LIBADALANG_INCLUDE_DIR": "/path/to/libadalang/build/src",
+        "MLIR_DIR": "/usr/lib/llvm-21/lib/cmake/mlir",
+        "CMAKE_C_COMPILER": "clang-21",
+        "CMAKE_CXX_COMPILER": "clang++-21",
+        "LLVM_EXTERNAL_LIT": "/usr/bin/lit"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": {"outputOnFailure": true}
+    }
+  ]
+}
