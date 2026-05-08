@@ -1,3 +1,4 @@
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 #include "ada/Dialect.h"
@@ -82,6 +83,7 @@ int dumpMLIR(libadalang::AdaAST ast) {
   mlir::MLIRContext context;
   // Load our Dialect in this MLIR Context.
   context.getOrLoadDialect<mlir::ada::AdaDialect>();
+  context.getOrLoadDialect<mlir::arith::ArithDialect>();
 
   // Handle '.ad[bs]' input to the compiler.
   if (inputType != InputType::MLIR &&
@@ -267,6 +269,7 @@ int main(int argc, char **argv) {
       mlir::MLIRContext context;
       // Load our Dialect in this MLIR Context.
       context.getOrLoadDialect<mlir::ada::AdaDialect>();
+      context.getOrLoadDialect<mlir::arith::ArithDialect>();
       mlir::OwningOpRef<mlir::ModuleOp> module;
       if (int error = loadAndProcessMLIR(ast, context, module))
         return error;

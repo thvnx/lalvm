@@ -14,6 +14,8 @@
 #include "mlir/IR/Verifier.h"
 //#include "toy/Lexer.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+
 #include "llvm/Support/Debug.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -205,10 +207,29 @@ private:
     return nullptr;
   }
 
+  mlir::Value mlirGenIntLiteral(ada_node &node) {
+    ada_big_integer bigint;
+    if (!ada_int_literal_p_denoted_value(&node, &bigint)) {
+      emitError(loc(node), "failed to evaluate integer literal");
+      return nullptr;
+    }
+    ada_text text;
+    ada_big_integer_text(bigint, &text);
+    char *str;
+    size_t length;
+    ada_text_to_utf8(&text, &str, &length);
+    str[length] = '\0';
+    int64_t value = std::stoll(str);
+    ada_big_integer_decref(bigint);
+    return builder.create<mlir::arith::ConstantIntOp>(loc(node), value, 32);
+  }
+
   mlir::Value visit_expr(ada_node &expr) {
     switch (ada_node_kind (&expr)) {
     case ada_identifier:
-      return mlirGenVariable(expr);//mlir::Value();
+      return mlirGenVariable(expr);
+    case ada_int_literal:
+      return mlirGenIntLiteral(expr);
     case ada_bin_op:
       return mlirGenBinOp(expr);
     default:
