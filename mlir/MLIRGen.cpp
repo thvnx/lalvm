@@ -136,6 +136,10 @@ private:
   // everything else is ignored at this level and its children are visited.
   // Returning early (without visiting children) stops descent into a subtree —
   // used when a handler already walked it (e.g. mlirGenSubpBody visits stmts).
+  //
+  // Known limitation: unrecognised top-level node kinds (ada_package_body,
+  // ada_compilation_unit, etc.) are silently skipped. A file containing only
+  // a package will produce an empty module with no diagnostic.
   void visit(ada_node &moduleAST) {
     switch (ada_node_kind (&moduleAST)) {
     case ada_subp_body:
@@ -508,7 +512,12 @@ private:
   }
 
   /// Emit an assignment statement. In SSA form this rebinds the name to the
-  /// new value; out-parameter write-back semantics are not yet implemented.
+  /// new value.
+  ///
+  /// Known limitation: `in out` parameter write-back is not implemented.
+  /// The new value is stored in the local symbol table only; it is never
+  /// written back to the caller's variable. Any code relying on `in out`
+  /// semantics will silently produce wrong results.
   llvm::LogicalResult mlirGenAssign(ada_node &assign_stmt) {
     ada_node dest_node, expr_node;
     ada_assign_stmt_f_dest(&assign_stmt, &dest_node);
