@@ -26,7 +26,6 @@
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
-#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -71,11 +70,6 @@ struct ReturnOpLowering : public OpRewritePattern<ada::ReturnOp> {
 
   LogicalResult matchAndRewrite(ada::ReturnOp op,
                                 PatternRewriter &rewriter) const final {
-    // During this lowering, we expect that all function calls have been
-    // inlined.
-    //if (op.hasOperand())
-    //  return failure();
-
     // We lower "ada.return" directly to "func.return".
     rewriter.replaceOpWithNewOp<func::ReturnOp>(op, op.getOperands());
     return success();
@@ -122,18 +116,6 @@ struct FuncOpLowering : public OpConversionPattern<ada::FuncOp> {
   LogicalResult
   matchAndRewrite(ada::FuncOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
-    // // We only lower the main function as we expect that all other functions
-    // // have been inlined.
-    // if (op.getName() != "main")
-    //   return failure();
-
-    // // Verify that the given main has no inputs and results.
-    // if (op.getNumArguments() || op.getFunctionType().getNumResults()) {
-    //   return rewriter.notifyMatchFailure(op, [](Diagnostic &diag) {
-    //     diag << "expected 'main' to have 0 inputs and 0 results";
-    //   });
-    // }
-
     // Create a new func.func function, with the same region.
     auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
                                                     op.getFunctionType());
@@ -172,7 +154,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   // Provide the patterns used for lowering.
   RewritePatternSet patterns(&getContext());
-  populateSCFToControlFlowConversionPatterns(patterns);
+  // TODO: add populateSCFToControlFlowConversionPatterns once the Ada codegen
+  // emits SCF ops (e.g. for if/loop statements).
   mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
