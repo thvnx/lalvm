@@ -105,21 +105,27 @@ private:
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(ada_node &node) {
+    // TODO: MLIR provides richer location kinds (NameLoc, FusedLoc,
+    // CallSiteLoc, etc.) that could be used to improve diagnostics and
+    // debug info.
+
     ada_source_location_range loc_range;
     ada_node_sloc_range(&node, &loc_range);
 
-    ada_source_location loc = loc_range.start;
+    ada_source_location loc_start = loc_range.start;
+    ada_source_location loc_end = loc_range.end;
     char *filename = ada_unit_filename(ada_node_unit(&node));
 
     // TODO find a way on how to enable -debug command line option support:
     //  requires a debug build of LLVM
-    LLVM_DEBUG(llvm::dbgs()
-               << loc.line << ":" << loc.column << " (" << filename << ")");
+    LLVM_DEBUG(llvm::dbgs() << loc_start.line << ":" << loc_start.column << " ("
+                            << filename << ")");
 
     // getStringAttr copies the string into the MLIR context, so filename can
     // be freed immediately.
-    auto result = mlir::FileLineColLoc::get(builder.getStringAttr(filename),
-                                            loc.line, loc.column);
+    auto result = mlir::FileLineColRange::get(builder.getStringAttr(filename),
+                                              loc_start.line, loc_start.column,
+                                              loc_end.line, loc_end.column);
     free(filename);
     return result;
   }
