@@ -87,8 +87,10 @@ def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
 // types, result types, callable region). IsolatedFromAbove prevents the region
 // from capturing SSA values defined outside the function, matching Ada's
 // scoping rules and enabling independent analysis/optimization of each function.
+// SymbolTable makes each function op a symbol scope so that nested subprogram
+// bodies declared inside it are scoped to it rather than to the module.
 def FuncOp : Ada_Op<"func", [
-    FunctionOpInterface, IsolatedFromAbove
+    FunctionOpInterface, IsolatedFromAbove, SymbolTable
   ]> {
   let summary = "user defined function operation";
   let description = [{
@@ -147,9 +149,10 @@ def FuncOp : Ada_Op<"func", [
 // enforce that ada.return inside a procedure carries no operand. That
 // enforcement is implemented in ReturnOp::verify, which checks that the number
 // of return operands matches the enclosing function's result count (zero for
-// a procedure).
+// a procedure). SymbolTable is included for the same reason as FuncOp: nested
+// subprogram bodies are scoped to the enclosing subprogram.
 def ProcOp : Ada_Op<"proc", [
-    FunctionOpInterface, IsolatedFromAbove
+    FunctionOpInterface, IsolatedFromAbove, SymbolTable
   ]> {
   let summary = "user defined procedure operation";
 

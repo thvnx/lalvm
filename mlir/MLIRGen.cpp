@@ -151,6 +151,11 @@ private:
   mlir::LogicalResult visit(ada_node &moduleAST) {
     switch (ada_node_kind(&moduleAST)) {
     case ada_subp_body:
+      // Top-level subprograms are emitted at module scope. The insertion point
+      // is set here rather than inside mlirGenSubpBody so that nested
+      // subprograms (processed via mlirGenDeclarativePart) are instead emitted
+      // at the current insertion point inside the enclosing body region.
+      builder.setInsertionPointToEnd(theModule.getBody());
       if (!mlirGenSubpBody(moduleAST))
         return mlir::failure();
       return mlir::success();
@@ -453,10 +458,10 @@ private:
     return mlir::success();
   }
 
-  /// Emit initialized variable declarations from a subprogram's declarative
-  /// part. Only ObjectDecl nodes with an initializer expression are emitted;
-  /// uninitialized variables, constants, types, subprograms, etc. are skipped.
-  /// The AST structure is: DeclarativePart → AdaNodeList → ObjectDecl...
+  /// Emit declarations from a subprogram's declarative part.
+  /// Supported: ObjectDecl (initialized only), SubpBody (nested subprograms).
+  /// Silently skipped: SubpDecl (forward declarations), and everything else.
+  /// The AST structure is: DeclarativePart → AdaNodeList → decl...
   llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
     unsigned listCount = ada_node_children_count(&decls);
     for (unsigned i = 0; i < listCount; ++i) {
@@ -472,10 +477,23 @@ private:
           llvm::errs() << "Error while getting declaration\n";
           return mlir::failure();
         }
-        if (ada_node_kind(&decl) != ada_object_decl)
-          continue;
-        if (mlir::failed(mlirGenObjectDecl(decl)))
-          return mlir::failure();
+        switch (ada_node_kind(&decl)) {
+        case ada_object_decl:
+          if (mlir::failed(mlirGenObjectDecl(decl)))
+            return mlir::failure();
+          break;
+        case ada_subp_body: {
+          // Save and restore the insertion point: mlirGenSubpBody moves it to
+          // the nested function's entry block, which would corrupt the
+          // enclosing function's emit position.
+          mlir::OpBuilder::InsertionGuard guard(builder);
+          if (!mlirGenSubpBody(decl))
+            return mlir::failure();
+          break;
+        }
+        default:
+          break;
+        }
       }
     }
     return mlir::success();
@@ -497,7 +515,6 @@ private:
     ada_subp_spec_f_subp_returns(&ada_subp_spec, &ret_type_expr);
     bool isProc = ada_node_is_null(&ret_type_expr);
 
-    builder.setInsertionPointToEnd(theModule.getBody());
     mlir::Operation *op;
     mlir::Block *entryBlock;
     if (isProc) {

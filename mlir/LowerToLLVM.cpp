@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/TypeID.h"
 
@@ -152,6 +153,27 @@ struct ProcOpLowering : public OpConversionPattern<ada::ProcOp> {
 };
 
 void AdaToLLVMLoweringPass::runOnOperation() {
+  // Hoist nested subprogram bodies to module level before lowering: LLVM does
+  // not support nested functions. Each nested op is renamed with GNAT-style
+  // name mangling (__ separators) built from the full enclosing scope chain
+  // (e.g. @inner inside @outer becomes @outer__inner). Names are computed
+  // before any moves so the parent chain is still intact.
+  ModuleOp module = getOperation();
+  llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedSubps;
+  module.walk([&](Operation *op) {
+    if (!isa<ada::FuncOp, ada::ProcOp>(op) || isa<ModuleOp>(op->getParentOp()))
+      return;
+    std::string name = mlir::SymbolTable::getSymbolName(op).str();
+    for (Operation *p = op->getParentOp(); isa<ada::FuncOp, ada::ProcOp>(p);
+         p = p->getParentOp())
+      name = mlir::SymbolTable::getSymbolName(p).str() + "__" + name;
+    nestedSubps.emplace_back(op, std::move(name));
+  });
+  for (auto &[op, mangledName] : nestedSubps) {
+    mlir::SymbolTable::setSymbolName(op, mangledName);
+    op->moveBefore(module.getBody(), module.getBody()->end());
+  }
+
   // The first thing to define is the conversion target. This will define the
   // final target for this lowering. For this lowering, we are only targeting
   // the LLVM dialect.
@@ -177,7 +199,6 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.
-  auto module = getOperation();
   if (failed(applyFullConversion(module, target, std::move(patterns))))
     signalPassFailure();
 }
