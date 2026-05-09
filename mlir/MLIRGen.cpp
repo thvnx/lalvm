@@ -10,6 +10,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -165,6 +166,8 @@ private:
       if (mlir::failed(mlirGenAssign(moduleAST)))
         return mlir::failure();
       return mlir::success();
+    case ada_call_stmt:
+      return mlirGenCallStmt(moduleAST);
     default:
       break;
     }
@@ -649,6 +652,45 @@ private:
   /// Emit an assignment statement. In SSA form this rebinds the name to the
   /// new value.
   ///
+  /// Emit a procedure call statement. Only simple identifier calls (no
+  /// arguments) are supported for now. The callee is looked up first in the
+  /// enclosing ada.func/ada.proc's SymbolTable (for nested subprograms), then
+  /// in the module-level SymbolTable (for top-level subprograms).
+  llvm::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
+    ada_node call;
+    ada_call_stmt_f_call(&call_stmt, &call);
+    auto location = loc(call_stmt);
+
+    if (ada_node_kind(&call) != ada_identifier) {
+      emitError(location, "unsupported call expression");
+      return mlir::failure();
+    }
+
+    auto calleeName = libadalang::getName(&call);
+
+    // Search the enclosing function's SymbolTable first (handles nested
+    // subprogram calls), then fall back to the module level.
+    mlir::Operation *enclosingFunc =
+        builder.getInsertionBlock()->getParent()->getParentOp();
+    mlir::Operation *calleeOp =
+        isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(enclosingFunc)
+            ? mlir::SymbolTable::lookupSymbolIn(enclosingFunc,
+                                                calleeName.data())
+            : nullptr;
+    if (!calleeOp)
+      calleeOp =
+          mlir::SymbolTable::lookupSymbolIn(theModule, calleeName.data());
+
+    if (!calleeOp || !isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(calleeOp)) {
+      emitError(location, "unknown subprogram '") << calleeName << "'";
+      return mlir::failure();
+    }
+
+    builder.create<mlir::ada::CallOp>(location, calleeName.data(),
+                                      mlir::ValueRange{});
+    return mlir::success();
+  }
+
   /// Known limitation: `in out` parameter write-back is not implemented.
   /// The new value is stored in the local symbol table only; it is never
   /// written back to the caller's variable. Any code relying on `in out`

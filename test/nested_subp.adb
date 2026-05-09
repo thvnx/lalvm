@@ -4,9 +4,11 @@
 -- MLIR-LABEL: ada.proc @test_nested_subp
 -- MLIR:         ada.proc @inner
 -- MLIR:           ada.return
+-- MLIR:         ada.call @inner() : () -> ()
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @test_nested_subp(
+-- LLVM:          call void @test_nested_subp__inner()
 -- LLVM-LABEL: define void @test_nested_subp__inner(
 
 procedure Test_Nested_Subp is
@@ -17,5 +19,5 @@ procedure Test_Nested_Subp is
       null;
    end Inner;
 begin
-   null;
+   Inner;
 end Test_Nested_Subp;

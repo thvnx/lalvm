@@ -80,6 +80,23 @@ def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
+// CallOp
+//===----------------------------------------------------------------------===//
+
+// Procedure call — no return value. Calls the named subprogram with the given
+// operands. The callee is referenced by a flat symbol (resolved via the nearest
+// enclosing SymbolTable, which may be an ada.func/ada.proc for nested calls).
+// The LowerToLLVM pass hoists nested subprograms to module level and updates
+// all call references accordingly before converting ada.call to func.call.
+def CallOp : Ada_Op<"call", []> {
+  let summary = "procedure call";
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let results = (outs);
+  let assemblyFormat = "$callee `(` $operands `)` attr-dict"
+                       " `:` functional-type($operands, results)";
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 

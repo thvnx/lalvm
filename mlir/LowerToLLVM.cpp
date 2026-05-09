@@ -78,6 +78,17 @@ struct ReturnOpLowering : public OpRewritePattern<ada::ReturnOp> {
   }
 };
 
+struct CallOpLowering : public OpRewritePattern<ada::CallOp> {
+  using OpRewritePattern<ada::CallOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ada::CallOp op,
+                                PatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<func::CallOp>(op, op.getCallee(), TypeRange{},
+                                              op.getOperands());
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: Binary operations
 //===----------------------------------------------------------------------===//
@@ -170,6 +181,13 @@ void AdaToLLVMLoweringPass::runOnOperation() {
     nestedSubps.emplace_back(op, std::move(name));
   });
   for (auto &[op, mangledName] : nestedSubps) {
+    // Update call references before renaming so the old name is still valid
+    // during the walk. replaceAllSymbolUses finds all FlatSymbolRefAttr uses
+    // of this op's current name within the module and rewrites them.
+    auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
+    if (mlir::failed(
+            mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
+      return signalPassFailure();
     mlir::SymbolTable::setSymbolName(op, mangledName);
     op->moveBefore(module.getBody(), module.getBody()->end());
   }
@@ -194,8 +212,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<ReturnOpLowering, FuncOpLowering, ProcOpLowering, AddOpLowering,
-               SubOpLowering, MulOpLowering>(&getContext());
+  patterns.add<ReturnOpLowering, CallOpLowering, FuncOpLowering, ProcOpLowering,
+               AddOpLowering, SubOpLowering, MulOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.
