@@ -59,16 +59,16 @@ class MLIRGenImpl {
 public:
   MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
 
-  /// Public API: convert the AST for an Ada source file to an MLIR Module.
+  /// Public API: convert the AST for an Ada source file (a CompilationUnit) to
+  /// an MLIR Module.
   mlir::ModuleOp mlirGen(ada_node &moduleAST) {
     // We create an empty MLIR module and codegen functions one at a time and
     // add them to the module.
-    theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
+    theModule = mlir::ModuleOp::create(loc(moduleAST));
 
-    // for (FunctionAST &f : moduleAST)
-    //   mlirGen(f);
-    // TODO: convert ada_node to C++ to use overloading instead of this visit
-    // function dump(&moduleAST, 0);
+    // NOTE: use a simple traversal approach to visit the AST (we use the
+    // libadalang C API but a C++ API would also us to simplify this thanks to
+    // overloading).
     if (mlir::failed(visit(moduleAST)))
       return nullptr;
 
@@ -105,17 +105,20 @@ private:
   llvm::StringSaver stringSaver{stringPool};
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
-  mlir::Location loc(ada_node &node) {
+  mlir::Location loc(const ada_node &node) {
     // TODO: MLIR provides richer location kinds (NameLoc, FusedLoc,
     // CallSiteLoc, etc.) that could be used to improve diagnostics and
     // debug info.
 
+    // const_cast: libadalang C API doesn't have const-qualified overloads;
+    // the underlying objects are never actually const.
+    ada_node *n = const_cast<ada_node *>(&node);
     ada_source_location_range loc_range;
-    ada_node_sloc_range(&node, &loc_range);
+    ada_node_sloc_range(n, &loc_range);
 
     ada_source_location loc_start = loc_range.start;
     ada_source_location loc_end = loc_range.end;
-    char *filename = ada_unit_filename(ada_node_unit(&node));
+    char *filename = ada_unit_filename(ada_node_unit(n));
 
     // TODO find a way on how to enable -debug command line option support:
     //  requires a debug build of LLVM
@@ -585,7 +588,7 @@ private:
   /// Create an ada.proc with the signature derived from the Ada subprogram
   /// spec.
   mlir::ada::ProcOp mlirGenProcSpec(ada_node &subp_spec) {
-    auto location = loc(subp_spec);
+    auto location = loc(libadalang::parent(&subp_spec));
 
     ada_node name;
     ada_subp_spec_f_subp_name(&subp_spec, &name);
@@ -612,10 +615,8 @@ private:
 
   /// Create the prototype for an MLIR function with as many arguments as the
   /// provided Libadalang AST prototype.
-  // TODO: convert libadalang ast to C++ classes so that we can use overloading
-  // for mlirGen instead of ada_node for all nodes.
   mlir::ada::FuncOp mlirGenSubpSpec(ada_node &subp_spec) {
-    auto location = loc(subp_spec);
+    auto location = loc(libadalang::parent(&subp_spec));
 
     ada_node name;
     ada_subp_spec_f_subp_name(&subp_spec, &name);

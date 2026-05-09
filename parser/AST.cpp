@@ -147,3 +147,9 @@ std::string libadalang::getName(ada_node *node, bool canonical) {
   }
   }
 }
+
+ada_node libadalang::parent(ada_node *node) {
+  ada_node par = {};
+  ada_ada_node_parent(node, &par);
+  return par;
+}

@@ -18,6 +18,8 @@ void dump(ada_node *node);
 /// canonical lowercase form; otherwise it is returned as written in the source.
 std::string getName(ada_node *node, bool canonical = true);
 
+ada_node parent(ada_node *node);
+
 /// The AdaAST class handles an AST produced by Libadalang.
 class AdaAST {
   llvm::StringRef filename;
