@@ -661,12 +661,37 @@ private:
     ada_call_stmt_f_call(&call_stmt, &call);
     auto location = loc(call_stmt);
 
-    if (ada_node_kind(&call) != ada_identifier) {
+    ada_node name_node;
+    llvm::SmallVector<mlir::Value> args;
+
+    switch (ada_node_kind(&call)) {
+    case ada_identifier:
+      // No-argument call: f_call is the callee identifier directly.
+      name_node = call;
+      break;
+    case ada_call_expr: {
+      // Call with arguments: f_call is a CallExpr with f_name + f_suffix.
+      ada_call_expr_f_name(&call, &name_node);
+      ada_node suffix;
+      ada_call_expr_f_suffix(&call, &suffix);
+      int n = ada_node_children_count(&suffix);
+      for (int i = 0; i < n; ++i) {
+        ada_node assoc, r_expr;
+        ada_node_child(&suffix, i, &assoc);
+        ada_param_assoc_f_r_expr(&assoc, &r_expr);
+        mlir::Value val = visit_expr(r_expr);
+        if (!val)
+          return mlir::failure();
+        args.push_back(val);
+      }
+      break;
+    }
+    default:
       emitError(location, "unsupported call expression");
       return mlir::failure();
     }
 
-    auto calleeName = libadalang::getName(&call);
+    auto calleeName = libadalang::getName(&name_node);
 
     // Search the enclosing function's SymbolTable first (handles nested
     // subprogram calls), then fall back to the module level.
@@ -686,8 +711,7 @@ private:
       return mlir::failure();
     }
 
-    builder.create<mlir::ada::CallOp>(location, calleeName.data(),
-                                      mlir::ValueRange{});
+    builder.create<mlir::ada::CallOp>(location, calleeName.data(), args);
     return mlir::success();
   }
 
