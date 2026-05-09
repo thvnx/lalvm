@@ -14,8 +14,9 @@ namespace libadalang {
 void dump(ada_node *node);
 
 /// Get the name (in utf8 format) of the given ada_node (return an empty string
-/// if no name).
-std::string getName(ada_node *node);
+/// if no name). If canonical is true (the default), the name is returned in its
+/// canonical lowercase form; otherwise it is returned as written in the source.
+std::string getName(ada_node *node, bool canonical = true);
 
 /// The AdaAST class handles an AST produced by Libadalang.
 class AdaAST {

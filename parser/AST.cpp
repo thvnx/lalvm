@@ -117,14 +117,17 @@ libadalang::AdaAST::~AdaAST() {
 
 void libadalang::dump(ada_node *node) { dump_image(node, 0); }
 
-std::string libadalang::getName(ada_node *node) {
+std::string libadalang::getName(ada_node *node, bool canonical) {
   switch (ada_node_kind(node)) {
   case ada_identifier:
   case ada_defining_name: {
     ada_symbol_type symbol;
     ada_text text;
-    ada_name_p_canonical_text(node, &symbol);
-    ada_symbol_text(&symbol, &text);
+    if (canonical) {
+      ada_name_p_canonical_text(node, &symbol);
+      ada_symbol_text(&symbol, &text);
+    } else
+      ada_node_text(node, &text);
     char *buf;
     size_t length;
     ada_text_to_utf8(&text, &buf, &length);

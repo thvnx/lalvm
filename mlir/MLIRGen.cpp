@@ -186,14 +186,16 @@ private:
       ada_node default_expr;
       ada_object_decl_f_default_expr(&ref_decl, &default_expr);
       if (ada_node_is_null(&default_expr)) {
+        auto name = libadalang::getName(&expr, false);
         // TODO: downgrade to a warning once the alloca-based model is in place.
-        emitError(loc(ref_decl), "variable \"")
-            << name << "\" is read but never assigned";
+        emitError(loc(ref_decl), "variable '")
+            << name << "' is read but never assigned";
         return nullptr;
       }
     }
 
-    emitError(loc(expr), "unknown variable '") << name << "'";
+    emitError(loc(expr), "unknown variable '")
+        << libadalang::getName(&expr, false) << "'";
     return nullptr;
   }
 
@@ -437,7 +439,8 @@ private:
       }
       auto name = libadalang::getName(&id);
       if (mlir::failed(declare(name.data(), init))) {
-        emitError(loc(id), "variable '") << name << "' already declared";
+        emitError(loc(id), "variable '")
+            << libadalang::getName(&id, false) << "' already declared";
         return mlir::failure();
       }
     }
@@ -643,7 +646,8 @@ private:
 
     auto name = libadalang::getName(&dest_node);
     if (!symbolTable.count(name.data())) {
-      emitError(loc(dest_node), "unknown variable '") << name.data() << "'";
+      emitError(loc(dest_node), "unknown variable '")
+          << libadalang::getName(&dest_node, false) << "'";
       return mlir::failure();
     }
 
