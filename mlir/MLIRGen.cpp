@@ -220,12 +220,11 @@ private:
     mlir::Value rhs = visit_expr(right);
     if (!rhs)
       return nullptr;
-    auto location = loc(binop);
-
     // Derive the operation name from the binary operator. At the moment we only
     // support '+' and '*'.
     ada_node op;
     ada_bin_op_f_op(&binop, &op);
+    auto location = loc(op);
     switch (ada_node_kind(&op)) {
     case ada_op_plus:
       return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
