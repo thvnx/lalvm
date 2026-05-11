@@ -117,6 +117,6 @@ cmake --build --preset=debug --target format
 
 ## Dependencies
 
-- LLVM/MLIR 21
+- LLVM/MLIR 21 (for example on Debian: llvm-dev, libmlir-21-dev, mlir-21-tools, cmake, ninja-build, clang, clang-format)
 - Libadalang
 - lit (for running tests)
