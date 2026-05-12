@@ -90,12 +90,13 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename)
     context = ada_allocate_analysis_context();
     abort_on_exception();
 
-    ada_initialize_analysis_context(context, nullptr, nullptr, nullptr, nullptr, 1, 8);
+    ada_initialize_analysis_context(context, nullptr, nullptr, nullptr, nullptr,
+                                    1, 8);
     abort_on_exception();
 
-    unit = ada_get_analysis_unit_from_buffer(
-        context, filename.data(), nullptr, buffer.data(), buffer.size(),
-        ada_default_grammar_rule);
+    unit = ada_get_analysis_unit_from_buffer(context, filename.data(), nullptr,
+                                             buffer.data(), buffer.size(),
+                                             ada_default_grammar_rule);
     abort_on_exception();
 
     ada_unit_root(unit, &root);
@@ -132,7 +133,8 @@ std::string libadalang::getName(ada_node *node, bool canonical) {
     return textToString(text);
   }
   default:
-    llvm::errs() << "Can't get name of node: " << libadalang::image(node) << "\n";
+    llvm::errs() << "Can't get name of node: " << libadalang::image(node)
+                 << "\n";
     return {};
   }
 }

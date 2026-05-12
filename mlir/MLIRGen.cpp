@@ -86,10 +86,18 @@ public:
           //   llvm::errs() << diag.getLocation() << ": ";
           llvm::errs() << diag.getLocation() << ": ";
           switch (diag.getSeverity()) {
-          case mlir::DiagnosticSeverity::Error:   llvm::WithColor::error();   break;
-          case mlir::DiagnosticSeverity::Warning: llvm::WithColor::warning(); break;
-          case mlir::DiagnosticSeverity::Note:    llvm::WithColor::note();    break;
-          case mlir::DiagnosticSeverity::Remark:  llvm::WithColor::remark();  break;
+          case mlir::DiagnosticSeverity::Error:
+            llvm::WithColor::error();
+            break;
+          case mlir::DiagnosticSeverity::Warning:
+            llvm::WithColor::warning();
+            break;
+          case mlir::DiagnosticSeverity::Note:
+            llvm::WithColor::note();
+            break;
+          case mlir::DiagnosticSeverity::Remark:
+            llvm::WithColor::remark();
+            break;
           }
           diag.print(llvm::errs());
           llvm::errs() << '\n';
