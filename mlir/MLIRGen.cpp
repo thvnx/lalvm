@@ -31,19 +31,14 @@
 #include <cassert>
 #include <cerrno>
 #include <cstdint>
-#include <functional>
-#include <numeric>
-#include <optional>
 #include <vector>
 
 using llvm::ArrayRef;
 using llvm::cast;
-using llvm::dyn_cast;
 using llvm::isa;
 using llvm::ScopedHashTableScope;
 using llvm::SmallVector;
 using llvm::StringRef;
-using llvm::Twine;
 
 // Known limitations of this codegen:
 //
