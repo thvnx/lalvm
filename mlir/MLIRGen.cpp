@@ -789,9 +789,16 @@ private:
 
     auto name = libadalang::getName(&dest_node);
     if (!symbolTable.count(name.data())) {
-      emitError(loc(dest_node), "unknown variable '")
-          << libadalang::getName(&dest_node, false) << "'";
-      return mlir::failure();
+      // Not yet in the symbol table: allow first write to a variable that was
+      // declared without an initializer. Reject anything truly undeclared.
+      ada_node ref_decl;
+      if (!ada_name_p_referenced_decl(&dest_node, 0, &ref_decl) ||
+          ada_node_is_null(&ref_decl) ||
+          ada_node_kind(&ref_decl) != ada_object_decl) {
+        emitError(loc(dest_node), "unknown variable '")
+            << libadalang::getName(&dest_node, false) << "'";
+        return mlir::failure();
+      }
     }
 
     symbolTable.insert(stringSaver.save(name), rhs);
