@@ -226,7 +226,10 @@ void ReturnOp::print(mlir::OpAsmPrinter &p) {
 }
 
 llvm::LogicalResult ReturnOp::verify() {
+  // Walk up through any enclosing block statements to find the function/proc.
   mlir::Operation *parent = (*this)->getParentOp();
+  while (parent && mlir::isa<BlockStmtOp>(parent))
+    parent = parent->getParentOp();
   mlir::FunctionType funcType;
   if (auto func = mlir::dyn_cast<FuncOp>(parent))
     funcType = func.getFunctionType();

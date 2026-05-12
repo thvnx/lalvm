@@ -80,6 +80,23 @@ def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
+// BlockStmtOp
+//===----------------------------------------------------------------------===//
+
+// Represents an Ada block statement (RM 5.6): an inline scope that may
+// introduce local declarations followed by a sequence of statements. Unlike
+// ada.func/ada.proc, this op is NOT IsolatedFromAbove — SSA values from the
+// enclosing function are directly accessible. NoTerminator+SingleBlock waive
+// the need for an explicit terminator op. During lowering the region contents
+// are inlined into the parent block and the op is erased.
+def BlockStmtOp : Ada_Op<"block_stmt", [NoTerminator, SingleBlock]> {
+  let summary = "Ada block statement with its own declarative scope";
+  let arguments = (ins OptionalAttr<StrAttr>:$name);
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = "($name^)? $body attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 

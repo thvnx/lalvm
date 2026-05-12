@@ -202,6 +202,24 @@ private:
       return mlir::success();
     case ada_call_stmt:
       return mlirGenCallStmt(moduleAST);
+    case ada_named_stmt: {
+      // Named block statement: "Name: [declare] begin ... end Name;"
+      // The name lives on the wrapping named_stmt; the actual block is f_stmt.
+      ada_node decl, nameNode, stmt;
+      ada_named_stmt_f_decl(&moduleAST, &decl);
+      ada_named_stmt_decl_f_name(&decl, &nameNode);
+      ada_named_stmt_f_stmt(&moduleAST, &stmt);
+      ada_text nameText;
+      ada_node_text(&nameNode, &nameText);
+      return mlirGenBlockStmt(stmt, libadalang::textToString(nameText));
+    }
+    case ada_begin_block:
+    case ada_decl_block:
+      return mlirGenBlockStmt(moduleAST, {});
+    case ada_handled_stmts:
+    case ada_stmt_list:
+      // Transparent container nodes — visit children without warning.
+      break;
     default: {
       mlir::emitWarning(loc(moduleAST), "visit: unhandled node kind '")
           << libadalang::image(&moduleAST) << "'";
@@ -580,9 +598,13 @@ private:
 
     ada_node stmts;
     ada_subp_body_f_stmts(&subp_body, &stmts);
-    if (mlir::failed(visit(stmts))) {
-      op->erase();
-      return nullptr;
+
+    {
+      ScopedHashTableScope<llvm::StringRef, mlir::Value> bodyScope(symbolTable);
+      if (mlir::failed(visit(stmts))) {
+        op->erase();
+        return nullptr;
+      }
     }
 
     // Procedures have no explicit return statement; add an implicit one.
@@ -591,6 +613,50 @@ private:
                                           ArrayRef<mlir::Value>{});
 
     return op;
+  }
+
+  /// Lower an Ada block statement (ada_begin_block or ada_decl_block) to an
+  /// ada.block_stmt op. The block's declarative part (if any) and statements
+  /// are emitted into the op's region; a new symbol table scope is opened for
+  /// the duration so that local declarations are invisible outside the block.
+  mlir::LogicalResult mlirGenBlockStmt(ada_node &blockNode,
+                                       llvm::StringRef name) {
+    bool isDecl = ada_node_kind(&blockNode) == ada_decl_block;
+
+    mlir::StringAttr nameAttr =
+        name.empty() ? mlir::StringAttr{}
+                     : mlir::StringAttr::get(builder.getContext(), name);
+    auto blockOp =
+        builder.create<mlir::ada::BlockStmtOp>(loc(blockNode), nameAttr);
+
+    // Create the entry block of the region; the builder now inserts into it.
+    builder.createBlock(&blockOp.getBody());
+
+    // Open a new scope: local declarations are invisible outside the block.
+    ScopedHashTableScope<llvm::StringRef, mlir::Value> varScope(symbolTable);
+
+    // Codegen the declarative part (ada_decl_block only).
+    if (isDecl) {
+      ada_node decls;
+      ada_decl_block_f_decls(&blockNode, &decls);
+      if (!ada_node_is_null(&decls))
+        if (mlir::failed(mlirGenDeclarativePart(decls)))
+          return mlir::failure();
+    }
+
+    // Codegen the statement sequence.
+    ada_node stmts;
+    if (isDecl)
+      ada_decl_block_f_stmts(&blockNode, &stmts);
+    else
+      ada_begin_block_f_stmts(&blockNode, &stmts);
+    if (mlir::failed(visit(stmts)))
+      return mlir::failure();
+
+    // Restore the insertion point to after the block_stmt in the parent block.
+    builder.setInsertionPointAfter(blockOp);
+
+    return mlir::success();
   }
 
   /// Create an ada.proc (isProc=true) or ada.func (isProc=false) with the
