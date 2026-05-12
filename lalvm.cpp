@@ -20,6 +20,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorOr.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
@@ -170,6 +171,9 @@ int dumpLLVMIR(mlir::ModuleOp module) {
 }
 
 int main(int argc, char **argv) {
+  // InitLLVM sets up signal handlers, pretty stack traces, and registers
+  // LLVM's command line options (including -debug and -debug-only).
+  llvm::InitLLVM x(argc, argv);
   mlir::registerAsmPrinterCLOptions();
   mlir::registerMLIRContextCLOptions();
   cl::ParseCommandLineOptions(argc, argv, "ada compiler\n");

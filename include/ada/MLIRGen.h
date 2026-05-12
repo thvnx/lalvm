@@ -3,8 +3,6 @@
 
 #include "lal/AST.h"
 
-#define MLIRGEN_DEBUG "mlirgen"
-
 namespace mlir {
 class MLIRContext;
 template <typename OpTy> class OwningOpRef;
@@ -14,9 +12,9 @@ class ModuleOp;
 namespace ada {
 
 /// Emit IR for the given Ada source, returns a newly created MLIR module
-/// or nullptr on failure.
+/// on success, or an empty OwningOpRef on failure.
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
-                                          ada_node &moduleAST);
+                                          ada_node &compilationUnit);
 
 } // namespace ada
 

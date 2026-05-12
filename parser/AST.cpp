@@ -1,5 +1,7 @@
 #include "lal/AST.h"
 
+#include "mlir/IR/Diagnostics.h"
+
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -7,7 +9,7 @@
 
 static bool print_exception(bool or_silent) {
   const ada_exception *exc = ada_get_last_exception();
-  if (exc != NULL) {
+  if (exc != nullptr) {
     char *exc_name = ada_exception_name(exc->kind);
     llvm::errs() << "Got an exception (" << exc_name << "):\n  "
                  << exc->information << "\n";
@@ -70,14 +72,13 @@ static void dump_image(ada_node *node, int level) {
   for (unsigned i = 0; i < count; ++i) {
     ada_node child;
     if (ada_node_child(node, i, &child) == 0)
-      llvm::errs() << "Error while getting a child";
+      llvm::errs() << "Error while getting a child\n";
     dump_image(&child, level + 1);
   }
 }
 
-libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename) {
-  filename = inputFilename;
-
+libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename)
+    : filename(inputFilename) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(filename);
   if (std::error_code ec = fileOrErr.getError()) {
@@ -89,11 +90,11 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename) {
     context = ada_allocate_analysis_context();
     abort_on_exception();
 
-    ada_initialize_analysis_context(context, NULL, NULL, NULL, NULL, 1, 8);
+    ada_initialize_analysis_context(context, nullptr, nullptr, nullptr, nullptr, 1, 8);
     abort_on_exception();
 
     unit = ada_get_analysis_unit_from_buffer(
-        context, filename.data(), NULL, buffer.data(), strlen(buffer.data()),
+        context, filename.data(), nullptr, buffer.data(), buffer.size(),
         ada_default_grammar_rule);
     abort_on_exception();
 
@@ -121,35 +122,50 @@ std::string libadalang::getName(ada_node *node, bool canonical) {
   switch (ada_node_kind(node)) {
   case ada_identifier:
   case ada_defining_name: {
-    ada_symbol_type symbol;
     ada_text text;
     if (canonical) {
+      ada_symbol_type symbol;
       ada_name_p_canonical_text(node, &symbol);
       ada_symbol_text(&symbol, &text);
     } else
       ada_node_text(node, &text);
-    char *buf;
-    size_t length;
-    ada_text_to_utf8(&text, &buf, &length);
-    ada_destroy_text(&text);
-    std::string result(buf, length);
-    free(buf);
-    return result;
+    return textToString(text);
   }
-  default: {
-    ada_text img;
-    ada_node_image(node, &img);
-    llvm::errs() << "Can't get name of node: ";
-    fprint_text(llvm::errs(), img, false);
-    llvm::errs() << "\n";
-    ada_destroy_text(&img);
+  default:
+    llvm::errs() << "Can't get name of node: " << libadalang::image(node) << "\n";
     return {};
   }
-  }
+}
+
+std::string libadalang::textToString(ada_text &text) {
+  char *buf;
+  size_t length;
+  ada_text_to_utf8(&text, &buf, &length);
+  ada_destroy_text(&text);
+  std::string result(buf, length);
+  free(buf);
+  return result;
 }
 
 ada_node libadalang::parent(ada_node *node) {
   ada_node par = {};
   ada_ada_node_parent(node, &par);
   return par;
+}
+
+llvm::raw_ostream &libadalang::operator<<(llvm::raw_ostream &os,
+                                          libadalang::NodePrinter np) {
+  ada_text img;
+  ada_node_image(np.node, &img);
+  fprint_text(os, img, false);
+  ada_destroy_text(&img);
+  return os;
+}
+
+mlir::Diagnostic &libadalang::operator<<(mlir::Diagnostic &diag,
+                                         libadalang::NodePrinter np) {
+  std::string buf;
+  llvm::raw_string_ostream os(buf);
+  os << np;
+  return diag << buf;
 }

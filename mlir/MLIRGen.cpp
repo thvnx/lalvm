@@ -16,9 +16,10 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 
-#define DEBUG_TYPE MLIRGEN_DEBUG
+#define DEBUG_TYPE "ada-mlirgen"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
@@ -44,52 +45,88 @@ using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
 
-// NOTE: Integer arithmetic limitation
-// Ada defines integer arithmetic over mathematical integers with range checks
-// that raise Constraint_Error on overflow. This implementation lowers to
-// arith.addi/subi/muli, which use two's-complement wrapping semantics with no
-// overflow check. Any Ada code relying on Constraint_Error for integer overflow
-// will compile silently but produce incorrect results at runtime.
+// Known limitations of this codegen:
+//
+//  - Integer overflow: Ada defines integer arithmetic over mathematical
+//    integers with range checks that raise Constraint_Error on overflow. This
+//    implementation lowers to arith.addi/subi/muli, which use two's-complement
+//    wrapping semantics with no overflow check. Any Ada code relying on
+//    Constraint_Error for integer overflow will silently produce wrong results.
+//
+//  - Uninitialized variables: variables without an initializer are not
+//    supported; a reference to one is diagnosed as an error. Supporting them
+//    requires switching to an alloca-based model (stack slot per variable,
+//    llvm.load/llvm.store, mem2reg to promote to SSA).
+//
+//  - `in out` parameters: write-back to the caller's variable is not
+//    implemented. The updated value is stored in the local symbol table only.
+//
+//  - Unrecognised top-level node kinds (ada_package_body, etc.) are silently
+//    skipped. A file containing only a package will produce an empty module
+//    with no diagnostic.
 
 namespace {
 
-/// Walks a Libadalang AST and emits Ada dialect MLIR operations into a module.
-/// The public entry point is mlirGen() at the bottom of this file.
+/// Walks a Libadalang AST and emits Ada dialect MLIR operations into a module
+/// (i.e.: a compilation unit). The public entry point is mlirGen() at the
+/// bottom of this file.
 class MLIRGenImpl {
 public:
   MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
 
-  /// Public API: convert the AST for an Ada source file (a CompilationUnit) to
-  /// an MLIR Module.
-  mlir::ModuleOp mlirGen(ada_node &moduleAST) {
-    // We create an empty MLIR module and codegen functions one at a time and
-    // add them to the module.
-    theModule = mlir::ModuleOp::create(loc(moduleAST));
+  /// Public API: convert an Ada compilation unit to an MLIR module.
+  mlir::ModuleOp mlirGen(ada_node &compilationUnit) {
+    // Install a diagnostic handler that prints all diagnostics (including
+    // warnings) to stderr. Without this, MLIR's diagnostic engine silently
+    // drops non-error diagnostics.
+    mlir::ScopedDiagnosticHandler diagHandler(
+        builder.getContext(), [](mlir::Diagnostic &diag) {
+          // TODO: use GCC/clang-style "file:line:col: " location format:
+          // if (auto loc =
+          // mlir::dyn_cast<mlir::FileLineColRange>(diag.getLocation()))
+          //   llvm::errs() << loc.getFilename().getValue() << ":"
+          //                << loc.getStartLine() << ":" << loc.getStartColumn()
+          //                << ": ";
+          // else
+          //   llvm::errs() << diag.getLocation() << ": ";
+          llvm::errs() << diag.getLocation() << ": ";
+          switch (diag.getSeverity()) {
+          case mlir::DiagnosticSeverity::Error:   llvm::WithColor::error();   break;
+          case mlir::DiagnosticSeverity::Warning: llvm::WithColor::warning(); break;
+          case mlir::DiagnosticSeverity::Note:    llvm::WithColor::note();    break;
+          case mlir::DiagnosticSeverity::Remark:  llvm::WithColor::remark();  break;
+          }
+          diag.print(llvm::errs());
+          llvm::errs() << '\n';
+          return mlir::success();
+        });
 
-    // NOTE: use a simple traversal approach to visit the AST (we use the
-    // libadalang C API but a C++ API would also us to simplify this thanks to
-    // overloading).
-    if (mlir::failed(visit(moduleAST)))
+    // We create an empty MLIR module and walk the entire compilation unit to
+    // codegen its contents into it.
+    adaModule = mlir::ModuleOp::create(loc(compilationUnit));
+
+    // Use a simple Libadalang AST traversal approach based on the C API.
+    if (mlir::failed(visit(compilationUnit)))
       return nullptr;
 
     // Verify the module after we have finished constructing it, this will check
     // the structural properties of the IR and invoke any specific verifiers we
     // have on the Ada operations.
-    if (failed(mlir::verify(theModule))) {
-      theModule.emitError("module verification error");
+    if (failed(mlir::verify(adaModule))) {
+      adaModule.emitError("module verification error");
       return nullptr;
     }
 
-    return theModule;
+    return adaModule;
   }
 
 private:
-  /// A "module" matches an Ada source file: containing a list of subprograms.
-  mlir::ModuleOp theModule;
+  /// The MLIR module being built. In MLIR parlance, a module is the top-level
+  /// container for operations; it maps to an Ada compilation unit.
+  mlir::ModuleOp adaModule;
 
-  /// The builder is a helper class to create IR inside a function. The builder
-  /// is stateful, in particular it keeps an "insertion point": this is where
-  /// the next operations will be introduced.
+  /// Helper for creating MLIR operations. Stateful: it tracks an "insertion
+  /// point" that determines where the next operation will be emitted.
   mlir::OpBuilder builder;
 
   // Maps variable names to their current SSA Value within the active scope.
@@ -106,9 +143,9 @@ private:
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(const ada_node &node) {
-    // TODO: MLIR provides richer location kinds (NameLoc, FusedLoc,
-    // CallSiteLoc, etc.) that could be used to improve diagnostics and
-    // debug info.
+    // INFO: MLIR provides richer location kinds (NameLoc, FusedLoc,
+    // CallSiteLoc, etc.) that could be used to improve diagnostics and debug
+    // info.
 
     // const_cast: libadalang C API doesn't have const-qualified overloads;
     // the underlying objects are never actually const.
@@ -119,11 +156,6 @@ private:
     ada_source_location loc_start = loc_range.start;
     ada_source_location loc_end = loc_range.end;
     char *filename = ada_unit_filename(ada_node_unit(n));
-
-    // TODO find a way on how to enable -debug command line option support:
-    //  requires a debug build of LLVM
-    LLVM_DEBUG(llvm::dbgs() << loc_start.line << ":" << loc_start.column << " ("
-                            << filename << ")");
 
     // getStringAttr copies the string into the MLIR context, so filename can
     // be freed immediately.
@@ -137,7 +169,7 @@ private:
   /// Declare a variable in the current scope, return success if the variable
   /// wasn't declared yet.
   llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
-    LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data());
+    LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data() << "\n");
     if (symbolTable.count(var))
       return mlir::failure();
     symbolTable.insert(stringSaver.save(var), value);
@@ -146,12 +178,8 @@ private:
 
   // Recursive AST walker. Handles the node kinds we know how to codegen;
   // everything else is ignored at this level and its children are visited.
-  // Returning early (without visiting children) stops descent into a subtree —
-  // used when a handler already walked it (e.g. mlirGenSubpBody visits stmts).
-  //
-  // Known limitation: unrecognised top-level node kinds (ada_package_body,
-  // ada_compilation_unit, etc.) are silently skipped. A file containing only
-  // a package will produce an empty module with no diagnostic.
+  // Returning early (without visiting children) stops descent into a subtree
+  // (used when a handler already walked it, e.g. mlirGenSubpBody visits stmts).
   mlir::LogicalResult visit(ada_node &moduleAST) {
     switch (ada_node_kind(&moduleAST)) {
     case ada_subp_body:
@@ -159,7 +187,7 @@ private:
       // is set here rather than inside mlirGenSubpBody so that nested
       // subprograms (processed via mlirGenDeclarativePart) are instead emitted
       // at the current insertion point inside the enclosing body region.
-      builder.setInsertionPointToEnd(theModule.getBody());
+      builder.setInsertionPointToEnd(adaModule.getBody());
       if (!mlirGenSubpBody(moduleAST))
         return mlir::failure();
       return mlir::success();
@@ -171,16 +199,19 @@ private:
       return mlir::success();
     case ada_call_stmt:
       return mlirGenCallStmt(moduleAST);
-    default:
+    default: {
+      mlir::emitWarning(loc(moduleAST), "visit: unhandled node kind '")
+          << libadalang::image(&moduleAST) << "'";
       break;
+    }
     }
 
     unsigned i, count = ada_node_children_count(&moduleAST);
     for (i = 0; i < count; ++i) {
       ada_node child;
       if (ada_node_child(&moduleAST, i, &child) == 0)
-        llvm::errs() << "Error while getting a child (MLIRGen::visit)\n";
-      if (mlir::failed(visit(child)))
+        mlir::emitError(loc(moduleAST), "failed to get child node");
+      if (!ada_node_is_null(&child) && mlir::failed(visit(child)))
         return mlir::failure();
     }
     return mlir::success();
@@ -205,13 +236,13 @@ private:
       if (ada_node_is_null(&default_expr)) {
         auto name = libadalang::getName(&expr, false);
         // TODO: downgrade to a warning once the alloca-based model is in place.
-        emitError(loc(ref_decl), "variable '")
+        mlir::emitError(loc(ref_decl), "variable '")
             << name << "' is read but never assigned";
         return nullptr;
       }
     }
 
-    emitError(loc(expr), "unknown variable '")
+    mlir::emitError(loc(expr), "unknown variable '")
         << libadalang::getName(&expr, false) << "'";
     return nullptr;
   }
@@ -252,14 +283,34 @@ private:
     case ada_op_mult:
       return builder.create<mlir::ada::MulOp>(location, lhs, rhs);
     default:
-      llvm::errs() << "Error while visiting unsupported binop: ";
-      libadalang::dump(&op);
-      llvm::errs() << "\n";
+      emitError(location, "invalid binary operator: ")
+          << libadalang::image(&binop);
+      return nullptr;
     }
+  }
 
-    emitError(location, "invalid binary operator: ");
-    libadalang::dump(&binop);
-    return nullptr;
+  /// Resolve the type of a literal expression. For universal types
+  /// (universal_int_type_ / universal_real_type_), falls back to the expected
+  /// type from the surrounding context. Returns a null node on failure.
+  ada_node resolveLiteralType(ada_node &node, mlir::Location location,
+                              llvm::StringRef universalTypeName) {
+    ada_node type_decl;
+    if (!ada_expr_p_expression_type(&node, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
+      mlir::emitError(location, "failed to resolve type of literal");
+      return {};
+    }
+    ada_node type_name;
+    if (ada_base_type_decl_f_name(&type_decl, &type_name) &&
+        !ada_node_is_null(&type_name) &&
+        libadalang::getName(&type_name) == universalTypeName) {
+      if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
+          ada_node_is_null(&type_decl)) {
+        mlir::emitError(location, "failed to resolve expected type of literal");
+        return {};
+      }
+    }
+    return type_decl;
   }
 
   mlir::Value mlirGenIntLiteral(ada_node &node) {
@@ -273,12 +324,7 @@ private:
     }
     ada_text text;
     ada_big_integer_text(bigint, &text);
-    char *buf;
-    size_t length;
-    ada_text_to_utf8(&text, &buf, &length);
-    ada_destroy_text(&text);
-    std::string literal(buf, length);
-    free(buf);
+    std::string literal = libadalang::textToString(text);
     ada_big_integer_decref(bigint);
     errno = 0;
     char *endptr;
@@ -300,23 +346,10 @@ private:
     // When that happens, p_expected_expression_type gives the type required
     // by the surrounding context (e.g. the return type of the enclosing
     // function).
-    ada_node type_decl;
-    if (!ada_expr_p_expression_type(&node, &type_decl) ||
-        ada_node_is_null(&type_decl)) {
-      emitError(loc(node), "failed to resolve type of integer literal");
+    ada_node type_decl =
+        resolveLiteralType(node, loc(node), "universal_int_type_");
+    if (ada_node_is_null(&type_decl))
       return nullptr;
-    }
-    ada_node type_name;
-    if (ada_base_type_decl_f_name(&type_decl, &type_name) &&
-        !ada_node_is_null(&type_name) &&
-        libadalang::getName(&type_name) == "universal_int_type_") {
-      if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
-          ada_node_is_null(&type_decl)) {
-        emitError(loc(node),
-                  "failed to resolve expected type of integer literal");
-        return nullptr;
-      }
-    }
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
     if (!type)
       return nullptr;
@@ -343,17 +376,12 @@ private:
     // C API, so we extract the value by reading the literal's source text.
     ada_text text;
     ada_node_text(&node, &text);
-    char *buf;
-    size_t length;
-    ada_text_to_utf8(&text, &buf, &length);
-    ada_destroy_text(&text);
-    // Ada allows underscores as digit separators; strip them while copying.
+    std::string raw = libadalang::textToString(text);
+    // Ada allows underscores as digit separators; strip them.
     std::string literal;
-    literal.reserve(length);
-    for (size_t i = 0; i < length; ++i)
-      if (buf[i] != '_')
-        literal += buf[i];
-    free(buf);
+    literal.reserve(raw.size());
+    std::copy_if(raw.begin(), raw.end(), std::back_inserter(literal),
+                 [](char c) { return c != '_'; });
 
     errno = 0;
     char *endptr;
@@ -371,22 +399,10 @@ private:
 
     // Real literals have universal_real type; fall back to the expected type
     // to get the concrete type required by the surrounding context.
-    ada_node type_decl;
-    if (!ada_expr_p_expression_type(&node, &type_decl) ||
-        ada_node_is_null(&type_decl)) {
-      emitError(loc(node), "failed to resolve type of real literal");
+    ada_node type_decl =
+        resolveLiteralType(node, loc(node), "universal_real_type_");
+    if (ada_node_is_null(&type_decl))
       return nullptr;
-    }
-    ada_node type_name;
-    if (ada_base_type_decl_f_name(&type_decl, &type_name) &&
-        !ada_node_is_null(&type_name) &&
-        libadalang::getName(&type_name) == "universal_real_type_") {
-      if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
-          ada_node_is_null(&type_decl)) {
-        emitError(loc(node), "failed to resolve expected type of real literal");
-        return nullptr;
-      }
-    }
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
     if (!type)
       return nullptr;
@@ -404,6 +420,8 @@ private:
         loc(node), builder.getFloatAttr(type, value));
   }
 
+  /// Codegen an expression node. Returns the SSA Value for the result, or
+  /// nullptr on failure (unsupported expression kind or codegen error).
   mlir::Value visit_expr(ada_node &expr) {
     switch (ada_node_kind(&expr)) {
     case ada_identifier:
@@ -415,9 +433,8 @@ private:
     case ada_bin_op:
       return mlirGenBinOp(expr);
     default:
-      llvm::errs() << "Error while visiting unsupported expression: ";
-      libadalang::dump(&expr);
-      llvm::errs() << "\n";
+      mlir::emitError(loc(expr), "unsupported expression: ")
+          << libadalang::image(&expr);
     }
 
     return nullptr;
@@ -451,7 +468,7 @@ private:
     for (unsigned i = 0; i < count; ++i) {
       ada_node id;
       if (ada_node_child(&ids, i, &id) == 0) {
-        llvm::errs() << "Error while getting declared identifier\n";
+        mlir::emitError(loc(object_decl), "failed to get declared identifier");
         return mlir::failure();
       }
       auto name = libadalang::getName(&id);
@@ -473,14 +490,14 @@ private:
     for (unsigned i = 0; i < listCount; ++i) {
       ada_node list;
       if (ada_node_child(&decls, i, &list) == 0) {
-        llvm::errs() << "Error while getting declarative list\n";
+        mlir::emitError(loc(decls), "failed to get declarative list");
         return mlir::failure();
       }
       unsigned count = ada_node_children_count(&list);
       for (unsigned j = 0; j < count; ++j) {
         ada_node decl;
         if (ada_node_child(&list, j, &decl) == 0) {
-          llvm::errs() << "Error while getting declaration\n";
+          mlir::emitError(loc(decls), "failed to get declaration");
           return mlir::failure();
         }
         switch (ada_node_kind(&decl)) {
@@ -521,21 +538,10 @@ private:
     ada_subp_spec_f_subp_returns(&ada_subp_spec, &ret_type_expr);
     bool isProc = ada_node_is_null(&ret_type_expr);
 
-    mlir::Operation *op;
-    mlir::Block *entryBlock;
-    if (isProc) {
-      mlir::ada::ProcOp proc = mlirGenProcSpec(ada_subp_spec);
-      if (!proc)
-        return nullptr;
-      op = proc;
-      entryBlock = &proc.front();
-    } else {
-      mlir::ada::FuncOp function = mlirGenSubpSpec(ada_subp_spec);
-      if (!function)
-        return nullptr;
-      op = function;
-      entryBlock = &function.front();
-    }
+    mlir::Operation *op = mlirGenSubpSpec(ada_subp_spec, isProc);
+    if (!op)
+      return nullptr;
+    mlir::Block *entryBlock = &op->getRegion(0).front();
 
     std::vector<ada_node> args_v;
 
@@ -554,12 +560,11 @@ private:
     ada_node_array_dec_ref(params);
 
     // Declare all the function arguments in the symbol table.
-    for (const auto nameValue : llvm::zip(args_v, entryBlock->getArguments())) {
-      ada_node p = std::get<0>(nameValue);
-      if (failed(
-              declare(libadalang::getName(&p).data(), std::get<1>(nameValue))))
+    // C++17 structured bindings unpack each zip pair into named variables.
+    for (auto [p, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
+      if (failed(declare(libadalang::getName(&p).data(), arg)))
         return nullptr;
-      std::get<1>(nameValue).setLoc(loc(p));
+      arg.setLoc(loc(p));
     }
 
     builder.setInsertionPointToStart(entryBlock);
@@ -585,9 +590,10 @@ private:
     return op;
   }
 
-  /// Create an ada.proc with the signature derived from the Ada subprogram
-  /// spec.
-  mlir::ada::ProcOp mlirGenProcSpec(ada_node &subp_spec) {
+  /// Create an ada.proc (isProc=true) or ada.func (isProc=false) with the
+  /// signature derived from the Ada subprogram spec. Returns nullptr on
+  /// failure.
+  mlir::Operation *mlirGenSubpSpec(ada_node &subp_spec, bool isProc) {
     auto location = loc(libadalang::parent(&subp_spec));
 
     ada_node name;
@@ -608,33 +614,11 @@ private:
     }
     ada_node_array_dec_ref(params);
 
-    auto funcType = builder.getFunctionType(argTypes, {});
-    return builder.create<mlir::ada::ProcOp>(
-        location, libadalang::getName(&name).data(), funcType);
-  }
-
-  /// Create the prototype for an MLIR function with as many arguments as the
-  /// provided Libadalang AST prototype.
-  mlir::ada::FuncOp mlirGenSubpSpec(ada_node &subp_spec) {
-    auto location = loc(libadalang::parent(&subp_spec));
-
-    ada_node name;
-    ada_subp_spec_f_subp_name(&subp_spec, &name);
-
-    ada_node_array params;
-    ada_node ids;
-    ada_base_subp_spec_p_params(&subp_spec, &params);
-
-    llvm::SmallVector<mlir::Type, 4> argTypes;
-    for (int i = 0; i < params->n; i++) {
-      ada_node type_expr;
-      ada_param_spec_f_type_expr(&params->items[i], &type_expr);
-      mlir::Type paramType = getMLIRType(type_expr);
-      ada_param_spec_f_ids(&params->items[i], &ids);
-      for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
-        argTypes.push_back(paramType);
+    if (isProc) {
+      auto funcType = builder.getFunctionType(argTypes, {});
+      return builder.create<mlir::ada::ProcOp>(
+          location, libadalang::getName(&name).data(), funcType);
     }
-    ada_node_array_dec_ref(params);
 
     ada_node ret_type_expr;
     ada_subp_spec_f_subp_returns(&subp_spec, &ret_type_expr);
@@ -705,7 +689,7 @@ private:
             : nullptr;
     if (!calleeOp)
       calleeOp =
-          mlir::SymbolTable::lookupSymbolIn(theModule, calleeName.data());
+          mlir::SymbolTable::lookupSymbolIn(adaModule, calleeName.data());
 
     if (!calleeOp || !isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(calleeOp)) {
       emitError(location, "unknown subprogram '") << calleeName << "'";
@@ -826,10 +810,9 @@ private:
 
 namespace ada {
 
-// The public API for codegen.
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
-                                          ada_node &moduleAST) {
-  return MLIRGenImpl(context).mlirGen(moduleAST);
+                                          ada_node &compilationUnit) {
+  return MLIRGenImpl(context).mlirGen(compilationUnit);
 }
 
 } // namespace ada

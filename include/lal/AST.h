@@ -1,12 +1,16 @@
 #ifndef LAL_AST_H
 #define LAL_AST_H
 
-#include <cstring>
 #include <string>
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "libadalang.h"
+
+namespace mlir {
+class Diagnostic;
+} // namespace mlir
 
 namespace libadalang {
 
@@ -19,6 +23,18 @@ void dump(ada_node *node);
 std::string getName(ada_node *node, bool canonical = true);
 
 ada_node parent(ada_node *node);
+
+/// Convert an ada_text to a UTF-8 std::string, freeing the text afterwards.
+std::string textToString(ada_text &text);
+
+/// Wrapper that enables printing an ada_node via operator<<.
+/// Usage: llvm::errs() << libadalang::print(&node);
+struct NodePrinter {
+  ada_node *node;
+};
+inline NodePrinter image(ada_node *node) { return NodePrinter{node}; }
+llvm::raw_ostream &operator<<(llvm::raw_ostream &os, NodePrinter np);
+mlir::Diagnostic &operator<<(mlir::Diagnostic &diag, NodePrinter np);
 
 /// The AdaAST class handles an AST produced by Libadalang.
 class AdaAST {
