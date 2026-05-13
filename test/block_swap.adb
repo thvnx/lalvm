@@ -6,7 +6,7 @@
 -- MLIR-NEXT:    }
 -- MLIR:         ada.return
 
--- LLVM-LABEL: define void @test(
+-- LLVM-LABEL: define void @_ada_test(
 -- LLVM:          ret void
 
 -- Note: the Swap block body is empty at the MLIR level. In the current pure-SSA

@@ -6,7 +6,7 @@
 -- MLIR:         %[[C:.*]] = arith.constant 42 : i32
 -- MLIR-NEXT:    ada.return %[[C]] : i32
 
--- LLVM-LABEL: define i32 @test_local_var_uninit_assign(
+-- LLVM-LABEL: define i32 @_ada_test_local_var_uninit_assign(
 -- LLVM:          ret i32 42
 
 function Test_Local_Var_Uninit_Assign return Integer is

@@ -6,7 +6,7 @@
 -- MLIR:         ada.block_stmt {
 -- MLIR:         ada.return
 
--- LLVM-LABEL: define void @test_block(
+-- LLVM-LABEL: define void @_ada_test_block(
 -- LLVM:          ret void
 
 procedure Test_Block is

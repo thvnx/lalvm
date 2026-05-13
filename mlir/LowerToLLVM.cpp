@@ -175,16 +175,27 @@ struct ProcOpLowering : public OpConversionPattern<ada::ProcOp> {
 };
 
 void AdaToLLVMLoweringPass::runOnOperation() {
-  // Hoist nested subprogram bodies to module level before lowering: LLVM does
-  // not support nested functions. Each nested op is renamed with GNAT-style
-  // name mangling (__ separators) built from the full enclosing scope chain
-  // (e.g. @inner inside @outer becomes @outer__inner). Names are computed
-  // before any moves so the parent chain is still intact.
+  // Two-phase ABI renaming before lowering. Both sets of ops are collected in
+  // a single walk before any mutations so the parent chain is still intact.
+  //
+  // Phase 1 — hoist nested subprograms: LLVM does not support nested
+  // functions. Each nested op is renamed with GNAT-style __ separators built
+  // from the full enclosing scope chain (e.g. @inner inside @outer becomes
+  // @outer__inner). Parent names at this point are still bare Ada names, so
+  // the mangling matches GNAT (outer__inner, not _ada_outer__inner).
+  //
+  // Phase 2 — apply _ada_ prefix: library-level subprograms get the GNAT
+  // _ada_ prefix. Done after hoisting so nested mangling uses bare names.
   ModuleOp module = getOperation();
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedSubps;
+  llvm::SmallVector<Operation *, 4> librarySubps;
   module.walk([&](Operation *op) {
-    if (!isa<ada::FuncOp, ada::ProcOp>(op) || isa<ModuleOp>(op->getParentOp()))
+    if (!isa<ada::FuncOp, ada::ProcOp>(op))
       return;
+    if (isa<ModuleOp>(op->getParentOp())) {
+      librarySubps.push_back(op);
+      return;
+    }
     std::string name = mlir::SymbolTable::getSymbolName(op).str();
     for (Operation *p = op->getParentOp(); isa<ada::FuncOp, ada::ProcOp>(p);
          p = p->getParentOp())
@@ -192,15 +203,21 @@ void AdaToLLVMLoweringPass::runOnOperation() {
     nestedSubps.emplace_back(op, std::move(name));
   });
   for (auto &[op, mangledName] : nestedSubps) {
-    // Update call references before renaming so the old name is still valid
-    // during the walk. replaceAllSymbolUses finds all FlatSymbolRefAttr uses
-    // of this op's current name within the module and rewrites them.
     auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
     if (mlir::failed(
             mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
       return signalPassFailure();
     mlir::SymbolTable::setSymbolName(op, mangledName);
     op->moveBefore(module.getBody(), module.getBody()->end());
+  }
+  for (Operation *op : librarySubps) {
+    std::string mangledName =
+        "_ada_" + mlir::SymbolTable::getSymbolName(op).str();
+    auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
+    if (mlir::failed(
+            mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
+      return signalPassFailure();
+    mlir::SymbolTable::setSymbolName(op, mangledName);
   }
 
   // The first thing to define is the conversion target. This will define the

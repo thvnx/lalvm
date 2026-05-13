@@ -6,7 +6,7 @@
 -- MLIR:         %[[R:.*]] = ada.add %arg0, %arg1 : i64
 -- MLIR-NEXT:    ada.return %[[R]] : i64
 
--- LLVM-LABEL: define i64 @test_long(
+-- LLVM-LABEL: define i64 @_ada_test_long(
 -- LLVM:         %{{.*}} = add i64 %0, %1
 -- LLVM:         ret i64
 

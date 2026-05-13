@@ -6,7 +6,7 @@
 -- MLIR:         %[[R:.*]] = ada.add %arg0, %arg1 : i16
 -- MLIR-NEXT:    ada.return %[[R]] : i16
 
--- LLVM-LABEL: define i16 @test_short(
+-- LLVM-LABEL: define i16 @_ada_test_short(
 -- LLVM:         %{{.*}} = add i16 %0, %1
 -- LLVM:         ret i16
 

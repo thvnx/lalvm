@@ -6,7 +6,7 @@
 -- MLIR:         %{{.*}} = arith.constant 1.000000e+00 : f64
 -- MLIR-NEXT:    ada.return %{{.*}} : f64
 
--- LLVM-LABEL: define double @test_long_float_literal(
+-- LLVM-LABEL: define double @_ada_test_long_float_literal(
 -- LLVM:         ret double
 
 function Test_Long_Float_Literal return Long_Float is

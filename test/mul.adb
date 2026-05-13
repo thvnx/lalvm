@@ -5,7 +5,7 @@
 -- MLIR:         %[[R:.*]] = ada.mul %arg0, %arg1 : i32
 -- MLIR-NEXT:    ada.return %[[R]] : i32
 
--- LLVM-LABEL: define i32 @test_mul(
+-- LLVM-LABEL: define i32 @_ada_test_mul(
 -- LLVM:         %{{.*}} = mul i32 %0, %1
 -- LLVM:         ret i32
 

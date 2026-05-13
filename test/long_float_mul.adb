@@ -6,7 +6,7 @@
 -- MLIR:         %[[R:.*]] = ada.mul %arg0, %arg1 : f64
 -- MLIR-NEXT:    ada.return %[[R]] : f64
 
--- LLVM-LABEL: define double @test_long_float_mul(
+-- LLVM-LABEL: define double @_ada_test_long_float_mul(
 -- LLVM:         %{{.*}} = fmul double %0, %1
 -- LLVM:         ret double
 

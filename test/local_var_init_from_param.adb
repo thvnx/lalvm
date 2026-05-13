@@ -5,7 +5,7 @@
 -- MLIR-SAME:    (%arg0: i32) -> i32
 -- MLIR:         ada.return %arg0 : i32
 
--- LLVM-LABEL: define i32 @test_local_var_init_from_param(
+-- LLVM-LABEL: define i32 @_ada_test_local_var_init_from_param(
 -- LLVM:         ret i32 %0
 
 function Test_Local_Var_Init_From_Param (N : Integer) return Integer is

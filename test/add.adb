@@ -6,7 +6,7 @@
 -- MLIR-NEXT:    %[[ABC:.*]] = ada.add %[[AB]], %arg2 : i32
 -- MLIR-NEXT:    ada.return %[[ABC]] : i32
 
--- LLVM-LABEL: define i32 @test(
+-- LLVM-LABEL: define i32 @_ada_test(
 -- LLVM:         %{{.*}} = add i32 %0, %1
 -- LLVM-NEXT:    %{{.*}} = add i32 %{{.*}}, %2
 -- LLVM:         ret i32

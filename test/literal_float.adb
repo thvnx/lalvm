@@ -6,7 +6,7 @@
 -- MLIR:         %{{.*}} = arith.constant 1.000000e+00 : f32
 -- MLIR-NEXT:    ada.return %{{.*}} : f32
 
--- LLVM-LABEL: define float @test_float_literal(
+-- LLVM-LABEL: define float @_ada_test_float_literal(
 -- LLVM:         ret float
 
 function Test_Float_Literal return Float is

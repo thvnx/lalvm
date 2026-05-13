@@ -6,7 +6,7 @@
 -- MLIR:         %[[R:.*]] = ada.add %arg0, %arg1 : f32
 -- MLIR-NEXT:    ada.return %[[R]] : f32
 
--- LLVM-LABEL: define float @test_float(
+-- LLVM-LABEL: define float @_ada_test_float(
 -- LLVM:         %{{.*}} = fadd float %0, %1
 -- LLVM:         ret float
 

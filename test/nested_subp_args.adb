@@ -8,7 +8,7 @@
 -- MLIR:         ada.call @inner([[V]]) : (i32) -> ()
 -- MLIR:         ada.return
 
--- LLVM-LABEL: define void @test_nested_subp_args(
+-- LLVM-LABEL: define void @_ada_test_nested_subp_args(
 -- LLVM:          call void @test_nested_subp_args__inner(i32 42)
 -- LLVM-LABEL: define void @test_nested_subp_args__inner(i32
 

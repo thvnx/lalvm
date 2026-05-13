@@ -8,7 +8,7 @@
 -- MLIR-NEXT:    %[[R:.*]] = ada.add %[[X]], %[[Y]] : i32
 -- MLIR-NEXT:    ada.return %[[R]] : i32
 
--- LLVM-LABEL: define i32 @test_local_var(
+-- LLVM-LABEL: define i32 @_ada_test_local_var(
 -- LLVM:         ret i32 8
 
 function Test_Local_Var return Integer is

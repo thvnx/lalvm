@@ -24,7 +24,7 @@
 -- MLIR-NEXT:    %[[V8:.*]] = ada.add %[[V7]], %[[C10]] : i32
 -- MLIR-NEXT:    ada.return %[[V8]] : i32
 
--- LLVM-LABEL: define i32 @test_literal_arithmetic(
+-- LLVM-LABEL: define i32 @_ada_test_literal_arithmetic(
 -- LLVM:         ret i32 66
 
 -- 1 + 2 + 3 + 4 + 5 - 6 + 7 * 8 - 9 + 10 = 66

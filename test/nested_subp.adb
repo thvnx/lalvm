@@ -7,7 +7,7 @@
 -- MLIR:         ada.call @inner() : () -> ()
 -- MLIR:         ada.return
 
--- LLVM-LABEL: define void @test_nested_subp(
+-- LLVM-LABEL: define void @_ada_test_nested_subp(
 -- LLVM:          call void @test_nested_subp__inner()
 -- LLVM-LABEL: define void @test_nested_subp__inner(
 

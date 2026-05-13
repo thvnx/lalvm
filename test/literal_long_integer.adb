@@ -6,7 +6,7 @@
 -- MLIR:         %{{.*}} = arith.constant 42 : i64
 -- MLIR-NEXT:    ada.return %{{.*}} : i64
 
--- LLVM-LABEL: define i64 @test_long_literal(
+-- LLVM-LABEL: define i64 @_ada_test_long_literal(
 -- LLVM:         ret i64 42
 
 function Test_Long_Literal return Long_Integer is

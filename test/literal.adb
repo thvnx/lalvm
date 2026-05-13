@@ -5,7 +5,7 @@
 -- MLIR:         %{{.*}} = arith.constant 42 : i32
 -- MLIR-NEXT:    ada.return %{{.*}} : i32
 
--- LLVM-LABEL: define i32 @test_literal(
+-- LLVM-LABEL: define i32 @_ada_test_literal(
 -- LLVM:         ret i32 42
 
 function Test_Literal return Integer is

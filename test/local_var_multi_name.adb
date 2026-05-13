@@ -8,7 +8,7 @@
 -- MLIR-NEXT:    %[[R2:.*]] = ada.add %[[R1]], %[[V]] : i32
 -- MLIR-NEXT:    ada.return %[[R2]] : i32
 
--- LLVM-LABEL: define i32 @test_local_var_multi_name(
+-- LLVM-LABEL: define i32 @_ada_test_local_var_multi_name(
 -- LLVM:         ret i32 9
 
 function Test_Local_Var_Multi_Name return Integer is

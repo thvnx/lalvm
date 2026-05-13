@@ -1,6 +1,6 @@
 // RUN: %lalvm --emit=llvm %s | %FileCheck %s
 
-// CHECK-LABEL: define i32 @test_from_mlir(
+// CHECK-LABEL: define i32 @_ada_test_from_mlir(
 // CHECK:         ret i32 42
 
 module {

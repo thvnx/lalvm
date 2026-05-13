@@ -10,7 +10,7 @@
 -- MLIR:         %[[R:.*]] = ada.add %arg1, %arg2 : i32
 -- MLIR-NEXT:    ada.return
 
--- LLVM-LABEL: define void @proc(
+-- LLVM-LABEL: define void @_ada_proc(
 -- LLVM:         %{{.*}} = add i32 %1, %2
 -- LLVM:         ret void
 

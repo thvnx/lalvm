@@ -12,7 +12,7 @@
 
 -- Hoisting moves innermost procs to module end first (post-order), so the
 -- LLVM output order is: outer, then innermost-first.
--- LLVM-LABEL: define void @test_deep_nesting(
+-- LLVM-LABEL: define void @_ada_test_deep_nesting(
 -- LLVM-LABEL: define void @test_deep_nesting__a__b__c(
 -- LLVM-LABEL: define void @test_deep_nesting__a__b(
 -- LLVM-LABEL: define void @test_deep_nesting__a(
