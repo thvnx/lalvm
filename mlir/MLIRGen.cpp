@@ -79,9 +79,9 @@ public:
         builder.getContext(), [](mlir::Diagnostic &diag) {
           if (auto loc =
                   mlir::dyn_cast<mlir::FileLineColRange>(diag.getLocation()))
-            llvm::errs() << llvm::sys::path::filename(loc.getFilename())
-                         << ":" << loc.getStartLine() << ":"
-                         << loc.getStartColumn() << ": ";
+            llvm::errs() << llvm::sys::path::filename(loc.getFilename()) << ":"
+                         << loc.getStartLine() << ":" << loc.getStartColumn()
+                         << ": ";
           else
             llvm::errs() << diag.getLocation() << ": ";
           switch (diag.getSeverity()) {

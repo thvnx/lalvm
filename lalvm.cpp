@@ -1,4 +1,5 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 #include "ada/Dialect.h"
@@ -22,6 +23,7 @@
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -113,6 +115,30 @@ int dumpMLIR(libadalang::AdaAST ast) {
   return 0;
 }
 
+/// Attach an Ada-correct DICompileUnitAttr to the module location so that
+/// DIScopeForLLVMFuncOp picks it up (via its FusedLocWith<DICompileUnitAttr>
+/// hook) instead of defaulting to DW_LANG_C / "MLIR".
+static void setAdaDebugInfo(mlir::ModuleOp module) {
+  mlir::MLIRContext *ctx = module.getContext();
+
+  llvm::StringRef filePath;
+  if (auto loc = mlir::dyn_cast<mlir::FileLineColRange>(module.getLoc()))
+    filePath = loc.getFilename().getValue();
+
+  auto fileAttr =
+      mlir::LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
+                                  llvm::sys::path::parent_path(filePath));
+
+  // DW_LANG_Ada2012 = 0x002f (DWARF5, §7.12 table 7.17)
+  constexpr unsigned kDW_LANG_Ada2012 = 0x002f;
+  auto cuAttr = mlir::LLVM::DICompileUnitAttr::get(
+      mlir::DistinctAttr::create(mlir::UnitAttr::get(ctx)), kDW_LANG_Ada2012,
+      fileAttr, mlir::StringAttr::get(ctx, "lalvm"),
+      /*isOptimized=*/false, mlir::LLVM::DIEmissionKind::Full);
+
+  module->setLoc(mlir::FusedLoc::get(ctx, {module.getLoc()}, cuAttr));
+}
+
 // Full compilation pipeline: Ada source → Ada MLIR dialect → LLVM dialect.
 // The MLIR module is modified in place; the caller then translates it to LLVM
 // IR. Pre-condition: context must have AdaDialect and ArithDialect loaded.
@@ -120,6 +146,13 @@ int loadAndProcessMLIR(libadalang::AdaAST ast, mlir::MLIRContext &context,
                        mlir::OwningOpRef<mlir::ModuleOp> &module) {
   if (int error = loadMLIR(ast, context, module))
     return error;
+
+  // DI attribute types (DIFileAttr, DICompileUnitAttr, …) belong to the LLVM
+  // dialect; load it before creating them.
+  context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+
+  // Pre-set Ada debug info so DIScopeForLLVMFuncOp uses our compile unit.
+  setAdaDebugInfo(*module);
 
   mlir::PassManager pm(module.get()->getName());
   // Lower Ada dialect ops to the LLVM dialect.
