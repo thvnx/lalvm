@@ -65,6 +65,16 @@ struct AdaToLLVMLoweringPass
 };
 } // namespace
 
+struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
+  using OpRewritePattern<ada::NullOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ada::NullOp op,
+                                PatternRewriter &rewriter) const final {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct BlockStmtOpLowering : public OpRewritePattern<ada::BlockStmtOp> {
   using OpRewritePattern<ada::BlockStmtOp>::OpRewritePattern;
 
@@ -240,9 +250,9 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<BlockStmtOpLowering, ReturnOpLowering, CallOpLowering,
-               FuncOpLowering, ProcOpLowering, AddOpLowering, SubOpLowering,
-               MulOpLowering>(&getContext());
+  patterns.add<NullOpLowering, BlockStmtOpLowering, ReturnOpLowering,
+               CallOpLowering, FuncOpLowering, ProcOpLowering, AddOpLowering,
+               SubOpLowering, MulOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

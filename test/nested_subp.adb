@@ -3,7 +3,8 @@
 
 -- MLIR-LABEL: ada.proc @test_nested_subp
 -- MLIR:         ada.proc @inner
--- MLIR:           ada.return
+-- MLIR:           ada.null
+-- MLIR-NEXT:      ada.return
 -- MLIR:         ada.call @inner() : () -> ()
 -- MLIR:         ada.return
 

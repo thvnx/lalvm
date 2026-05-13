@@ -196,6 +196,9 @@ private:
       if (mlir::failed(mlirGenAssign(moduleAST)))
         return mlir::failure();
       return mlir::success();
+    case ada_null_stmt:
+      builder.create<mlir::ada::NullOp>(loc(moduleAST));
+      return mlir::success();
     case ada_call_stmt:
       return mlirGenCallStmt(moduleAST);
     case ada_named_stmt: {

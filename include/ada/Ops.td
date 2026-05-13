@@ -80,6 +80,16 @@ def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
+// NopOp
+//===----------------------------------------------------------------------===//
+
+// Ada null statement (RM 5.1): a no-operation statement. Lowered to nothing.
+def NullOp : Ada_Op<"null", [Pure]> {
+  let summary = "null statement — no operation";
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // BlockStmtOp
 //===----------------------------------------------------------------------===//
 
