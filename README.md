@@ -41,25 +41,33 @@ Options:
 ## Example
 
 ```ada
--- add.adb
-function Test (I, J, K : Integer) return Integer is
+-- compute.adb
+function Compute (X : Integer) return Integer is
+   function Double (N : Integer) return Integer is
+   begin
+      return N + N;
+   end Double;
+   Result : Integer := Double (X);
 begin
-   return I + J + K;
-end Test;
+   return Result;
+end Compute;
 ```
 
 ```sh
-lalvm --emit=ast  add.adb   # Libadalang AST dump
-lalvm --emit=mlir add.adb   # Ada MLIR dialect
-lalvm --emit=llvm add.adb   # LLVM IR
+lalvm --emit=ast  compute.adb   # Libadalang AST dump
+lalvm --emit=mlir compute.adb   # Ada MLIR dialect
+lalvm --emit=llvm compute.adb   # LLVM IR
 ```
 
 MLIR output:
 ```mlir
-ada.func @test(%arg0: i32, %arg1: i32, %arg2: i32) -> i32 {
-  %0 = ada.add %arg0, %arg1 : i32
-  %1 = ada.add %0, %arg2 : i32
-  ada.return %1 : i32
+ada.func @compute(%arg0: i32) -> i32 {
+  ada.func @double(%arg0: i32) -> i32 {
+    %0 = ada.add %arg0, %arg0 : i32
+    ada.return %0 : i32
+  }
+  %0 = ada.call @double(%arg0) : (i32) -> i32
+  ada.return %0 : i32
 }
 ```
 
@@ -79,16 +87,57 @@ lalvm --emit=llvm add.adb | llc -mtriple=aarch64-linux-gnu -o add.s
 lalvm --emit=llvm add.adb | llc -filetype=obj -o add.o
 ```
 
+## Symbol naming (ABI)
+
+LALVM follows GNAT's symbol naming convention:
+
+- **Library-level subprograms** get the `_ada_` prefix:
+  `procedure Foo` → `_ada_foo`
+- **Nested subprograms** get a `parent__child` mangled name without the prefix:
+  `procedure Inner` inside `procedure Outer` → `outer__inner`
+
+This allows lalvm-compiled code to be linked against GNAT-compiled code and
+called from C using the same name mangling convention.
+
+## Debug info
+
+LALVM emits DWARF 5 debug info with `DW_LANG_Ada2012`. Source locations are
+attached to every MLIR operation and carried through to LLVM IR.
+
+To inspect source locations in the MLIR output:
+
+```sh
+lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope add.adb
+```
+
+This prints each op's source location inline, for example:
+
+```mlir
+%0 = ada.add %arg0, %arg1 : i32 loc("add.adb":15:13 to :14)
+```
+
 ## Status
 
-This is a work in progress. Only a very small subset of Ada is currently supported.
+Work in progress. Only a small subset of Ada is supported; most language features
+are not yet implemented.
+
+- **Expressions (partial):** integer and real literals, binary arithmetic (`+`, `-`, `*`),
+  variable references, function calls
+- **Statements (partial):** assignments, `return`, `null`, procedure calls, block
+  statements (`begin`/`end` and `declare`/`begin`/`end`)
+- **Declarations (partial):** function and procedure subprograms (library-level and
+  nested), local variable declarations with initializers
+- **Types:** `Integer` (i32), `Short_Integer` (i16), `Long_Integer` (i64),
+  `Float` (f32), `Long_Float` (f64)
+- **Debug info:** DWARF 5, `DW_LANG_Ada2012`, source locations on all ops
 
 ## Architecture
 
 The compiler is organized in three layers:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`) — custom MLIR dialect defining
-  `ada.func`, `ada.proc`, `ada.return`, `ada.add`, `ada.sub`, `ada.mul`
+  `ada.func`, `ada.proc`, `ada.return`, `ada.add`, `ada.sub`, `ada.mul`,
+  `ada.call`, `ada.block_stmt`, `ada.null`
 - **MLIRGen** (`mlir/MLIRGen.cpp`) — lowers a Libadalang AST to the Ada dialect
 - **LowerToLLVM** (`mlir/LowerToLLVM.cpp`) — lowers the Ada dialect to LLVM IR via
   the Func and Arith intermediate dialects
