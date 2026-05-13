@@ -200,6 +200,26 @@ void FuncOp::print(mlir::OpAsmPrinter &p) {
 }
 
 //===----------------------------------------------------------------------===//
+// CallOp
+//===----------------------------------------------------------------------===//
+
+void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                   llvm::StringRef callee, mlir::ValueRange operands) {
+  state.addAttribute(getCalleeAttrName(state.name),
+                     mlir::SymbolRefAttr::get(builder.getContext(), callee));
+  state.addOperands(operands);
+}
+
+void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                   llvm::StringRef callee, mlir::Type resultType,
+                   mlir::ValueRange operands) {
+  state.addTypes(resultType);
+  state.addAttribute(getCalleeAttrName(state.name),
+                     mlir::SymbolRefAttr::get(builder.getContext(), callee));
+  state.addOperands(operands);
+}
+
+//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 

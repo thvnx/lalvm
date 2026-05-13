@@ -110,17 +110,29 @@ def BlockStmtOp : Ada_Op<"block_stmt", [NoTerminator, SingleBlock]> {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-// Procedure call — no return value. Calls the named subprogram with the given
-// operands. The callee is referenced by a flat symbol (resolved via the nearest
-// enclosing SymbolTable, which may be an ada.func/ada.proc for nested calls).
-// The LowerToLLVM pass hoists nested subprograms to module level and updates
-// all call references accordingly before converting ada.call to func.call.
+// Subprogram call. Procedure calls carry no result; function calls carry
+// exactly one. The callee is referenced by a flat symbol (resolved via the
+// nearest enclosing SymbolTable, which may be an ada.func/ada.proc for nested
+// calls). The LowerToLLVM pass hoists nested subprograms to module level and
+// updates all call references accordingly before converting ada.call to
+// func.call.
 def CallOp : Ada_Op<"call", []> {
-  let summary = "procedure call";
+  let summary = "subprogram call";
   let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
-  let results = (outs);
+  let results = (outs Optional<AnyType>:$result);
   let assemblyFormat = "$callee `(` $operands `)` attr-dict"
                        " `:` functional-type($operands, results)";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // Procedure call (no result).
+    OpBuilder<(ins "::llvm::StringRef":$callee,
+      CArg<"::mlir::ValueRange", "{}">:$operands)>,
+    // Function call (one result type).
+    OpBuilder<(ins "::llvm::StringRef":$callee, "::mlir::Type":$resultType,
+      CArg<"::mlir::ValueRange", "{}">:$operands)>
+  ];
+
 }
 
 //===----------------------------------------------------------------------===//

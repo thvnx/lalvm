@@ -447,6 +447,79 @@ private:
         loc(node), builder.getFloatAttr(type, value));
   }
 
+  /// Emit a subprogram call from an ada_identifier (no-arg) or ada_call_expr
+  /// (with args) node. Returns the CallOp on success, nullptr on error.
+  /// For function calls the op has one result; for procedure calls none.
+  mlir::ada::CallOp mlirGenCallExpr(ada_node &call) {
+    auto location = loc(call);
+
+    ada_node name_node;
+    llvm::SmallVector<mlir::Value> args;
+
+    switch (ada_node_kind(&call)) {
+    case ada_identifier:
+      name_node = call;
+      break;
+    case ada_call_expr: {
+      ada_call_expr_f_name(&call, &name_node);
+      ada_node suffix;
+      ada_call_expr_f_suffix(&call, &suffix);
+      int n = ada_node_children_count(&suffix);
+      for (int i = 0; i < n; ++i) {
+        ada_node assoc, r_expr;
+        ada_node_child(&suffix, i, &assoc);
+        ada_param_assoc_f_r_expr(&assoc, &r_expr);
+        mlir::Value val = visit_expr(r_expr);
+        if (!val)
+          return nullptr;
+        args.push_back(val);
+      }
+      break;
+    }
+    default:
+      mlir::emitError(location, "unsupported call expression");
+      return nullptr;
+    }
+
+    auto calleeName = libadalang::getName(&name_node);
+
+    // Look up callee — enclosing function first (nested calls), then module.
+    mlir::Operation *enclosingFunc =
+        builder.getInsertionBlock()->getParent()->getParentOp();
+    mlir::Operation *calleeOp =
+        isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(enclosingFunc)
+            ? mlir::SymbolTable::lookupSymbolIn(enclosingFunc,
+                                                calleeName.data())
+            : nullptr;
+    if (!calleeOp)
+      calleeOp =
+          mlir::SymbolTable::lookupSymbolIn(adaModule, calleeName.data());
+
+    if (!calleeOp || !isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(calleeOp)) {
+      mlir::emitError(location, "unknown subprogram '") << calleeName << "'";
+      return nullptr;
+    }
+
+    auto callLoc = mlir::CallSiteLoc::get(calleeOp->getLoc(), location);
+
+    if (isa<mlir::ada::FuncOp>(calleeOp)) {
+      ada_node type_decl;
+      if (!ada_expr_p_expression_type(&call, &type_decl) ||
+          ada_node_is_null(&type_decl)) {
+        mlir::emitError(location,
+                        "failed to resolve return type of function call");
+        return nullptr;
+      }
+      mlir::Type retType = getMLIRTypeFromDecl(type_decl, location);
+      if (!retType)
+        return nullptr;
+      return builder.create<mlir::ada::CallOp>(callLoc, calleeName.data(),
+                                               retType, args);
+    }
+
+    return builder.create<mlir::ada::CallOp>(callLoc, calleeName.data(), args);
+  }
+
   /// Codegen an expression node. Returns the SSA Value for the result, or
   /// nullptr on failure (unsupported expression kind or codegen error).
   mlir::Value visit_expr(ada_node &expr) {
@@ -459,6 +532,16 @@ private:
       return mlirGenRealLiteral(expr);
     case ada_bin_op:
       return mlirGenBinOp(expr);
+    case ada_call_expr: {
+      auto callOp = mlirGenCallExpr(expr);
+      if (!callOp)
+        return nullptr;
+      if (callOp.getNumResults() == 0) {
+        mlir::emitError(loc(expr), "procedure called in expression context");
+        return nullptr;
+      }
+      return callOp->getResult(0);
+    }
     default:
       mlir::emitError(loc(expr), "unsupported expression: ")
           << libadalang::image(&expr);
@@ -719,60 +802,7 @@ private:
   llvm::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
     ada_node call;
     ada_call_stmt_f_call(&call_stmt, &call);
-    auto location = loc(call_stmt);
-
-    ada_node name_node;
-    llvm::SmallVector<mlir::Value> args;
-
-    switch (ada_node_kind(&call)) {
-    case ada_identifier:
-      // No-argument call: f_call is the callee identifier directly.
-      name_node = call;
-      break;
-    case ada_call_expr: {
-      // Call with arguments: f_call is a CallExpr with f_name + f_suffix.
-      ada_call_expr_f_name(&call, &name_node);
-      ada_node suffix;
-      ada_call_expr_f_suffix(&call, &suffix);
-      int n = ada_node_children_count(&suffix);
-      for (int i = 0; i < n; ++i) {
-        ada_node assoc, r_expr;
-        ada_node_child(&suffix, i, &assoc);
-        ada_param_assoc_f_r_expr(&assoc, &r_expr);
-        mlir::Value val = visit_expr(r_expr);
-        if (!val)
-          return mlir::failure();
-        args.push_back(val);
-      }
-      break;
-    }
-    default:
-      emitError(location, "unsupported call expression");
-      return mlir::failure();
-    }
-
-    auto calleeName = libadalang::getName(&name_node);
-
-    // Search the enclosing function's SymbolTable first (handles nested
-    // subprogram calls), then fall back to the module level.
-    mlir::Operation *enclosingFunc =
-        builder.getInsertionBlock()->getParent()->getParentOp();
-    mlir::Operation *calleeOp =
-        isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(enclosingFunc)
-            ? mlir::SymbolTable::lookupSymbolIn(enclosingFunc,
-                                                calleeName.data())
-            : nullptr;
-    if (!calleeOp)
-      calleeOp =
-          mlir::SymbolTable::lookupSymbolIn(adaModule, calleeName.data());
-
-    if (!calleeOp || !isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(calleeOp)) {
-      emitError(location, "unknown subprogram '") << calleeName << "'";
-      return mlir::failure();
-    }
-
-    builder.create<mlir::ada::CallOp>(location, calleeName.data(), args);
-    return mlir::success();
+    return mlirGenCallExpr(call) ? mlir::success() : mlir::failure();
   }
 
   /// Known limitation: `in out` parameter write-back is not implemented.

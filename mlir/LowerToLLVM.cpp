@@ -104,8 +104,8 @@ struct CallOpLowering : public OpRewritePattern<ada::CallOp> {
 
   LogicalResult matchAndRewrite(ada::CallOp op,
                                 PatternRewriter &rewriter) const final {
-    rewriter.replaceOpWithNewOp<func::CallOp>(op, op.getCallee(), TypeRange{},
-                                              op.getOperands());
+    rewriter.replaceOpWithNewOp<func::CallOp>(
+        op, op.getCallee(), op.getResultTypes(), op.getOperands());
     return success();
   }
 };
