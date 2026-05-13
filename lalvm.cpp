@@ -178,6 +178,9 @@ int dumpLLVMIR(mlir::ModuleOp module) {
     return 1;
   }
 
+  llvmModule->setModuleIdentifier(llvm::sys::path::filename(inputFilename));
+  llvmModule->setSourceFileName(inputFilename);
+
   // Initialize LLVM targets.
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
