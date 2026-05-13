@@ -16,6 +16,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -76,15 +77,13 @@ public:
     // drops non-error diagnostics.
     mlir::ScopedDiagnosticHandler diagHandler(
         builder.getContext(), [](mlir::Diagnostic &diag) {
-          // TODO: use GCC/clang-style "file:line:col: " location format:
-          // if (auto loc =
-          // mlir::dyn_cast<mlir::FileLineColRange>(diag.getLocation()))
-          //   llvm::errs() << loc.getFilename().getValue() << ":"
-          //                << loc.getStartLine() << ":" << loc.getStartColumn()
-          //                << ": ";
-          // else
-          //   llvm::errs() << diag.getLocation() << ": ";
-          llvm::errs() << diag.getLocation() << ": ";
+          if (auto loc =
+                  mlir::dyn_cast<mlir::FileLineColRange>(diag.getLocation()))
+            llvm::errs() << llvm::sys::path::filename(loc.getFilename())
+                         << ":" << loc.getStartLine() << ":"
+                         << loc.getStartColumn() << ": ";
+          else
+            llvm::errs() << diag.getLocation() << ": ";
           switch (diag.getSeverity()) {
           case mlir::DiagnosticSeverity::Error:
             llvm::WithColor::error();
