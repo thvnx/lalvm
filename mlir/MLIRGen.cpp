@@ -1,6 +1,7 @@
 #include "ada/MLIRGen.h"
 
 #include "ada/Dialect.h"
+#include "libadalang.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Value.h"
@@ -56,10 +57,6 @@ using llvm::StringRef;
 //
 //  - `in out` parameters: write-back to the caller's variable is not
 //    implemented. The updated value is stored in the local symbol table only.
-//
-//  - Unrecognised top-level node kinds (ada_package_body, etc.) are silently
-//    skipped. A file containing only a package will produce an empty module
-//    with no diagnostic.
 
 namespace {
 
@@ -215,12 +212,19 @@ private:
     case ada_begin_block:
     case ada_decl_block:
       return mlirGenBlockStmt(moduleAST, {});
+    case ada_compilation_unit:
+    case ada_ada_node_list:
+    case ada_library_item:
+    case ada_private_absent:
+    case ada_private_present:
+    case ada_pragma_node_list:
     case ada_handled_stmts:
     case ada_stmt_list:
-      // Transparent container nodes — visit children without warning.
+      // Transparent nodes — visit children without warning.
       break;
     default: {
-      mlir::emitWarning(loc(moduleAST), "visit: unhandled node kind '")
+      // TODO: turn this into an Error when lalvm is mature enough.
+      mlir::emitWarning(loc(moduleAST), "visit: unhandled node '")
           << libadalang::image(&moduleAST) << "'";
       break;
     }
