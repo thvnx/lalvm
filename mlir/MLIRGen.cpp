@@ -236,8 +236,10 @@ private:
     unsigned i, count = ada_node_children_count(&moduleAST);
     for (i = 0; i < count; ++i) {
       ada_node child;
-      if (ada_node_child(&moduleAST, i, &child) == 0)
+      if (ada_node_child(&moduleAST, i, &child) == 0) {
         mlir::emitError(loc(moduleAST), "failed to get child node");
+        return mlir::failure();
+      }
       if (!ada_node_is_null(&child) && mlir::failed(visit(child)))
         return mlir::failure();
     }
@@ -667,7 +669,11 @@ private:
       ada_param_spec_f_ids(&params->items[i], &ids);
       for (unsigned int j = 0; j < ada_node_children_count(&ids); j++) {
         ada_node child;
-        ada_node_child(&ids, j, &child);
+        if (ada_node_child(&ids, j, &child) == 0) {
+          ada_node_array_dec_ref(params);
+          mlir::emitError(loc(ids), "failed to get parameter identifier");
+          return nullptr;
+        }
         args_v.push_back(child);
       }
     }
