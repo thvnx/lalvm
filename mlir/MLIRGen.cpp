@@ -23,13 +23,11 @@
 
 #define DEBUG_TYPE "ada-mlirgen"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/Support/Allocator.h"
-#include "llvm/Support/StringSaver.h"
 #include <cassert>
 #include <cerrno>
 #include <cstdint>
@@ -38,7 +36,6 @@
 using llvm::ArrayRef;
 using llvm::cast;
 using llvm::isa;
-using llvm::ScopedHashTableScope;
 using llvm::SmallVector;
 using llvm::StringRef;
 
@@ -128,17 +125,17 @@ private:
   /// point" that determines where the next operation will be emitted.
   mlir::OpBuilder builder;
 
-  // Maps variable names to their current SSA Value within the active scope.
-  // ScopedHashTable automatically pops bindings when a scope is destroyed,
-  // which handles Ada's block scoping. In SSA form, assignment rebinds the name
-  // to a new Value rather than mutating in place.
-  llvm::ScopedHashTable<StringRef, mlir::Value> symbolTable;
-
-  // Arena for string keys stored in symbolTable. StringRef is non-owning, so
-  // names must outlive their symbol-table entry; stringSaver copies each name
-  // into stringPool which lives as long as MLIRGenImpl.
-  llvm::BumpPtrAllocator stringPool;
-  llvm::StringSaver stringSaver{stringPool};
+  // Maps each DefiningName node to its current SSA Value. The key is the
+  // ada_base_node pointer, which is Libadalang's unique node identity.
+  // Using node identity instead of name strings means references always
+  // resolve to the correct declaration regardless of name shadowing —
+  // Libadalang's cross-references handle scoping for us.
+  //
+  // In the SSA model, assignment rebinds the same key to a new value rather
+  // than mutating it; nodeValues always holds the latest SSA value for each
+  // declaration. No scope cleanup is needed: for valid Ada, Libadalang
+  // rejects references to out-of-scope declarations before MLIRGen runs.
+  llvm::DenseMap<ada_base_node, mlir::Value> nodeValues;
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(const ada_node &node) {
@@ -165,14 +162,13 @@ private:
     return result;
   }
 
-  /// Declare a variable in the current scope, return success if the variable
-  /// wasn't declared yet.
-  llvm::LogicalResult declare(llvm::StringRef var, mlir::Value value) {
-    LLVM_DEBUG(llvm::dbgs() << "declare variable: " << var.data() << "\n");
-    if (symbolTable.count(var))
-      return mlir::failure();
-    symbolTable.insert(stringSaver.save(var), value);
-    return mlir::success();
+  /// Bind a DefiningName node to an SSA value. For assignment, this overwrites
+  /// the previous binding for the same node — the SSA model's way of tracking
+  /// the latest value of a mutable variable without alloca/load/store.
+  void declare(ada_node &def_name, mlir::Value value) {
+    LLVM_DEBUG(llvm::dbgs()
+               << "declare: " << libadalang::image(&def_name) << "\n");
+    nodeValues[def_name.node] = value;
   }
 
   // Recursive AST walker. Handles the node kinds we know how to codegen;
@@ -246,28 +242,31 @@ private:
     return mlir::success();
   }
 
-  /// This is a reference to a variable in an expression. The variable is
-  /// expected to have been declared and so should have a value in the symbol
-  /// table, otherwise emit an error and return nullptr.
+  /// Emit a variable reference. Resolves via Libadalang cross-reference to
+  /// the unique DefiningName node, then looks up the current SSA value.
   mlir::Value mlirGenVariable(ada_node &expr) {
-    auto name = libadalang::getName(&expr);
-    if (auto variable = symbolTable.lookup(name.data()))
-      return variable;
+    // Fast path: resolve to DefiningName and look up in nodeValues.
+    ada_node def_name;
+    if (ada_name_p_referenced_defining_name(&expr, 0, &def_name) &&
+        !ada_node_is_null(&def_name)) {
+      if (auto it = nodeValues.find(def_name.node); it != nodeValues.end())
+        return it->second;
+    }
 
-    // Distinguish between a variable that is declared but has no initializer
-    // (not yet in the symbol table) and one that is genuinely undeclared.
+    // Slow path: distinguish error kinds for better diagnostics.
     ada_node ref_decl;
     if (ada_name_p_referenced_decl(&expr, 0, &ref_decl) &&
         !ada_node_is_null(&ref_decl)) {
       if (ada_node_kind(&ref_decl) == ada_object_decl) {
+        // Declared but not yet in nodeValues: never initialised or assigned.
         ada_node default_expr;
         ada_object_decl_f_default_expr(&ref_decl, &default_expr);
         if (ada_node_is_null(&default_expr)) {
-          auto name = libadalang::getName(&expr, false);
           // TODO: downgrade to a warning once the alloca-based model is in
           // place.
           mlir::emitError(loc(ref_decl), "variable '")
-              << name << "' is read but never assigned";
+              << libadalang::getName(&expr, false)
+              << "' is read but never assigned";
           return nullptr;
         }
       } else {
@@ -593,12 +592,7 @@ private:
         mlir::emitError(loc(object_decl), "failed to get declared identifier");
         return mlir::failure();
       }
-      auto name = libadalang::getName(&id);
-      if (mlir::failed(declare(name.data(), init))) {
-        mlir::emitError(loc(id), "variable '")
-            << libadalang::getName(&id, false) << "' already declared";
-        return mlir::failure();
-      }
+      declare(id, init);
     }
     return mlir::success();
   }
@@ -649,10 +643,6 @@ private:
   /// function op, binds argument SSA values in the symbol table, then walks
   /// the statement list to emit the body.
   mlir::Operation *mlirGenSubpBody(ada_node &subp_body) {
-    // Push a new scope so that argument names and local variables are cleaned
-    // up automatically when we leave this subprogram.
-    ScopedHashTableScope<llvm::StringRef, mlir::Value> varScope(symbolTable);
-
     ada_node ada_subp_spec;
     ada_base_subp_body_f_subp_spec(&subp_body, &ada_subp_spec);
 
@@ -688,12 +678,9 @@ private:
     // Declare all the function arguments in the symbol table.
     // C++17 structured bindings unpack each zip pair into named variables.
     for (auto [p, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
-      auto canonName = libadalang::getName(&p);
-      auto displayName = libadalang::getName(&p, false);
-      if (failed(declare(canonName.data(), arg)))
-        return nullptr;
-      arg.setLoc(
-          mlir::NameLoc::get(builder.getStringAttr(displayName), loc(p)));
+      declare(p, arg);
+      arg.setLoc(mlir::NameLoc::get(
+          builder.getStringAttr(libadalang::getName(&p, false)), loc(p)));
     }
 
     builder.setInsertionPointToStart(entryBlock);
@@ -708,7 +695,6 @@ private:
     ada_subp_body_f_stmts(&subp_body, &stmts);
 
     {
-      ScopedHashTableScope<llvm::StringRef, mlir::Value> bodyScope(symbolTable);
       if (mlir::failed(visit(stmts))) {
         op->erase();
         return nullptr;
@@ -739,9 +725,6 @@ private:
 
     // Create the entry block of the region; the builder now inserts into it.
     builder.createBlock(&blockOp.getBody());
-
-    // Open a new scope: local declarations are invisible outside the block.
-    ScopedHashTableScope<llvm::StringRef, mlir::Value> varScope(symbolTable);
 
     // Codegen the declarative part (ada_decl_block only).
     if (isDecl) {
@@ -842,21 +825,15 @@ private:
       return mlir::failure();
     }
 
-    auto name = libadalang::getName(&dest_node);
-    if (!symbolTable.count(name.data())) {
-      // Not yet in the symbol table: allow first write to a variable that was
-      // declared without an initializer. Reject anything truly undeclared.
-      ada_node ref_decl;
-      if (!ada_name_p_referenced_decl(&dest_node, 0, &ref_decl) ||
-          ada_node_is_null(&ref_decl) ||
-          ada_node_kind(&ref_decl) != ada_object_decl) {
-        mlir::emitError(loc(dest_node), "unknown variable '")
-            << libadalang::getName(&dest_node, false) << "'";
-        return mlir::failure();
-      }
+    ada_node def_name;
+    if (!ada_name_p_referenced_defining_name(&dest_node, 0, &def_name) ||
+        ada_node_is_null(&def_name)) {
+      mlir::emitError(loc(dest_node), "unknown variable '")
+          << libadalang::getName(&dest_node, false) << "'";
+      return mlir::failure();
     }
 
-    symbolTable.insert(stringSaver.save(name), rhs);
+    nodeValues[def_name.node] = rhs;
     return mlir::success();
   }
 
