@@ -178,6 +178,10 @@ struct ProcOpLowering : public OpConversionPattern<ada::ProcOp> {
                                                     op.getFunctionType());
     if (ArrayAttr argAttrs = op.getArgAttrsAttr())
       func.setAllArgAttrs(argAttrs);
+    // Procedures have no results today, but copy result attrs anyway to stay
+    // symmetric with FuncOpLowering and avoid silent loss if that changes.
+    if (ArrayAttr resAttrs = op.getResAttrsAttr())
+      func.setAllResultAttrs(resAttrs);
     rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
     rewriter.eraseOp(op);
     return success();
