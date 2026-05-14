@@ -215,6 +215,7 @@ void FuncOp::print(mlir::OpAsmPrinter &p) {
 
 void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef callee, mlir::ValueRange operands) {
+  assert(state.types.empty() && "procedure call must have no result type");
   state.addAttribute(getCalleeAttrName(state.name),
                      mlir::SymbolRefAttr::get(builder.getContext(), callee));
   state.addOperands(operands);
@@ -223,6 +224,7 @@ void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
 void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef callee, mlir::Type resultType,
                    mlir::ValueRange operands) {
+  assert(resultType && "function call must have a valid result type");
   state.addTypes(resultType);
   state.addAttribute(getCalleeAttrName(state.name),
                      mlir::SymbolRefAttr::get(builder.getContext(), callee));
