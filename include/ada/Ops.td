@@ -51,6 +51,7 @@ def AddOp : Ada_Op<"add", [Pure, SameOperandsAndResultType]> {
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -64,6 +65,7 @@ def SubOp : Ada_Op<"sub", [Pure, SameOperandsAndResultType]> {
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -77,6 +79,7 @@ def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -86,6 +89,12 @@ def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
 // Ada null statement (RM 5.1): a no-operation statement. Lowered to nothing.
 def NullOp : Ada_Op<"null", [Pure]> {
   let summary = "null statement — no operation";
+  let description = [{
+    Represents the Ada null statement (RM 5.1), which explicitly does nothing.
+    It is used as a placeholder where a statement is syntactically required but
+    no action is needed (e.g. an empty procedure body or an empty branch).
+    Lowered to nothing by the LowerToLLVM pass.
+  }];
   let assemblyFormat = "attr-dict";
 }
 

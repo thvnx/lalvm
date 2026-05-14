@@ -310,7 +310,7 @@ private:
     case ada_op_mult:
       return builder.create<mlir::ada::MulOp>(location, lhs, rhs);
     default:
-      emitError(location, "invalid binary operator: ")
+      mlir::emitError(location, "invalid binary operator: ")
           << libadalang::image(&binop);
       return nullptr;
     }
@@ -346,7 +346,7 @@ private:
     // direct C API to extract a 64-bit integer from ada_big_integer.
     ada_big_integer bigint;
     if (!ada_int_literal_p_denoted_value(&node, &bigint)) {
-      emitError(loc(node), "failed to evaluate integer literal");
+      mlir::emitError(loc(node), "failed to evaluate integer literal");
       return nullptr;
     }
     ada_text text;
@@ -358,12 +358,12 @@ private:
     int64_t value =
         static_cast<int64_t>(std::strtoll(literal.c_str(), &endptr, 10));
     if (endptr == literal.c_str()) {
-      emitError(loc(node), "failed to parse integer literal '")
+      mlir::emitError(loc(node), "failed to parse integer literal '")
           << literal.c_str() << "'";
       return nullptr;
     }
     if (errno == ERANGE) {
-      emitError(loc(node), "integer literal ")
+      mlir::emitError(loc(node), "integer literal ")
           << literal.c_str() << " out of range for i64";
       return nullptr;
     }
@@ -390,7 +390,7 @@ private:
       int64_t maxVal = (1LL << (width - 1)) - 1;
       int64_t minVal = -(1LL << (width - 1));
       if (value < minVal || value > maxVal) {
-        emitError(loc(node), "integer literal ")
+        mlir::emitError(loc(node), "integer literal ")
             << value << " out of range for i" << width;
         return nullptr;
       }
@@ -414,12 +414,12 @@ private:
     char *endptr;
     double value = std::strtod(literal.c_str(), &endptr);
     if (endptr == literal.c_str()) {
-      emitError(loc(node), "failed to parse real literal '")
+      mlir::emitError(loc(node), "failed to parse real literal '")
           << literal.c_str() << "'";
       return nullptr;
     }
     if (errno == ERANGE || std::isinf(value)) {
-      emitError(loc(node), "real literal ")
+      mlir::emitError(loc(node), "real literal ")
           << literal.c_str() << " out of range for f64";
       return nullptr;
     }
@@ -438,7 +438,7 @@ private:
     // needed first; then we check if the value fits in the narrower type).
     auto floatType = mlir::cast<mlir::FloatType>(type);
     if (floatType.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
-      emitError(loc(node), "real literal ")
+      mlir::emitError(loc(node), "real literal ")
           << literal.c_str() << " out of range for f32";
       return nullptr;
     }
@@ -483,7 +483,11 @@ private:
 
     auto calleeName = libadalang::getName(&name_node);
 
-    // Look up callee — enclosing function first (nested calls), then module.
+    // Two-level symbol lookup: enclosing function first, then module.
+    // lookupNearestSymbolFrom would walk the full parent chain, but ada.func
+    // and ada.proc carry SymbolTable, so they form an opaque scope boundary —
+    // a nested subprogram is not visible from outside its enclosing function.
+    // The two-step approach mirrors Ada's scoping rules exactly.
     mlir::Operation *enclosingFunc =
         builder.getInsertionBlock()->getParent()->getParentOp();
     mlir::Operation *calleeOp =
@@ -583,7 +587,7 @@ private:
       }
       auto name = libadalang::getName(&id);
       if (mlir::failed(declare(name.data(), init))) {
-        emitError(loc(id), "variable '")
+        mlir::emitError(loc(id), "variable '")
             << libadalang::getName(&id, false) << "' already declared";
         return mlir::failure();
       }
@@ -819,7 +823,7 @@ private:
       return mlir::failure();
 
     if (ada_node_kind(&dest_node) != ada_identifier) {
-      emitError(loc(assign_stmt), "unsupported assignment destination");
+      mlir::emitError(loc(assign_stmt), "unsupported assignment destination");
       return mlir::failure();
     }
 
@@ -831,7 +835,7 @@ private:
       if (!ada_name_p_referenced_decl(&dest_node, 0, &ref_decl) ||
           ada_node_is_null(&ref_decl) ||
           ada_node_kind(&ref_decl) != ada_object_decl) {
-        emitError(loc(dest_node), "unknown variable '")
+        mlir::emitError(loc(dest_node), "unknown variable '")
             << libadalang::getName(&dest_node, false) << "'";
         return mlir::failure();
       }

@@ -50,6 +50,16 @@ void AdaDialect::initialize() {
 // Ada Operations
 //===----------------------------------------------------------------------===//
 
+/// Shared verifier for add/sub/mul: rejects types that have no corresponding
+/// arith lowering (the lowering dispatches on IntegerType vs FloatType).
+static llvm::LogicalResult verifyNumericOp(mlir::Operation *op) {
+  mlir::Type type = op->getOperand(0).getType();
+  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
+    return op->emitOpError() << "unsupported operand type " << type
+                             << "; expected integer or float";
+  return mlir::success();
+}
+
 /// Shared parser for add/sub/mul. Accepts two equivalent text formats:
 ///   %0 = ada.add %a, %b : i32              (all types identical — common case)
 ///   %0 = ada.add %a, %b : (i32, i32) -> i32  (functional form — more explicit)
@@ -107,8 +117,8 @@ mlir::ParseResult AddOp::parse(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
   return parseBinaryOp(parser, result);
 }
-
 void AddOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
+llvm::LogicalResult AddOp::verify() { return verifyNumericOp(*this); }
 
 //===----------------------------------------------------------------------===//
 // SubOp
@@ -118,8 +128,8 @@ mlir::ParseResult SubOp::parse(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
   return parseBinaryOp(parser, result);
 }
-
 void SubOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
+llvm::LogicalResult SubOp::verify() { return verifyNumericOp(*this); }
 
 //===----------------------------------------------------------------------===//
 // MulOp
@@ -129,8 +139,8 @@ mlir::ParseResult MulOp::parse(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
   return parseBinaryOp(parser, result);
 }
-
 void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
+llvm::LogicalResult MulOp::verify() { return verifyNumericOp(*this); }
 
 //===----------------------------------------------------------------------===//
 // ProcOp

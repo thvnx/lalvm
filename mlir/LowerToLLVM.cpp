@@ -199,6 +199,9 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   ModuleOp module = getOperation();
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedSubps;
   llvm::SmallVector<Operation *, 4> librarySubps;
+  // Collect all subprograms in one walk before any mutations. The walk
+  // completes fully before the loops below mutate the IR (moveBefore,
+  // setSymbolName), so there is no iterator invalidation.
   module.walk([&](Operation *op) {
     if (!isa<ada::FuncOp, ada::ProcOp>(op))
       return;
