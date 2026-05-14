@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Compile an Ada file with lalvm and link it using the GNAT runtime.
+# Usage: ./lalvm-make <file.adb>
+#
+# Steps:
+#   1. gnatmake <file.adb>     — build with GNAT to get a .ali (and discard .o)
+#   2. lalvm | llc             — recompile to .o using lalvm
+#   3. gnatbind -x <file.ali>  — generate Ada elaboration binder
+#   4. gnatlink <file.ali>     — link against the GNAT runtime
+
+set -euo pipefail
+
+run() { echo "+ $*" >&2; "$@"; }
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: lalvm-make <file.adb>" >&2
+  exit 1
+fi
+
+ADB=$1
+
+if [[ ! -f "$ADB" ]]; then
+  echo "Error: file not found: $ADB" >&2
+  exit 1
+fi
+
+BASE=$(basename "$ADB" .adb)
+OBJ="${BASE}.o"
+ALI="${BASE}.ali"
+
+# Step 1 — compile with GNAT to produce the .ali file.
+run gnatmake -q -f "$ADB"
+
+# Step 2 — replace the .o with one produced by lalvm.
+run mv "$OBJ" "${BASE}.gnat.o"
+run sh -c "lalvm --emit=llvm $ADB | llc -filetype=obj -o $OBJ"
+
+# Step 3 — bind.
+run gnatbind -x "$ALI"
+
+# Step 4 — link.
+run gnatlink "$ALI"
