@@ -221,9 +221,20 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   });
   for (auto &[op, mangledName] : nestedSubps) {
     auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
+    // Save the old name before any mutation.
+    std::string oldName = mlir::SymbolTable::getSymbolName(op).str();
     if (mlir::failed(
             mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
       return signalPassFailure();
+    // replaceAllSymbolUses stops at the symbol's own definition body, so
+    // self-recursive calls inside 'op' are left unrenamed.  Fix that with a
+    // targeted walk that crosses SymbolTable boundaries.
+    auto mangledSymRef =
+        mlir::FlatSymbolRefAttr::get(module.getContext(), mangledName);
+    op->walk([&](ada::CallOp callOp) {
+      if (callOp.getCallee() == oldName)
+        callOp.setCalleeAttr(mangledSymRef);
+    });
     mlir::SymbolTable::setSymbolName(op, mangledName);
     op->moveBefore(module.getBody(), module.getBody()->end());
   }

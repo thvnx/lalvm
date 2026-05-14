@@ -490,18 +490,20 @@ private:
 
     auto calleeName = libadalang::getName(&name_node);
 
-    // Two-level symbol lookup: enclosing function first, then module.
-    // lookupNearestSymbolFrom would walk the full parent chain, but ada.func
-    // and ada.proc carry SymbolTable, so they form an opaque scope boundary —
-    // a nested subprogram is not visible from outside its enclosing function.
-    // The two-step approach mirrors Ada's scoping rules exactly.
-    mlir::Operation *enclosingFunc =
+    // Walk the chain of enclosing ada.func/ada.proc ops looking for the
+    // callee, then fall back to the module.  ada.func/ada.proc carry
+    // SymbolTable, so lookupNearestSymbolFrom would stop at the immediately
+    // enclosing function and never see a sibling nested subprogram.  Walking
+    // the parent chain manually gives us Ada's "visible from any enclosing
+    // scope" rule while still respecting SymbolTable opacity toward the
+    // outside.
+    mlir::Operation *op =
         builder.getInsertionBlock()->getParent()->getParentOp();
-    mlir::Operation *calleeOp =
-        isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(enclosingFunc)
-            ? mlir::SymbolTable::lookupSymbolIn(enclosingFunc,
-                                                calleeName.data())
-            : nullptr;
+    mlir::Operation *calleeOp = nullptr;
+    while (isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(op) && !calleeOp) {
+      calleeOp = mlir::SymbolTable::lookupSymbolIn(op, calleeName.data());
+      op = op->getParentOp();
+    }
     if (!calleeOp)
       calleeOp =
           mlir::SymbolTable::lookupSymbolIn(adaModule, calleeName.data());
