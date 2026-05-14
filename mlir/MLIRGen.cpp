@@ -258,20 +258,27 @@ private:
     // (not yet in the symbol table) and one that is genuinely undeclared.
     ada_node ref_decl;
     if (ada_name_p_referenced_decl(&expr, 0, &ref_decl) &&
-        !ada_node_is_null(&ref_decl) &&
-        ada_node_kind(&ref_decl) == ada_object_decl) {
-      ada_node default_expr;
-      ada_object_decl_f_default_expr(&ref_decl, &default_expr);
-      if (ada_node_is_null(&default_expr)) {
-        auto name = libadalang::getName(&expr, false);
-        // TODO: downgrade to a warning once the alloca-based model is in place.
-        mlir::emitError(loc(ref_decl), "variable '")
-            << name << "' is read but never assigned";
+        !ada_node_is_null(&ref_decl)) {
+      if (ada_node_kind(&ref_decl) == ada_object_decl) {
+        ada_node default_expr;
+        ada_object_decl_f_default_expr(&ref_decl, &default_expr);
+        if (ada_node_is_null(&default_expr)) {
+          auto name = libadalang::getName(&expr, false);
+          // TODO: downgrade to a warning once the alloca-based model is in
+          // place.
+          mlir::emitError(loc(ref_decl), "variable '")
+              << name << "' is read but never assigned";
+          return nullptr;
+        }
+      } else {
+        // Declared but not a variable (type, subprogram, etc.).
+        mlir::emitError(loc(expr), "cannot use '")
+            << libadalang::getName(&expr, false) << "' as a value";
         return nullptr;
       }
     }
 
-    mlir::emitError(loc(expr), "unknown variable '")
+    mlir::emitError(loc(expr), "undeclared identifier '")
         << libadalang::getName(&expr, false) << "'";
     return nullptr;
   }
