@@ -299,8 +299,7 @@ private:
     mlir::Value rhs = visit_expr(right);
     if (!rhs)
       return nullptr;
-    // Derive the operation name from the binary operator. At the moment we only
-    // support '+' and '*'.
+    // Derive the operation name from the binary operator.
     ada_node op;
     ada_bin_op_f_op(&binop, &op);
     auto location = loc(op);
