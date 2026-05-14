@@ -688,9 +688,12 @@ private:
     // Declare all the function arguments in the symbol table.
     // C++17 structured bindings unpack each zip pair into named variables.
     for (auto [p, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
-      if (failed(declare(libadalang::getName(&p).data(), arg)))
+      auto canonName = libadalang::getName(&p);
+      auto displayName = libadalang::getName(&p, false);
+      if (failed(declare(canonName.data(), arg)))
         return nullptr;
-      arg.setLoc(loc(p));
+      arg.setLoc(
+          mlir::NameLoc::get(builder.getStringAttr(displayName), loc(p)));
     }
 
     builder.setInsertionPointToStart(entryBlock);
