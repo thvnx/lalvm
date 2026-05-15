@@ -692,12 +692,33 @@ private:
     return nullptr;
   }
 
-  /// Emit a named number declaration (RM 3.3.2).  Rather than evaluating the
-  /// expression now (the universal type has no concrete annotation to resolve
-  /// to), we stash the expression node in numberDeclExprs keyed by each
-  /// DefiningName.  The arith.constant is emitted lazily in visit_static_expr
-  /// when the name is first used, at which point the use-site context provides
-  /// the concrete MLIR type via p_expected_expression_type.
+  /// Emit a named number declaration (RM 3.3.2).
+  ///
+  /// Syntax:
+  /// @code{.txt}
+  /// number_declaration ::=
+  ///      defining_identifier_list : constant := static_expression;
+  /// @endcode
+  ///
+  /// **Static Semantics**: The named number denotes a value of type
+  /// `universal_integer` if the type of the static_expression is an integer
+  /// type. The named number denotes a value of type `universal_real` if the
+  /// type of the static_expression is a real type. The value denoted by the
+  /// named number is the value of the static_expression, converted to the
+  /// corresponding universal type.
+  ///
+  /// **Legality Rules**: The static_expression shall be a static expression and
+  /// is evaluated at compile time.
+  ///
+  /// @todo Named numbers can be used with (non-numeric) types that define
+  ///       user-defined literals (Ada 2012).
+  ///
+  /// **Implementation Details**: Rather than evaluating the expression now (the
+  /// universal type has no concrete annotation to resolve to), we stash the
+  /// expression node in `numberDeclExprs` keyed by each `DefiningName`. The
+  /// `arith.constant` is emitted lazily in `visit_static_expr` when the name is
+  /// first used, at which point the use-site context provides the concrete MLIR
+  /// type via `p_expected_expression_type`.
   llvm::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
@@ -716,18 +737,71 @@ private:
     return mlir::success();
   }
 
-  /// Emit a single initialized variable declaration from a declarative part.
-  /// Declarations without an initializer are silently skipped (the variable
-  /// simply won't be in the symbol table; a later reference will produce an
-  /// "unknown variable" error).
-  /// TODO: typed constants (ada_object_decl with ada_constant_present) are
-  /// currently treated as mutable variables; the constant keyword is ignored.
+  /// Emit an object declaration (RM 3.3.1).
   ///
-  /// Supporting uninitialized scalar variables would require switching from
-  /// the current pure-SSA model to an alloca-based model: each variable would
-  /// be represented by a stack slot (llvm.alloca), reads would become
-  /// llvm.load, and writes llvm.store — the same strategy used by clang and
-  /// GNAT for stack locals before mem2reg promotes them to SSA values.
+  /// Syntax:
+  /// @code{.txt}
+  /// object_declaration ::=
+  ///     defining_identifier_list : [aliased] [constant] subtype_indication
+  ///         [:= expression] [aspect_specification];
+  ///   | defining_identifier_list : [aliased] [constant] access_definition
+  ///         [:= expression] [aspect_specification];
+  ///   | defining_identifier_list : [aliased] [constant] array_type_definition
+  ///         [:= expression] [aspect_specification];
+  ///   | single_task_declaration
+  ///   | single_protected_declaration
+  ///
+  /// defining_identifier_list ::=
+  ///   defining_identifier {, defining_identifier}
+  /// @endcode
+  ///
+  /// **Legality Rules**: An `object_declaration` without the reserved word
+  /// `constant` declares a variable object. If it has a `subtype_indication` or
+  /// an `array_type_definition` that defines an indefinite subtype, then there
+  /// shall be an initialization expression.
+  ///
+  /// **Static Semantics**: An `object_declaration` with the reserved word
+  /// `constant` declares a constant object. If it has an initialization
+  /// expression, then it is called a full constant declaration. Otherwise, it
+  /// is called a deferred constant declaration. The rules for deferred constant
+  /// declarations are given in 7.4. The rules for full constant declarations
+  /// are given in this subclause.
+  ///
+  /// Any declaration that includes a `defining_identifier_list` with more than
+  /// one `defining_identifier` is equivalent to a series of declarations each
+  /// containing one `defining_identifier` from the list, with the rest of the
+  /// text of the declaration copied for each declaration in the series, in the
+  /// same order as the list.
+  ///
+  /// The `subtype_indication`, `access_definition`, or full type definition of
+  /// an `object_declaration` defines the nominal subtype of the object. The
+  /// `object_declaration` declares an object of the type of the nominal
+  /// subtype.
+  ///
+  /// **Implementation details**:
+  ///
+  /// @attention Only the first grammar form (with `subtype_indication`) is
+  ///            supported, and only for scalar types. The `subtype_indication`
+  ///            is not consulted for the object's type; the MLIR type is
+  ///            inferred entirely from the initializer expression via
+  ///            Libadalang's `p_expected_expression_type`. The
+  ///            `access_definition`, `array_type_definition`,
+  ///            `single_task_declaration`, and `single_protected_declaration`
+  ///            forms are not handled.
+  ///
+  /// @warning Declarations without an initializer are silently skipped: the
+  ///          variable will not be in the symbol table; a later reference will
+  ///          produce an "unknown variable" error.
+  ///
+  /// @todo Support uninitialized scalar variables: requires switching from the
+  ///       current pure-SSA model to an alloca-based model (stack slot per
+  ///       variable via `llvm.alloca`, reads via `llvm.load`, writes via
+  ///       `llvm.store`); the same strategy used by clang and GNAT for stack
+  ///       locals before mem2reg promotes them to SSA values.
+  ///
+  /// @todo Typed constants (`ada_object_decl` with `ada_constant_present`) are
+  ///       currently treated as mutable variables; the `constant` keyword is
+  ///       ignored.
   llvm::LogicalResult mlirGenObjectDecl(ada_node &object_decl) {
     ada_node default_expr;
     ada_object_decl_f_default_expr(&object_decl, &default_expr);
