@@ -31,6 +31,7 @@
 #include <cassert>
 #include <cerrno>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 using llvm::ArrayRef;
@@ -136,6 +137,14 @@ private:
   // declaration. No scope cleanup is needed: for valid Ada, Libadalang
   // rejects references to out-of-scope declarations before MLIRGen runs.
   llvm::DenseMap<ada_base_node, mlir::Value> nodeValues;
+
+  // Named numbers (RM 3.3.2) have universal integer or real type with no
+  // concrete type annotation.  We stash the expression node at declaration
+  // time and re-emit the constant at each use site so that the use-site
+  // identifier's p_expected_expression_type resolves the concrete MLIR type
+  // (e.g. Integer → i32 for `return Max_Size;` in a function returning
+  // Integer).
+  llvm::DenseMap<ada_base_node, ada_node> numberDeclExprs;
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(const ada_node &node) {
@@ -282,19 +291,26 @@ private:
     return nullptr;
   }
 
-  /// Emit a binary operation
+  /// Emit the arithmetic operation for two precomputed operands.
+  /// `op` is the ada_op node (ada_op_plus, ada_op_minus, etc.).
+  mlir::Value emitBinOp(ada_node &op, mlir::Value lhs, mlir::Value rhs) {
+    auto location = loc(op);
+    switch (ada_node_kind(&op)) {
+    case ada_op_plus:
+      return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
+    case ada_op_minus:
+      return builder.create<mlir::ada::SubOp>(location, lhs, rhs);
+    case ada_op_mult:
+      return builder.create<mlir::ada::MulOp>(location, lhs, rhs);
+    default:
+      mlir::emitError(location, "invalid binary operator '")
+          << libadalang::image(&op) << "'";
+      return nullptr;
+    }
+  }
+
+  /// Emit a binary operation.
   mlir::Value mlirGenBinOp(ada_node &binop) {
-    // First emit the operations for each side of the operation before emitting
-    // the operation itself. For example if the expression is `a + foo(a)`
-    // 1) First it will visiting the LHS, which will return a reference to the
-    //    value holding `a`. This value should have been emitted at declaration
-    //    time and registered in the symbol table, so nothing would be
-    //    codegen'd. If the value is not in the symbol table, an error has been
-    //    emitted and nullptr is returned.
-    // 2) Then the RHS is visited (recursively) and a call to `foo` is emitted
-    //    and the result value is returned. If an error occurs we get a nullptr
-    //    and propagate.
-    //
     ada_node left;
     ada_bin_op_f_left(&binop, &left);
     mlir::Value lhs = visit_expr(left);
@@ -305,22 +321,9 @@ private:
     mlir::Value rhs = visit_expr(right);
     if (!rhs)
       return nullptr;
-    // Derive the operation name from the binary operator.
     ada_node op;
     ada_bin_op_f_op(&binop, &op);
-    auto location = loc(op);
-    switch (ada_node_kind(&op)) {
-    case ada_op_plus:
-      return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
-    case ada_op_minus:
-      return builder.create<mlir::ada::SubOp>(location, lhs, rhs);
-    case ada_op_mult:
-      return builder.create<mlir::ada::MulOp>(location, lhs, rhs);
-    default:
-      mlir::emitError(location, "invalid binary operator: ")
-          << libadalang::image(&binop);
-      return nullptr;
-    }
+    return emitBinOp(op, lhs, rhs);
   }
 
   /// Resolve the type of a literal expression. For universal types
@@ -347,14 +350,46 @@ private:
     return type_decl;
   }
 
-  mlir::Value mlirGenIntLiteral(ada_node &node) {
+  /// Emit an arith.ConstantIntOp. Range-checks the value against the target
+  /// integer width; emits a diagnostic and returns nullptr if it doesn't fit.
+  mlir::Value emitIntConstant(int64_t value, mlir::IntegerType type,
+                              mlir::Location location) {
+    unsigned width = type.getWidth();
+    if (width < 64) {
+      int64_t maxVal = (1LL << (width - 1)) - 1;
+      int64_t minVal = -(1LL << (width - 1));
+      if (value < minVal || value > maxVal) {
+        mlir::emitError(location, "integer constant ")
+            << value << " out of range for i" << width;
+        return nullptr;
+      }
+    }
+    return builder.create<mlir::arith::ConstantIntOp>(location, value, width);
+  }
+
+  /// Emit an arith.ConstantOp for a floating-point value. Checks for f32
+  /// overflow; emits a diagnostic and returns nullptr on failure.
+  mlir::Value emitRealConstant(double value, mlir::FloatType type,
+                               mlir::Location location) {
+    if (type.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
+      mlir::emitError(location, "real constant ")
+          << value << " out of range for f32";
+      return nullptr;
+    }
+    return builder.create<mlir::arith::ConstantOp>(
+        location, builder.getFloatAttr(type, value));
+  }
+
+  /// Extract the integer value of an ada_int_literal node via
+  /// `p_denoted_value`. Returns nullopt and emits a diagnostic on failure.
+  std::optional<int64_t> evalIntLiteral(ada_node &node) {
     // p_denoted_value gives us the evaluated integer value as a big integer.
     // We convert it through its UTF-8 text representation since there is no
     // direct C API to extract a 64-bit integer from ada_big_integer.
     ada_big_integer bigint;
     if (!ada_int_literal_p_denoted_value(&node, &bigint)) {
       mlir::emitError(loc(node), "failed to evaluate integer literal");
-      return nullptr;
+      return std::nullopt;
     }
     ada_text text;
     ada_big_integer_text(bigint, &text);
@@ -366,15 +401,21 @@ private:
         static_cast<int64_t>(std::strtoll(literal.c_str(), &endptr, 10));
     if (endptr == literal.c_str()) {
       mlir::emitError(loc(node), "failed to parse integer literal '")
-          << literal.c_str() << "'";
-      return nullptr;
+          << literal << "'";
+      return std::nullopt;
     }
     if (errno == ERANGE) {
       mlir::emitError(loc(node), "integer literal ")
-          << literal.c_str() << " out of range for i64";
-      return nullptr;
+          << literal << " out of range for i64";
+      return std::nullopt;
     }
+    return value;
+  }
 
+  mlir::Value mlirGenIntLiteral(ada_node &node) {
+    auto value = evalIntLiteral(node);
+    if (!value)
+      return nullptr;
     // p_expression_type on an integer literal returns universal_integer
     // (Libadalang's "universal_int_type_"), not the concrete type.
     // When that happens, p_expected_expression_type gives the type required
@@ -387,50 +428,44 @@ private:
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
     if (!type)
       return nullptr;
-
-    unsigned width = mlir::cast<mlir::IntegerType>(type).getWidth();
-    // Reject literals that don't fit in the target type.
-    // width == 64: already covered by the ERANGE check above (strtoll range).
-    // width == 1 : won't occur for Ada integer types; if it did, the signed
-    //              1-bit range [-1, 0] differs from MLIR's boolean convention.
-    if (width < 64) {
-      int64_t maxVal = (1LL << (width - 1)) - 1;
-      int64_t minVal = -(1LL << (width - 1));
-      if (value < minVal || value > maxVal) {
-        mlir::emitError(loc(node), "integer literal ")
-            << value << " out of range for i" << width;
-        return nullptr;
-      }
-    }
-    return builder.create<mlir::arith::ConstantIntOp>(loc(node), value, width);
+    return emitIntConstant(*value, mlir::cast<mlir::IntegerType>(type),
+                           loc(node));
   }
 
-  mlir::Value mlirGenRealLiteral(ada_node &node) {
+  /// Extract the floating-point value of an ada_real_literal node via its
+  /// source text. Ada allows underscores as digit separators; they are
+  /// stripped before parsing. Returns nullopt and emits a diagnostic on
+  /// failure.
+  std::optional<double> evalRealLiteral(ada_node &node) {
     // Unlike ada_int_literal, ada_real_literal has no p_denoted_value in the
     // C API, so we extract the value by reading the literal's source text.
     ada_text text;
     ada_node_text(&node, &text);
     std::string raw = libadalang::textToString(text);
-    // Ada allows underscores as digit separators; strip them.
     std::string literal;
     literal.reserve(raw.size());
     std::copy_if(raw.begin(), raw.end(), std::back_inserter(literal),
                  [](char c) { return c != '_'; });
-
     errno = 0;
     char *endptr;
     double value = std::strtod(literal.c_str(), &endptr);
     if (endptr == literal.c_str()) {
       mlir::emitError(loc(node), "failed to parse real literal '")
-          << literal.c_str() << "'";
-      return nullptr;
+          << literal << "'";
+      return std::nullopt;
     }
     if (errno == ERANGE || std::isinf(value)) {
       mlir::emitError(loc(node), "real literal ")
-          << literal.c_str() << " out of range for f64";
-      return nullptr;
+          << literal << " out of range for f64";
+      return std::nullopt;
     }
+    return value;
+  }
 
+  mlir::Value mlirGenRealLiteral(ada_node &node) {
+    auto value = evalRealLiteral(node);
+    if (!value)
+      return nullptr;
     // Real literals have universal_real type; fall back to the expected type
     // to get the concrete type required by the surrounding context.
     ada_node type_decl =
@@ -440,18 +475,8 @@ private:
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
     if (!type)
       return nullptr;
-
-    // Reject values that overflow f32 (a double-precision parse is always
-    // needed first; then we check if the value fits in the narrower type).
-    auto floatType = mlir::cast<mlir::FloatType>(type);
-    if (floatType.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
-      mlir::emitError(loc(node), "real literal ")
-          << literal.c_str() << " out of range for f32";
-      return nullptr;
-    }
-
-    return builder.create<mlir::arith::ConstantOp>(
-        loc(node), builder.getFloatAttr(type, value));
+    return emitRealConstant(*value, mlir::cast<mlir::FloatType>(type),
+                            loc(node));
   }
 
   /// Emit a subprogram call from an ada_identifier (no-arg) or ada_call_expr
@@ -533,12 +558,116 @@ private:
     return builder.create<mlir::ada::CallOp>(callLoc, calleeName.data(), args);
   }
 
+  /// Emit a static expression at its use site, with the concrete MLIR type
+  /// resolved from `typeContext` (typically the identifier that names the
+  /// constant, so `p_expected_expression_type` on it returns the type
+  /// required by the surrounding context).
+  ///
+  /// Universal integer: evaluated in full via `eval_as_int`.
+  /// Universal real literal: parsed from source text via `evalRealLiteral`.
+  /// Universal real bin_op: emitted op-by-op recursively with a warning
+  ///   (libadalang has no `eval_as_real`; LLVM folds the resulting ops).
+  mlir::Value visit_static_expr(ada_node &staticExpr, ada_node &typeContext) {
+    ada_node exprType;
+    if (!ada_expr_p_expression_type(&staticExpr, &exprType) ||
+        ada_node_is_null(&exprType)) {
+      mlir::emitError(loc(staticExpr),
+                      "failed to resolve type of static expression");
+      return nullptr;
+    }
+    ada_node typeNameNode;
+    ada_base_type_decl_f_name(&exprType, &typeNameNode);
+    std::string universalType = ada_node_is_null(&typeNameNode)
+                                    ? ""
+                                    : libadalang::getName(&typeNameNode);
+
+    if (universalType == "universal_int_type_") {
+      ada_big_integer bigint;
+      if (!ada_expr_p_eval_as_int(&staticExpr, &bigint)) {
+        mlir::emitError(loc(typeContext),
+                        "failed to evaluate static integer expression");
+        return nullptr;
+      }
+      ada_text text;
+      ada_big_integer_text(bigint, &text);
+      std::string s = libadalang::textToString(text);
+      ada_big_integer_decref(bigint);
+      errno = 0;
+      char *end;
+      int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
+      if (end == s.c_str() || errno == ERANGE) {
+        mlir::emitError(loc(typeContext),
+                        "static integer value out of range for i64");
+        return nullptr;
+      }
+      ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext),
+                                            "universal_int_type_");
+      if (ada_node_is_null(&typDecl))
+        return nullptr;
+      mlir::Type type = getMLIRTypeFromDecl(typDecl, loc(typeContext));
+      if (!type)
+        return nullptr;
+      return emitIntConstant(value, mlir::cast<mlir::IntegerType>(type),
+                             loc(typeContext));
+    }
+
+    if (universalType == "universal_real_type_") {
+      switch (ada_node_kind(&staticExpr)) {
+      case ada_real_literal: {
+        auto value = evalRealLiteral(staticExpr);
+        if (!value)
+          return nullptr;
+        ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext),
+                                              "universal_real_type_");
+        if (ada_node_is_null(&typDecl))
+          return nullptr;
+        mlir::Type type = getMLIRTypeFromDecl(typDecl, loc(typeContext));
+        if (!type)
+          return nullptr;
+        return emitRealConstant(*value, mlir::cast<mlir::FloatType>(type),
+                                loc(typeContext));
+      }
+      case ada_bin_op: {
+        mlir::emitWarning(loc(staticExpr),
+                          "libadalang has no `eval_as_real`; real expression "
+                          "emitted as-is and expected to be folded by LLVM");
+        ada_node left, right, op;
+        ada_bin_op_f_left(&staticExpr, &left);
+        ada_bin_op_f_right(&staticExpr, &right);
+        ada_bin_op_f_op(&staticExpr, &op);
+        mlir::Value lhs = visit_static_expr(left, typeContext);
+        if (!lhs)
+          return nullptr;
+        mlir::Value rhs = visit_static_expr(right, typeContext);
+        if (!rhs)
+          return nullptr;
+        return emitBinOp(op, lhs, rhs);
+      }
+      default:
+        mlir::emitError(loc(staticExpr), "unsupported real static expression");
+        return nullptr;
+      }
+    }
+
+    mlir::emitError(loc(staticExpr), "unsupported static expression type '")
+        << universalType << "'";
+    return nullptr;
+  }
+
   /// Codegen an expression node. Returns the SSA Value for the result, or
   /// nullptr on failure (unsupported expression kind or codegen error).
   mlir::Value visit_expr(ada_node &expr) {
     switch (ada_node_kind(&expr)) {
-    case ada_identifier:
+    case ada_identifier: {
+      ada_node def_name;
+      if (ada_name_p_referenced_defining_name(&expr, 0, &def_name) &&
+          !ada_node_is_null(&def_name)) {
+        auto it = numberDeclExprs.find(def_name.node);
+        if (it != numberDeclExprs.end())
+          return visit_static_expr(it->second, expr);
+      }
       return mlirGenVariable(expr);
+    }
     case ada_int_literal:
       return mlirGenIntLiteral(expr);
     case ada_real_literal:
@@ -563,11 +692,36 @@ private:
     return nullptr;
   }
 
+  /// Emit a named number declaration (RM 3.3.2).  Rather than evaluating the
+  /// expression now (the universal type has no concrete annotation to resolve
+  /// to), we stash the expression node in numberDeclExprs keyed by each
+  /// DefiningName.  The arith.constant is emitted lazily in visit_static_expr
+  /// when the name is first used, at which point the use-site context provides
+  /// the concrete MLIR type via p_expected_expression_type.
+  llvm::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
+    ada_node expr;
+    ada_number_decl_f_expr(&number_decl, &expr);
+
+    ada_node ids;
+    ada_number_decl_f_ids(&number_decl, &ids);
+    unsigned count = ada_node_children_count(&ids);
+    for (unsigned i = 0; i < count; ++i) {
+      ada_node id;
+      if (ada_node_child(&ids, i, &id) == 0) {
+        mlir::emitError(loc(number_decl), "failed to get declared identifier");
+        return mlir::failure();
+      }
+      numberDeclExprs[id.node] = expr;
+    }
+    return mlir::success();
+  }
+
   /// Emit a single initialized variable declaration from a declarative part.
   /// Declarations without an initializer are silently skipped (the variable
   /// simply won't be in the symbol table; a later reference will produce an
-  /// "unknown variable" error). Constants are not yet supported and are also
-  /// skipped.
+  /// "unknown variable" error).
+  /// TODO: typed constants (ada_object_decl with ada_constant_present) are
+  /// currently treated as mutable variables; the constant keyword is ignored.
   ///
   /// Supporting uninitialized scalar variables would require switching from
   /// the current pure-SSA model to an alloca-based model: each variable would
@@ -600,7 +754,8 @@ private:
   }
 
   /// Emit declarations from a subprogram's declarative part.
-  /// Supported: ObjectDecl (initialized only), SubpBody (nested subprograms).
+  /// Supported: ObjectDecl (initialized only), SubpBody (nested subprograms),
+  ///            NumberDecl (expression stashed for lazy use-site emission).
   /// Silently skipped: SubpDecl (forward declarations), and everything else.
   /// The AST structure is: DeclarativePart → AdaNodeList → decl...
   llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
@@ -619,6 +774,10 @@ private:
           return mlir::failure();
         }
         switch (ada_node_kind(&decl)) {
+        case ada_number_decl:
+          if (mlir::failed(mlirGenNumberDecl(decl)))
+            return mlir::failure();
+          break;
         case ada_object_decl:
           if (mlir::failed(mlirGenObjectDecl(decl)))
             return mlir::failure();
