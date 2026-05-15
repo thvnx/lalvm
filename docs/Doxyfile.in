@@ -1,0 +1,38 @@
+# Doxyfile.in — Doxygen configuration for lalvm.
+# CMake substitutes @VARIABLE@ placeholders via configure_file(@ONLY).
+
+PROJECT_NAME     = "@PROJECT_NAME@"
+PROJECT_BRIEF    = "Ada to LLVM IR compiler via MLIR"
+OUTPUT_DIRECTORY = @PROJECT_BINARY_DIR@/docs
+
+# Sources: public headers, implementation files, driver.
+# AdaOps.md is the generated op-reference produced by mlir-tblgen.
+INPUT         = @PROJECT_SOURCE_DIR@/include \
+                @PROJECT_SOURCE_DIR@/mlir \
+                @PROJECT_SOURCE_DIR@/lalvm.cpp \
+                @PROJECT_BINARY_DIR@/include/ada/AdaOps.md
+RECURSIVE     = YES
+FILE_PATTERNS = *.cpp *.h *.md
+
+# Document all declarations, including private members and anonymous namespaces.
+EXTRACT_ALL          = YES
+EXTRACT_PRIVATE      = YES
+EXTRACT_ANON_NSPACES = YES
+EXTRACT_STATIC       = YES
+
+# HTML output only; no LaTeX.
+GENERATE_HTML  = YES
+GENERATE_LATEX = NO
+
+# Enable call/dependency graphs if Graphviz dot is available.
+HAVE_DOT = @DOXYGEN_HAVE_DOT@
+
+# Link documented entities to their source location.
+SOURCE_BROWSER = YES
+
+# Accept /// and /** as brief descriptions without an explicit @brief tag.
+JAVADOC_AUTOBRIEF = YES
+
+# Reduce noise.
+QUIET                = YES
+WARN_IF_UNDOCUMENTED = NO

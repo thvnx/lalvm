@@ -103,3 +103,27 @@ if(CLANG_FORMAT)
 else()
   message(STATUS "clang-format not found, 'format' target unavailable")
 endif()
+
+find_package(Doxygen OPTIONAL_COMPONENTS dot)
+if(DOXYGEN_FOUND)
+  if(DOXYGEN_DOT_EXECUTABLE)
+    set(DOXYGEN_HAVE_DOT YES)
+  else()
+    set(DOXYGEN_HAVE_DOT NO)
+    message(STATUS "Graphviz dot not found, Doxygen graphs disabled")
+  endif()
+  configure_file(
+    ${CMAKE_SOURCE_DIR}/docs/Doxyfile.in
+    ${CMAKE_BINARY_DIR}/docs/Doxyfile
+    @ONLY
+  )
+  add_custom_target(doxygen
+    COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_BINARY_DIR}/docs/Doxyfile
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Generating HTML documentation with Doxygen"
+    VERBATIM
+  )
+  add_dependencies(doxygen AdaOpsIncGen)
+else()
+  message(STATUS "Doxygen not found, 'doxygen' target unavailable")
+endif()
