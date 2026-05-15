@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.func @test_short
 -- MLIR-SAME:    (%arg0: i16, %arg1: i16) -> i16
--- MLIR:         %[[R:.*]] = ada.add %arg0, %arg1 : i16
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : i16
 -- MLIR-NEXT:    ada.return %[[R]] : i16
 
 -- LLVM-LABEL: define i16 @_ada_test_short(

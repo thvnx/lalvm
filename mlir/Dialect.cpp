@@ -31,6 +31,7 @@
 using namespace mlir;
 using namespace mlir::ada;
 
+#include "ada/AdaOpsEnums.cpp.inc"
 #include "ada/Dialect.cpp.inc"
 
 //===----------------------------------------------------------------------===//
@@ -60,9 +61,9 @@ static llvm::LogicalResult verifyNumericOp(mlir::Operation *op) {
   return mlir::success();
 }
 
-/// Shared parser for add/sub/mul. Accepts two equivalent text formats:
-///   %0 = ada.add %a, %b : i32              (all types identical — common case)
-///   %0 = ada.add %a, %b : (i32, i32) -> i32  (functional form — more explicit)
+/// Shared operand+type parser for BinOp. Accepts two equivalent text formats:
+///   %0 = ada.binop "+" %a, %b : i32              (all types identical)
+///   %0 = ada.binop "+" %a, %b : (i32, i32) -> i32  (functional form)
 static mlir::ParseResult parseBinaryOp(mlir::OpAsmParser &parser,
                                        mlir::OperationState &result) {
   SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
@@ -90,57 +91,42 @@ static mlir::ParseResult parseBinaryOp(mlir::OpAsmParser &parser,
   return mlir::success();
 }
 
-/// Shared printer for add/sub/mul. Emits the compact "… : type" form when all
-/// operand and result types are identical, and the functional form otherwise.
-static void printBinaryOp(mlir::OpAsmPrinter &printer, mlir::Operation *op) {
-  printer << " " << op->getOperands();
-  printer.printOptionalAttrDict(op->getAttrs());
-  printer << " : ";
-
-  // If all of the types are the same, print the type directly.
-  Type resultType = *op->result_type_begin();
-  if (llvm::all_of(op->getOperandTypes(),
-                   [=](Type type) { return type == resultType; })) {
-    printer << resultType;
-    return;
-  }
-
-  // Otherwise, print a functional type.
-  printer.printFunctionalType(op->getOperandTypes(), op->getResultTypes());
-}
-
 //===----------------------------------------------------------------------===//
-// AddOp
+// BinOp
 //===----------------------------------------------------------------------===//
 
-mlir::ParseResult AddOp::parse(mlir::OpAsmParser &parser,
+mlir::ParseResult BinOp::parse(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
+  // Parse the quoted Ada operator symbol: "+", "-", or "*".
+  std::string sym;
+  SMLoc symLoc = parser.getCurrentLocation();
+  if (parser.parseString(&sym))
+    return mlir::failure();
+
+  auto kind = ada::symbolizeAdaBinaryOp(sym);
+  if (!kind)
+    return parser.emitError(symLoc, "unknown binary operator '") << sym << "'";
+
+  result.addAttribute("kind",
+                      ada::AdaBinaryOpAttr::get(parser.getContext(), *kind));
+
   return parseBinaryOp(parser, result);
 }
-void AddOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
-llvm::LogicalResult AddOp::verify() { return verifyNumericOp(*this); }
 
-//===----------------------------------------------------------------------===//
-// SubOp
-//===----------------------------------------------------------------------===//
-
-mlir::ParseResult SubOp::parse(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
-  return parseBinaryOp(parser, result);
+void BinOp::print(mlir::OpAsmPrinter &p) {
+  p << " \"" << ada::stringifyAdaBinaryOp(getKind()) << "\"";
+  p << " " << getOperands();
+  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"kind"});
+  p << " : ";
+  mlir::Type resultType = getResult().getType();
+  if (llvm::all_of(getOperandTypes(),
+                   [=](mlir::Type t) { return t == resultType; }))
+    p << resultType;
+  else
+    p.printFunctionalType(getOperandTypes(), (*this)->getResultTypes());
 }
-void SubOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
-llvm::LogicalResult SubOp::verify() { return verifyNumericOp(*this); }
 
-//===----------------------------------------------------------------------===//
-// MulOp
-//===----------------------------------------------------------------------===//
-
-mlir::ParseResult MulOp::parse(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
-  return parseBinaryOp(parser, result);
-}
-void MulOp::print(mlir::OpAsmPrinter &p) { printBinaryOp(p, *this); }
-llvm::LogicalResult MulOp::verify() { return verifyNumericOp(*this); }
+llvm::LogicalResult BinOp::verify() { return verifyNumericOp(*this); }
 
 //===----------------------------------------------------------------------===//
 // ProcOp

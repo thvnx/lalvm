@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.func @test_long
 -- MLIR-SAME:    (%arg0: i64, %arg1: i64) -> i64
--- MLIR:         %[[R:.*]] = ada.add %arg0, %arg1 : i64
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : i64
 -- MLIR-NEXT:    ada.return %[[R]] : i64
 
 -- LLVM-LABEL: define i64 @_ada_test_long(

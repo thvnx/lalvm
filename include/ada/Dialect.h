@@ -10,6 +10,9 @@
 /// dialect.
 #include "ada/Dialect.h.inc"
 
+/// Include the auto-generated enum declarations (AdaBinaryOp, AdaBinaryOpAttr).
+#include "ada/AdaOpsEnums.h.inc"
+
 /// Include the auto-generated header file containing the declarations of the
 /// Ada operations.
 #define GET_OP_CLASSES

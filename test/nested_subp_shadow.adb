@@ -9,7 +9,7 @@
 -- MLIR:         %[[I:.*]] = arith.constant 12 : i32
 -- MLIR:         ada.func @inner(
 -- MLIR:           %[[ONE:.*]] = arith.constant 1 : i32
--- MLIR:           %[[R:.*]] = ada.add %{{.*}}, %[[ONE]] : i32
+-- MLIR:           %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] : i32
 -- MLIR:           ada.return %[[R]] : i32
 -- MLIR:         %[[RES:.*]] = ada.call @inner(%[[I]]) : (i32) -> i32
 -- MLIR-NEXT:    ada.return %[[RES]] : i32

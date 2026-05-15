@@ -4,8 +4,8 @@
 -- MLIR-LABEL: ada.func @test_local_var_multi_name
 -- MLIR-SAME:    () -> i32
 -- MLIR:         %[[V:.*]] = arith.constant 3 : i32
--- MLIR-NEXT:    %[[R1:.*]] = ada.add %[[V]], %[[V]] : i32
--- MLIR-NEXT:    %[[R2:.*]] = ada.add %[[R1]], %[[V]] : i32
+-- MLIR-NEXT:    %[[R1:.*]] = ada.binop "+" %[[V]], %[[V]] : i32
+-- MLIR-NEXT:    %[[R2:.*]] = ada.binop "+" %[[R1]], %[[V]] : i32
 -- MLIR-NEXT:    ada.return %[[R2]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_multi_name(

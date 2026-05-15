@@ -5,7 +5,7 @@
 -- MLIR-SAME:    () -> i32
 -- MLIR:         %[[INIT:.*]] = arith.constant 4 : i32
 -- MLIR-NEXT:    %[[ONE:.*]] = arith.constant 1 : i32
--- MLIR-NEXT:    %[[X:.*]] = ada.add %[[INIT]], %[[ONE]] : i32
+-- MLIR-NEXT:    %[[X:.*]] = ada.binop "+" %[[INIT]], %[[ONE]] : i32
 -- MLIR-NEXT:    ada.return %[[X]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_assign(

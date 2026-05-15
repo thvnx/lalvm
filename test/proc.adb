@@ -7,7 +7,7 @@
 
 -- MLIR-LABEL: ada.proc @proc(
 -- MLIR-SAME:    %arg0: i32, %arg1: i32, %arg2: i32
--- MLIR:         %[[R:.*]] = ada.add %arg1, %arg2 : i32
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg1, %arg2 : i32
 -- MLIR-NEXT:    ada.return
 
 -- LLVM-LABEL: define void @_ada_proc(

@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.func @test_local_var_init_from_expr
 -- MLIR-SAME:    (%arg0: i32, %arg1: i32) -> i32
--- MLIR:         %[[X:.*]] = ada.add %arg0, %arg1 : i32
+-- MLIR:         %[[X:.*]] = ada.binop "+" %arg0, %arg1 : i32
 -- MLIR-NEXT:    ada.return %[[X]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_init_from_expr(

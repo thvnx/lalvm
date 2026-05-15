@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.func @test_long_float
 -- MLIR-SAME:    (%arg0: f64, %arg1: f64) -> f64
--- MLIR:         %[[R:.*]] = ada.add %arg0, %arg1 : f64
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : f64
 -- MLIR-NEXT:    ada.return %[[R]] : f64
 
 -- LLVM-LABEL: define double @_ada_test_long_float(

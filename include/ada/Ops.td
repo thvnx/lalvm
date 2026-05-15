@@ -14,6 +14,7 @@
 #define ADA_OPS
 
 include "mlir/IR/OpBase.td"
+include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -38,44 +39,26 @@ class Ada_Op<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// AddOp
+// BinOp
 //===----------------------------------------------------------------------===//
+
+def AdaBinaryOp_Add : I32EnumAttrCase<"Add", 0, "+">;
+def AdaBinaryOp_Sub : I32EnumAttrCase<"Sub", 1, "-">;
+def AdaBinaryOp_Mul : I32EnumAttrCase<"Mul", 2, "*">;
+
+def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
+    "Ada predefined binary operator kind",
+    [AdaBinaryOp_Add, AdaBinaryOp_Sub, AdaBinaryOp_Mul]> {
+  let cppNamespace = "::mlir::ada";
+}
 
 // SameOperandsAndResultType constrains the op so that all operands and the
-// result share one type. It also auto-generates build(Value lhs, Value rhs)
+// result share one type. It also auto-generates build(AdaBinaryOp, Value, Value)
 // that infers the result type from the operands, so no custom builder is needed.
-def AddOp : Ada_Op<"add", [Pure, SameOperandsAndResultType]> {
-  let summary = "addition operation";
+def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
+  let summary = "Ada predefined binary arithmetic operation";
 
-  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
-  let results = (outs AnyType);
-
-  let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// SubOp
-//===----------------------------------------------------------------------===//
-
-def SubOp : Ada_Op<"sub", [Pure, SameOperandsAndResultType]> {
-  let summary = "subtraction operation";
-
-  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
-  let results = (outs AnyType);
-
-  let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// MulOp
-//===----------------------------------------------------------------------===//
-
-def MulOp : Ada_Op<"mul", [Pure, SameOperandsAndResultType]> {
-  let summary = "multiplication operation";
-
-  let arguments = (ins AnyType:$lhs, AnyType:$rhs);
+  let arguments = (ins AdaBinaryOp:$kind, AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;

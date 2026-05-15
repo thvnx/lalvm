@@ -295,18 +295,37 @@ private:
   /// `op` is the ada_op node (ada_op_plus, ada_op_minus, etc.).
   mlir::Value emitBinOp(ada_node &op, mlir::Value lhs, mlir::Value rhs) {
     auto location = loc(op);
+    mlir::ada::AdaBinaryOp kind;
     switch (ada_node_kind(&op)) {
     case ada_op_plus:
-      return builder.create<mlir::ada::AddOp>(location, lhs, rhs);
+      kind = mlir::ada::AdaBinaryOp::Add;
+      break;
     case ada_op_minus:
-      return builder.create<mlir::ada::SubOp>(location, lhs, rhs);
+      kind = mlir::ada::AdaBinaryOp::Sub;
+      break;
     case ada_op_mult:
-      return builder.create<mlir::ada::MulOp>(location, lhs, rhs);
+      kind = mlir::ada::AdaBinaryOp::Mul;
+      break;
     default:
       mlir::emitError(location, "invalid binary operator '")
           << libadalang::image(&op) << "'";
       return nullptr;
     }
+    // Op nodes (ada_op_plus, etc.) derive from Name and support
+    // p_referenced_decl. For user-defined (overloaded) operators, the resolved
+    // declaration is the operator function and p_is_predefined_operator returns
+    // false. Predefined operators may resolve to a built-in decl or to null.
+    ada_node refDecl;
+    if (ada_name_p_referenced_decl(&op, /*imprecise_fallback=*/0, &refDecl) &&
+        !ada_node_is_null(&refDecl)) {
+      ada_bool isPredefined = 0;
+      ada_basic_decl_p_is_predefined_operator(&refDecl, &isPredefined);
+      if (!isPredefined) {
+        mlir::emitError(location, "operator overloading is not supported");
+        return nullptr;
+      }
+    }
+    return builder.create<mlir::ada::BinOp>(location, kind, lhs, rhs);
   }
 
   /// Emit a binary operation.

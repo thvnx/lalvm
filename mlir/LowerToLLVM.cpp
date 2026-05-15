@@ -44,7 +44,7 @@ using namespace mlir;
 // Lowering chain overview:
 //   ada.func / ada.proc  →  func.func
 //   ada.return           →  func.return
-//   ada.add/sub/mul      →  arith.addi/subi/muli  (integers)
+//   ada.binop            →  arith.addi/subi/muli  (integers)
 //                           arith.addf/subf/mulf  (floats)
 //   func.func / arith.*  →  LLVM dialect  (via upstream conversion patterns)
 
@@ -114,33 +114,39 @@ struct CallOpLowering : public OpRewritePattern<ada::CallOp> {
 // AdaToLLVM RewritePatterns: Binary operations
 //===----------------------------------------------------------------------===//
 
-// Generic lowering for binary arithmetic ops. The Ada dialect uses a single
-// op per operation (add/sub/mul) that is type-agnostic; the arith dialect
-// has separate integer and float variants, so we dispatch on the operand type.
-template <typename AdaOp, typename IntOp, typename FloatOp>
-struct NumericBinaryOpLowering : public OpRewritePattern<AdaOp> {
-  using OpRewritePattern<AdaOp>::OpRewritePattern;
+// Lowers ada.binop to the corresponding arith op, dispatching on the operator
+// kind attribute and on integer vs. float operand type.
+struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
+  using OpRewritePattern<ada::BinOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(AdaOp op,
+  LogicalResult matchAndRewrite(ada::BinOp op,
                                 PatternRewriter &rewriter) const final {
     Type type = op->getOperand(0).getType();
-    if (mlir::isa<mlir::IntegerType>(type))
-      rewriter.replaceOpWithNewOp<IntOp>(op, op->getOperands());
-    else if (mlir::isa<mlir::FloatType>(type))
-      rewriter.replaceOpWithNewOp<FloatOp>(op, op->getOperands());
-    else
+    bool isInt = mlir::isa<mlir::IntegerType>(type);
+    if (!isInt && !mlir::isa<mlir::FloatType>(type))
       return rewriter.notifyMatchFailure(op, [type](Diagnostic &diag) {
         diag << "unsupported operand type: " << type;
       });
+    auto lower = [&](bool intType, auto iOp, auto fOp) {
+      if (intType)
+        rewriter.replaceOpWithNewOp<decltype(iOp)>(op, op->getOperands());
+      else
+        rewriter.replaceOpWithNewOp<decltype(fOp)>(op, op->getOperands());
+    };
+    switch (op.getKind()) {
+    case ada::AdaBinaryOp::Add:
+      lower(isInt, arith::AddIOp{}, arith::AddFOp{});
+      break;
+    case ada::AdaBinaryOp::Sub:
+      lower(isInt, arith::SubIOp{}, arith::SubFOp{});
+      break;
+    case ada::AdaBinaryOp::Mul:
+      lower(isInt, arith::MulIOp{}, arith::MulFOp{});
+      break;
+    }
     return success();
   }
 };
-using AddOpLowering =
-    NumericBinaryOpLowering<ada::AddOp, arith::AddIOp, arith::AddFOp>;
-using SubOpLowering =
-    NumericBinaryOpLowering<ada::SubOp, arith::SubIOp, arith::SubFOp>;
-using MulOpLowering =
-    NumericBinaryOpLowering<ada::MulOp, arith::MulIOp, arith::MulFOp>;
 
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: Func operations
@@ -269,8 +275,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
   patterns.add<NullOpLowering, BlockStmtOpLowering, ReturnOpLowering,
-               CallOpLowering, FuncOpLowering, ProcOpLowering, AddOpLowering,
-               SubOpLowering, MulOpLowering>(&getContext());
+               CallOpLowering, FuncOpLowering, ProcOpLowering, BinOpLowering>(
+      &getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.
