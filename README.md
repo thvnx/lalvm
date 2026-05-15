@@ -63,7 +63,7 @@ MLIR output:
 ```mlir
 ada.func @compute(%arg0: i32) -> i32 {
   ada.func @double(%arg0: i32) -> i32 {
-    %0 = ada.add %arg0, %arg0 : i32
+    %0 = ada.binop "+" %arg0, %arg0 : i32
     ada.return %0 : i32
   }
   %0 = ada.call @double(%arg0) : (i32) -> i32
@@ -113,7 +113,7 @@ lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope add.adb
 This prints each op's source location inline, for example:
 
 ```mlir
-%0 = ada.add %arg0, %arg1 : i32 loc("add.adb":15:13 to :14)
+%0 = ada.binop "+" %arg0, %arg1 : i32 loc("add.adb":15:13 to :14)
 ```
 
 ## Status
@@ -126,7 +126,7 @@ are not yet implemented.
 - **Statements (partial):** assignments, `return`, `null`, procedure calls, block
   statements (`begin`/`end` and `declare`/`begin`/`end`)
 - **Declarations (partial):** function and procedure subprograms (library-level and
-  nested), local variable declarations with initializers
+  nested), local variable declarations with initializers, named numbers
 - **Types:** `Integer` (i32), `Short_Integer` (i16), `Long_Integer` (i64),
   `Float` (f32), `Long_Float` (f64)
 - **Debug info:** DWARF 5, `DW_LANG_Ada2012`, source locations on all ops
@@ -136,7 +136,7 @@ are not yet implemented.
 The compiler is organized in three layers:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`) — custom MLIR dialect defining
-  `ada.func`, `ada.proc`, `ada.return`, `ada.add`, `ada.sub`, `ada.mul`,
+  `ada.func`, `ada.proc`, `ada.return`, `ada.binop`,
   `ada.call`, `ada.block_stmt`, `ada.null`
 - **MLIRGen** (`mlir/MLIRGen.cpp`) — lowers a Libadalang AST to the Ada dialect
 - **LowerToLLVM** (`mlir/LowerToLLVM.cpp`) — lowers the Ada dialect to LLVM IR via
@@ -155,6 +155,16 @@ pip install lit   # one-time
 cmake --build --preset=debug --target check-lalvm
 ```
 
+## Documentation
+
+API documentation is generated with Doxygen (requires doxygen and graphviz):
+
+```sh
+cmake --build --preset=debug --target doxygen
+```
+
+The output is written to `build/docs/html/`.
+
 ## Formatting
 
 Source files are formatted with clang-format using the LLVM style. To reformat all
@@ -169,3 +179,4 @@ cmake --build --preset=debug --target format
 - LLVM/MLIR 21 (for example on Debian: llvm-dev, libmlir-21-dev, mlir-21-tools, cmake, ninja-build, clang, clang-format)
 - Libadalang
 - lit (for running tests)
+- doxygen and graphviz (optional, for API documentation with call graphs)
