@@ -4,5 +4,5 @@
 
 function Test_Unsupported_Op (A, B : Integer) return Integer is
 begin
-   return A / B;
+   return A ** B;
 end Test_Unsupported_Op;

@@ -143,6 +143,9 @@ struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
     case ada::AdaBinaryOp::Mult:
       lower(isInt, arith::MulIOp{}, arith::MulFOp{});
       break;
+    case ada::AdaBinaryOp::Div:
+      lower(isInt, arith::DivSIOp{}, arith::DivFOp{});
+      break;
     }
     return success();
   }

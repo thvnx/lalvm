@@ -291,6 +291,9 @@ private:
     case ada_op_mult:
       kind = mlir::ada::AdaBinaryOp::Mult;
       break;
+    case ada_op_div:
+      kind = mlir::ada::AdaBinaryOp::Div;
+      break;
     default:
       mlir::emitError(location, "invalid binary operator '")
           << libadalang::image(&op) << "'";
