@@ -84,7 +84,7 @@ static int loadMLIR(libadalang::AdaAST &ast, mlir::MLIRContext &context,
                     mlir::OwningOpRef<mlir::ModuleOp> &module) {
   if (!ast.isValid())
     return 1;
-  module = ada::mlirGen(context, ast.getUnitRootNode());
+  module = lalvm::mlirGen(context, ast.getUnitRootNode());
   return !module ? 1 : 0;
 }
 

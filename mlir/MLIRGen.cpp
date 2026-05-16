@@ -39,7 +39,6 @@ using llvm::ArrayRef;
 using llvm::cast;
 using llvm::isa;
 using llvm::SmallVector;
-using llvm::StringRef;
 
 // Known limitations of this codegen:
 //
@@ -1158,11 +1157,11 @@ private:
 
 } // namespace
 
-namespace ada {
+namespace lalvm {
 
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context,
                                           ada_node &compilationUnit) {
   return MLIRGenImpl(context).mlirGen(compilationUnit);
 }
 
-} // namespace ada
+} // namespace lalvm
