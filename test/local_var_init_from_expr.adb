@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.func @test_local_var_init_from_expr
+-- MLIR-LABEL: ada.subp @test_local_var_init_from_expr
 -- MLIR-SAME:    (%arg0: i32, %arg1: i32) -> i32
 -- MLIR:         %[[X:.*]] = ada.binop "+" %arg0, %arg1 : i32
 -- MLIR-NEXT:    ada.return %[[X]] : i32

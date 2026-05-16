@@ -87,7 +87,7 @@ def NullOp : Ada_Op<"null", [Pure]> {
 
 // Represents an Ada block statement (RM 5.6): an inline scope that may
 // introduce local declarations followed by a sequence of statements. Unlike
-// ada.func/ada.proc, this op is NOT IsolatedFromAbove — SSA values from the
+// ada.subp, this op is NOT IsolatedFromAbove — SSA values from the
 // enclosing function are directly accessible. NoTerminator+SingleBlock waive
 // the need for an explicit terminator op. During lowering the region contents
 // are inlined into the parent block and the op is erased.
@@ -104,8 +104,8 @@ def BlockStmtOp : Ada_Op<"block_stmt", [NoTerminator, SingleBlock]> {
 
 // Subprogram call. Procedure calls carry no result; function calls carry
 // exactly one. The callee is referenced by a flat symbol (resolved via the
-// nearest enclosing SymbolTable, which may be an ada.func/ada.proc for nested
-// calls). The LowerToLLVM pass hoists nested subprograms to module level and
+// nearest enclosing SymbolTable, which may be an ada.subp for nested calls).
+// The LowerToLLVM pass hoists nested subprograms to module level and
 // updates all call references accordingly before converting ada.call to
 // func.call.
 def CallOp : Ada_Op<"call", []> {
@@ -128,29 +128,31 @@ def CallOp : Ada_Op<"call", []> {
 }
 
 //===----------------------------------------------------------------------===//
-// FuncOp
+// SubpOp
 //===----------------------------------------------------------------------===//
 
-// FunctionOpInterface provides the standard function-like behaviour (argument
-// types, result types, callable region). IsolatedFromAbove prevents the region
-// from capturing SSA values defined outside the function, matching Ada's
-// scoping rules and enabling independent analysis/optimization of each function.
-// SymbolTable makes each function op a symbol scope so that nested subprogram
-// bodies declared inside it are scoped to it rather than to the module.
-def FuncOp : Ada_Op<"func", [
+// A single op for both Ada functions and procedures. Functions have one result
+// type; procedures have an empty result list. IsolatedFromAbove prevents the
+// region from capturing SSA values defined outside the subprogram, matching
+// Ada's scoping rules. SymbolTable scopes nested subprogram bodies to the
+// enclosing subprogram rather than to the module.
+def SubpOp : Ada_Op<"subp", [
     FunctionOpInterface, IsolatedFromAbove, SymbolTable
   ]> {
-  let summary = "user defined function operation";
+  let summary = "Ada subprogram (function or procedure)";
   let description = [{
-    The "ada.func" operation represents a user defined function. These are
-    callable SSA-region operations that contain Ada computations.
+    Represents an Ada subprogram. Functions carry one result type; procedures
+    have an empty result list. The distinction is entirely in the function type.
 
     Example:
 
     ```mlir
-    ada.func @main() -> f32 {
-      %0 = ada.constant 5.500000e+00 : f32
-      ada.return %0 : f32
+    ada.subp @add(%a: i32, %b: i32) -> i32 {
+      %r = ada.binop "+" %a, %b : i32
+      ada.return %r : i32
+    }
+    ada.subp @print(%x: i32) {
+      ada.return
     }
     ```
   }];
@@ -169,62 +171,14 @@ def FuncOp : Ada_Op<"func", [
   >];
 
   let extraClassDeclaration = [{
-    //===------------------------------------------------------------------===//
-    // FunctionOpInterface Methods
-    //===------------------------------------------------------------------===//
-
-    /// Returns the argument types of this function.
     ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-
-    /// Returns the result types of this function.
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-
     Region *getCallableRegion() { return &getBody(); }
   }];
 
   let hasCustomAssemblyFormat = 1;
   // skipDefaultBuilders: the ODS-generated default builder doesn't know how to
   // create the entry block, so we provide our own via buildWithEntryBlock.
-  let skipDefaultBuilders = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ProcOp
-//===----------------------------------------------------------------------===//
-
-// Ada procedures are like functions but with no return value. We use a separate
-// op (rather than a FuncOp with empty result list) so that the verifier can
-// enforce that ada.return inside a procedure carries no operand. That
-// enforcement is implemented in ReturnOp::verify, which checks that the number
-// of return operands matches the enclosing function's result count (zero for
-// a procedure). SymbolTable is included for the same reason as FuncOp: nested
-// subprogram bodies are scoped to the enclosing subprogram.
-def ProcOp : Ada_Op<"proc", [
-    FunctionOpInterface, IsolatedFromAbove, SymbolTable
-  ]> {
-  let summary = "user defined procedure operation";
-
-  // Same layout as FuncOp: required by FunctionOpInterface.
-  let arguments = (ins
-    SymbolNameAttr:$sym_name,
-    TypeAttrOf<FunctionType>:$function_type,
-    OptionalAttr<DictArrayAttr>:$arg_attrs,
-    OptionalAttr<DictArrayAttr>:$res_attrs
-  );
-  let regions = (region AnyRegion:$body);
-
-  let builders = [OpBuilder<(ins
-    "StringRef":$name, "FunctionType":$type,
-    CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)
-  >];
-
-  let extraClassDeclaration = [{
-    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
-    Region *getCallableRegion() { return &getBody(); }
-  }];
-
-  let hasCustomAssemblyFormat = 1;
   let skipDefaultBuilders = 1;
 }
 
@@ -244,7 +198,7 @@ def ReturnOp : Ada_Op<"return", [Terminator]> {
     the operation. For example:
 
     ```mlir
-      ada.func @foo() -> i32 {
+      ada.subp @foo() -> i32 {
         ...
         ada.return %0 : i32
       }

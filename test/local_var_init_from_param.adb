@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.func @test_local_var_init_from_param
+-- MLIR-LABEL: ada.subp @test_local_var_init_from_param
 -- MLIR-SAME:    (%arg0: i32) -> i32
 -- MLIR:         ada.return %arg0 : i32
 

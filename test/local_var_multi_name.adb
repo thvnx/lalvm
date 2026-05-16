@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.func @test_local_var_multi_name
+-- MLIR-LABEL: ada.subp @test_local_var_multi_name
 -- MLIR-SAME:    () -> i32
 -- MLIR:         %[[V:.*]] = arith.constant 3 : i32
 -- MLIR-NEXT:    %[[R1:.*]] = ada.binop "+" %[[V]], %[[V]] : i32

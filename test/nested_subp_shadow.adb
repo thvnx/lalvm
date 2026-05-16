@@ -5,9 +5,9 @@
 -- with the same name. Previously failed silently due to the string-based
 -- symbol table rejecting the parameter declaration as a duplicate.
 
--- MLIR-LABEL: ada.func @p() -> i32
+-- MLIR-LABEL: ada.subp @p() -> i32
 -- MLIR:         %[[I:.*]] = arith.constant 12 : i32
--- MLIR:         ada.func @inner(
+-- MLIR:         ada.subp @inner(
 -- MLIR:           %[[ONE:.*]] = arith.constant 1 : i32
 -- MLIR:           %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] : i32
 -- MLIR:           ada.return %[[R]] : i32

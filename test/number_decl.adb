@@ -4,11 +4,11 @@
 -- Named numbers (RM 3.3.2): the constant is emitted at each use site with
 -- the concrete MLIR type resolved from the use context.
 
--- MLIR-LABEL: ada.proc @test_number_decl()
--- MLIR:         ada.func @f() -> i32
+-- MLIR-LABEL: ada.subp @test_number_decl()
+-- MLIR:         ada.subp @f() -> i32
 -- MLIR:           %[[MAX:.*]] = arith.constant 200 : i32
 -- MLIR:           ada.return %[[MAX]] : i32
--- MLIR:         ada.func @g() -> f32
+-- MLIR:         ada.subp @g() -> f32
 -- MLIR:           %[[PI:.*]] = arith.constant 3.141590e+00 : f32
 -- MLIR:           ada.return %[[PI]] : f32
 

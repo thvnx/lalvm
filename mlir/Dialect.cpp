@@ -129,18 +129,16 @@ void BinOp::print(mlir::OpAsmPrinter &p) {
 llvm::LogicalResult BinOp::verify() { return verifyNumericOp(*this); }
 
 //===----------------------------------------------------------------------===//
-// ProcOp
+// SubpOp
 //===----------------------------------------------------------------------===//
 
-void ProcOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+void SubpOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::FunctionType type,
                    llvm::ArrayRef<mlir::NamedAttribute> attrs) {
-  // buildWithEntryBlock is provided by FunctionOpInterface. It sets all the
-  // required attributes and creates the entry block with the right arg types.
   buildWithEntryBlock(builder, state, name, type, attrs, type.getInputs());
 }
 
-mlir::ParseResult ProcOp::parse(mlir::OpAsmParser &parser,
+mlir::ParseResult SubpOp::parse(mlir::OpAsmParser &parser,
                                 mlir::OperationState &result) {
   auto buildFuncType =
       [](mlir::Builder &builder, llvm::ArrayRef<mlir::Type> argTypes,
@@ -153,43 +151,7 @@ mlir::ParseResult ProcOp::parse(mlir::OpAsmParser &parser,
       getArgAttrsAttrName(result.name), getResAttrsAttrName(result.name));
 }
 
-void ProcOp::print(mlir::OpAsmPrinter &p) {
-  mlir::function_interface_impl::printFunctionOp(
-      p, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
-      getArgAttrsAttrName(), getResAttrsAttrName());
-}
-
-//===----------------------------------------------------------------------===//
-// FuncOp
-//===----------------------------------------------------------------------===//
-
-void FuncOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                   llvm::StringRef name, mlir::FunctionType type,
-                   llvm::ArrayRef<mlir::NamedAttribute> attrs) {
-  // FunctionOpInterface provides a convenient `build` method that will populate
-  // the state of our FuncOp, and create an entry block.
-  buildWithEntryBlock(builder, state, name, type, attrs, type.getInputs());
-}
-
-mlir::ParseResult FuncOp::parse(mlir::OpAsmParser &parser,
-                                mlir::OperationState &result) {
-  // Dispatch to the FunctionOpInterface provided utility method that parses the
-  // function operation.
-  auto buildFuncType =
-      [](mlir::Builder &builder, llvm::ArrayRef<mlir::Type> argTypes,
-         llvm::ArrayRef<mlir::Type> results,
-         mlir::function_interface_impl::VariadicFlag,
-         std::string &) { return builder.getFunctionType(argTypes, results); };
-
-  return mlir::function_interface_impl::parseFunctionOp(
-      parser, result, /*allowVariadic=*/false,
-      getFunctionTypeAttrName(result.name), buildFuncType,
-      getArgAttrsAttrName(result.name), getResAttrsAttrName(result.name));
-}
-
-void FuncOp::print(mlir::OpAsmPrinter &p) {
-  // Dispatch to the FunctionOpInterface provided utility method that prints the
-  // function operation.
+void SubpOp::print(mlir::OpAsmPrinter &p) {
   mlir::function_interface_impl::printFunctionOp(
       p, *this, /*isVariadic=*/false, getFunctionTypeAttrName(),
       getArgAttrsAttrName(), getResAttrsAttrName());
@@ -221,8 +183,8 @@ void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-// ada.return is used by both ada.func (with one operand) and ada.proc (with
-// none). The parser therefore treats the operand as optional.
+// ada.return operand is optional: ada.subp functions carry one, procedures
+// none.
 mlir::ParseResult ReturnOp::parse(mlir::OpAsmParser &parser,
                                   mlir::OperationState &result) {
   mlir::OpAsmParser::UnresolvedOperand operand;
@@ -244,17 +206,14 @@ void ReturnOp::print(mlir::OpAsmPrinter &p) {
 }
 
 llvm::LogicalResult ReturnOp::verify() {
-  // Walk up through any enclosing block statements to find the function/proc.
+  // Walk up through any enclosing block statements to find the subprogram.
   mlir::Operation *parent = (*this)->getParentOp();
   while (parent && mlir::isa<BlockStmtOp>(parent))
     parent = parent->getParentOp();
-  mlir::FunctionType funcType;
-  if (auto func = mlir::dyn_cast<FuncOp>(parent))
-    funcType = func.getFunctionType();
-  else if (auto proc = mlir::dyn_cast<ProcOp>(parent))
-    funcType = proc.getFunctionType();
-  else
-    return emitOpError() << "expects parent to be ada.func or ada.proc";
+  auto subp = mlir::dyn_cast<SubpOp>(parent);
+  if (!subp)
+    return emitOpError() << "expects parent to be ada.subp";
+  mlir::FunctionType funcType = subp.getFunctionType();
 
   /// ReturnOps can only have a single optional operand.
   if (getNumOperands() > 1)

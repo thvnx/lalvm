@@ -1,8 +1,8 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.func @caller(
--- MLIR:         ada.func @callee(
+-- MLIR-LABEL: ada.subp @caller(
+-- MLIR:         ada.subp @callee(
 -- MLIR:           ada.return %{{.*}} : i32
 -- MLIR:         %[[V:.*]] = ada.call @callee(%arg0, %arg1) : (i32, i32) -> i32
 -- MLIR:         ada.return %[[V]] : i32

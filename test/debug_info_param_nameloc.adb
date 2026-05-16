@@ -1,6 +1,6 @@
 -- RUN: %lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope %s | %FileCheck %s
 
--- CHECK-LABEL: ada.func @param_nameloc(
+-- CHECK-LABEL: ada.subp @param_nameloc(
 -- CHECK-SAME:    %arg0: i32 loc("A"(
 -- CHECK-SAME:    %arg1: i32 loc("B"(
 

@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.proc @null_stmt
+-- MLIR-LABEL: ada.subp @null_stmt
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 

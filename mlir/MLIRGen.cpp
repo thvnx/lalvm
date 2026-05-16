@@ -520,17 +520,16 @@ private:
 
     auto calleeName = libadalang::getName(&name_node);
 
-    // Walk the chain of enclosing ada.func/ada.proc ops looking for the
-    // callee, then fall back to the module.  ada.func/ada.proc carry
-    // SymbolTable, so lookupNearestSymbolFrom would stop at the immediately
-    // enclosing function and never see a sibling nested subprogram.  Walking
-    // the parent chain manually gives us Ada's "visible from any enclosing
-    // scope" rule while still respecting SymbolTable opacity toward the
-    // outside.
+    // Walk the chain of enclosing ada.subp ops looking for the callee, then
+    // fall back to the module.  ada.subp carries SymbolTable, so
+    // lookupNearestSymbolFrom would stop at the immediately enclosing
+    // subprogram and never see a sibling nested subprogram.  Walking the parent
+    // chain manually gives us Ada's "visible from any enclosing scope" rule
+    // while still respecting SymbolTable opacity toward the outside.
     mlir::Operation *op =
         builder.getInsertionBlock()->getParent()->getParentOp();
     mlir::Operation *calleeOp = nullptr;
-    while (isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(op) && !calleeOp) {
+    while (isa<mlir::ada::SubpOp>(op) && !calleeOp) {
       calleeOp = mlir::SymbolTable::lookupSymbolIn(op, calleeName.data());
       op = op->getParentOp();
     }
@@ -538,14 +537,18 @@ private:
       calleeOp =
           mlir::SymbolTable::lookupSymbolIn(adaModule, calleeName.data());
 
-    if (!calleeOp || !isa<mlir::ada::FuncOp, mlir::ada::ProcOp>(calleeOp)) {
+    if (!calleeOp || !isa<mlir::ada::SubpOp>(calleeOp)) {
       mlir::emitError(location, "unknown subprogram '") << calleeName << "'";
       return nullptr;
     }
 
     auto callLoc = mlir::CallSiteLoc::get(calleeOp->getLoc(), location);
 
-    if (isa<mlir::ada::FuncOp>(calleeOp)) {
+    // Function call: resolve the return type from LAL and pass it to CallOp.
+    // Procedure call: no result, fall through to the no-result builder.
+    if (mlir::cast<mlir::ada::SubpOp>(calleeOp)
+            .getFunctionType()
+            .getNumResults() > 0) {
       ada_node type_decl;
       if (!ada_expr_p_expression_type(&call, &type_decl) ||
           ada_node_is_null(&type_decl)) {
@@ -879,9 +882,9 @@ private:
     return mlir::success();
   }
 
-  /// Lower one Ada subprogram body to an ada.func or ada.proc operation.
+  /// Lower one Ada subprogram body to an `ada.subp` operation.
   /// This is the main codegen entry point for a subprogram: it creates the
-  /// function op, binds argument SSA values in the symbol table, then walks
+  /// `ada.subp` op, binds argument SSA values in the symbol table, then walks
   /// the statement list to emit the body.
   mlir::Operation *mlirGenSubpBody(ada_node &subp_body) {
     ada_node ada_subp_spec;
@@ -991,9 +994,8 @@ private:
     return mlir::success();
   }
 
-  /// Create an ada.proc (isProc=true) or ada.func (isProc=false) with the
-  /// signature derived from the Ada subprogram spec. Returns nullptr on
-  /// failure.
+  /// Create an ada.subp with the signature derived from the Ada subprogram
+  /// spec. Returns nullptr on failure.
   mlir::Operation *mlirGenSubpSpec(ada_node &subp_spec, bool isProc) {
     auto location = loc(libadalang::parent(&subp_spec));
 
@@ -1015,23 +1017,21 @@ private:
     }
     ada_node_array_dec_ref(params);
 
-    if (isProc) {
-      auto funcType = builder.getFunctionType(argTypes, {});
-      return builder.create<mlir::ada::ProcOp>(
-          location, libadalang::getName(&name).data(), funcType);
+    llvm::SmallVector<mlir::Type, 1> retTypes;
+    if (!isProc) {
+      ada_node ret_type_expr;
+      ada_subp_spec_f_subp_returns(&subp_spec, &ret_type_expr);
+      if (ada_node_is_null(&ret_type_expr)) {
+        mlir::emitError(location, "function has no return type");
+        return nullptr;
+      }
+      mlir::Type retType = getMLIRType(ret_type_expr);
+      if (!retType)
+        return nullptr;
+      retTypes.push_back(retType);
     }
-
-    ada_node ret_type_expr;
-    ada_subp_spec_f_subp_returns(&subp_spec, &ret_type_expr);
-    if (ada_node_is_null(&ret_type_expr)) {
-      mlir::emitError(location, "function has no return type");
-      return nullptr;
-    }
-    mlir::Type retType = getMLIRType(ret_type_expr);
-    if (!retType)
-      return nullptr;
-    auto funcType = builder.getFunctionType(argTypes, {retType});
-    return builder.create<mlir::ada::FuncOp>(
+    auto funcType = builder.getFunctionType(argTypes, retTypes);
+    return builder.create<mlir::ada::SubpOp>(
         location, libadalang::getName(&name).data(), funcType);
   }
 
@@ -1040,7 +1040,7 @@ private:
   ///
   /// Emit a procedure call statement. Only simple identifier calls (no
   /// arguments) are supported for now. The callee is looked up first in the
-  /// enclosing ada.func/ada.proc's SymbolTable (for nested subprograms), then
+  /// enclosing ada.subp's SymbolTable (for nested subprograms), then
   /// in the module-level SymbolTable (for top-level subprograms).
   llvm::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
     ada_node call;

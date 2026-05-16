@@ -1,8 +1,8 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.proc @test
--- MLIR:         ada.func @inner(
+-- MLIR-LABEL: ada.subp @test
+-- MLIR:         ada.subp @inner(
 -- MLIR:           ada.return %arg0 : i32
 -- MLIR:         %[[C1:.*]] = arith.constant 42 : i32
 -- MLIR:         %[[V1:.*]] = ada.call @inner(%[[C1]]) : (i32) -> i32

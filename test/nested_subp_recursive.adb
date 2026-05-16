@@ -6,8 +6,8 @@
 -- walk into the symbol's own definition body, leaving the recursive
 -- ada.call unrenamed and producing an invalid llvm.call reference.
 
--- MLIR-LABEL: ada.func @p() -> i32
--- MLIR:         ada.func @inner(
+-- MLIR-LABEL: ada.subp @p() -> i32
+-- MLIR:         ada.subp @inner(
 -- MLIR:           %[[R:.*]] = ada.call @inner(%{{.*}}) : (i32) -> i32
 -- MLIR:           ada.return %[[R]] : i32
 -- MLIR:         ada.call @inner(%{{.*}}) : (i32) -> i32

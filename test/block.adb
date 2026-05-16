@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.proc @test_block
+-- MLIR-LABEL: ada.subp @test_block
 -- MLIR:         ada.block_stmt "Outer" {
 -- MLIR:         ada.block_stmt {
 -- MLIR:         ada.return

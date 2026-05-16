@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.func @test_long
+-- MLIR-LABEL: ada.subp @test_long
 -- MLIR-SAME:    (%arg0: i64, %arg1: i64) -> i64
 -- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : i64
 -- MLIR-NEXT:    ada.return %[[R]] : i64

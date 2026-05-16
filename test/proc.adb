@@ -5,7 +5,7 @@
 -- SSA rebind in the symbol table only; the new value is never written back to
 -- the caller. The test therefore does not check for a store of the result.
 
--- MLIR-LABEL: ada.proc @proc(
+-- MLIR-LABEL: ada.subp @proc(
 -- MLIR-SAME:    %arg0: i32, %arg1: i32, %arg2: i32
 -- MLIR:         %[[R:.*]] = ada.binop "+" %arg1, %arg2 : i32
 -- MLIR-NEXT:    ada.return

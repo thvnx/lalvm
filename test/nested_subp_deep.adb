@@ -1,10 +1,10 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.proc @test_deep_nesting
--- MLIR:         ada.proc @a
--- MLIR:           ada.proc @b
--- MLIR:             ada.proc @c
+-- MLIR-LABEL: ada.subp @test_deep_nesting
+-- MLIR:         ada.subp @a
+-- MLIR:           ada.subp @b
+-- MLIR:             ada.subp @c
 -- MLIR:               ada.return
 -- MLIR:             ada.return
 -- MLIR:           ada.return

@@ -61,8 +61,8 @@ lalvm --emit=llvm compute.adb   # LLVM IR
 
 MLIR output:
 ```mlir
-ada.func @compute(%arg0: i32) -> i32 {
-  ada.func @double(%arg0: i32) -> i32 {
+ada.subp @compute(%arg0: i32) -> i32 {
+  ada.subp @double(%arg0: i32) -> i32 {
     %0 = ada.binop "+" %arg0, %arg0 : i32
     ada.return %0 : i32
   }
@@ -136,8 +136,7 @@ are not yet implemented.
 The compiler is organized in three layers:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`) — custom MLIR dialect defining
-  `ada.func`, `ada.proc`, `ada.return`, `ada.binop`,
-  `ada.call`, `ada.block_stmt`, `ada.null`
+  `ada.subp`, `ada.return`, `ada.binop`, `ada.call`, `ada.block_stmt`, `ada.null`
 - **MLIRGen** (`mlir/MLIRGen.cpp`) — lowers a Libadalang AST to the Ada dialect
 - **LowerToLLVM** (`mlir/LowerToLLVM.cpp`) — lowers the Ada dialect to LLVM IR via
   the Func and Arith intermediate dialects

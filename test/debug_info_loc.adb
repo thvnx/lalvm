@@ -1,6 +1,6 @@
 -- RUN: %lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope %s | %FileCheck %s
 
--- CHECK-LABEL: ada.func @test(
+-- CHECK-LABEL: ada.subp @test(
 -- CHECK-SAME:    %arg0: i32 loc("I"("{{.*}}debug_info_loc.adb":13:16 to :17))
 -- CHECK-SAME:    %arg1: i32 loc("J"("{{.*}}debug_info_loc.adb":13:19 to :20))
 -- CHECK-SAME:    %arg2: i32 loc("K"("{{.*}}debug_info_loc.adb":13:22 to :23))

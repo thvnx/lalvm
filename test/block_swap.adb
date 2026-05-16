@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.proc @test
+-- MLIR-LABEL: ada.subp @test
 -- MLIR:         ada.block_stmt "Swap" {
 -- MLIR-NEXT:    }
 -- MLIR:         ada.return

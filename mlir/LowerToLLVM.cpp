@@ -42,10 +42,10 @@ using namespace mlir;
 // are allowed to survive.
 //
 // Lowering chain overview:
-//   ada.func / ada.proc  →  func.func
-//   ada.return           →  func.return
-//   ada.binop            →  arith.addi/subi/muli  (integers)
-//                           arith.addf/subf/mulf  (floats)
+//   ada.subp   →  func.func
+//   ada.return →  func.return
+//   ada.binop  →  arith.addi/subi/muli  (integers)
+//                 arith.addf/subf/mulf  (floats)
 //   func.func / arith.*  →  LLVM dialect  (via upstream conversion patterns)
 
 //===----------------------------------------------------------------------===//
@@ -149,43 +149,22 @@ struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// AdaToLLVM RewritePatterns: Func operations
+// AdaToLLVM RewritePatterns: Subprogram operations
 //===----------------------------------------------------------------------===//
 
-// ada.func and ada.proc are isomorphic to func.func at this level; we just
-// swap the op type and move the region over. The upstream FuncToLLVM pass then
-// handles the func.func → llvm.func conversion.
-struct FuncOpLowering : public OpConversionPattern<ada::FuncOp> {
-  using OpConversionPattern<ada::FuncOp>::OpConversionPattern;
+// ada.subp is isomorphic to func.func at this level; we just swap the op type
+// and move the region over. The upstream FuncToLLVM pass then handles the
+// func.func → llvm.func conversion.
+struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
+  using OpConversionPattern<ada::SubpOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(ada::FuncOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    // Create a new func.func function, with the same region.
-    auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
-                                                    op.getFunctionType());
-    if (ArrayAttr argAttrs = op.getArgAttrsAttr())
-      func.setAllArgAttrs(argAttrs);
-    if (ArrayAttr resAttrs = op.getResAttrsAttr())
-      func.setAllResultAttrs(resAttrs);
-    rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-struct ProcOpLowering : public OpConversionPattern<ada::ProcOp> {
-  using OpConversionPattern<ada::ProcOp>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ada::ProcOp op, OpAdaptor adaptor,
+  matchAndRewrite(ada::SubpOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const final {
     auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
                                                     op.getFunctionType());
     if (ArrayAttr argAttrs = op.getArgAttrsAttr())
       func.setAllArgAttrs(argAttrs);
-    // Procedures have no results today, but copy result attrs anyway to stay
-    // symmetric with FuncOpLowering and avoid silent loss if that changes.
     if (ArrayAttr resAttrs = op.getResAttrsAttr())
       func.setAllResultAttrs(resAttrs);
     rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
@@ -213,14 +192,14 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   // completes fully before the loops below mutate the IR (moveBefore,
   // setSymbolName), so there is no iterator invalidation.
   module.walk([&](Operation *op) {
-    if (!isa<ada::FuncOp, ada::ProcOp>(op))
+    if (!isa<ada::SubpOp>(op))
       return;
     if (isa<ModuleOp>(op->getParentOp())) {
       librarySubps.push_back(op);
       return;
     }
     std::string name = mlir::SymbolTable::getSymbolName(op).str();
-    for (Operation *p = op->getParentOp(); isa<ada::FuncOp, ada::ProcOp>(p);
+    for (Operation *p = op->getParentOp(); isa<ada::SubpOp>(p);
          p = p->getParentOp())
       name = mlir::SymbolTable::getSymbolName(p).str() + "__" + name;
     nestedSubps.emplace_back(op, std::move(name));
@@ -275,8 +254,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
   patterns.add<NullOpLowering, BlockStmtOpLowering, ReturnOpLowering,
-               CallOpLowering, FuncOpLowering, ProcOpLowering, BinOpLowering>(
-      &getContext());
+               CallOpLowering, SubpOpLowering, BinOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.
