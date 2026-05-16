@@ -362,7 +362,13 @@ private:
   mlir::Value emitIntConstant(int64_t value, mlir::IntegerType type,
                               mlir::Location location) {
     unsigned width = type.getWidth();
-    if (width < 64) {
+    if (width == 1) {
+      if (value < 0 || value > 1) {
+        mlir::emitError(location, "integer constant ")
+            << value << " out of range for i1";
+        return nullptr;
+      }
+    } else if (width < 64) {
       int64_t maxVal = (1LL << (width - 1)) - 1;
       int64_t minVal = -(1LL << (width - 1));
       if (value < minVal || value > maxVal) {
@@ -484,6 +490,49 @@ private:
       return nullptr;
     return emitRealConstant(*value, mlir::cast<mlir::FloatType>(type),
                             loc(node));
+  }
+
+  /// Emit an enum literal as its integer representation (Ada RM 13.4).
+  /// Uses `p_enum_rep` which returns the representation value, equal to the
+  /// position unless a representation clause overrides it.
+  ///
+  /// @todo Support equality and relational operators on enumeration values.
+  /// @todo Support enumeration attributes ('Pos, 'Val, 'Succ, 'Pred, 'Image,
+  ///       'Value).
+  /// @todo Support Boolean logical operators (and, or, xor, not, and then,
+  ///       or else).
+  mlir::Value mlirGenEnumLit(ada_node &enumLitDecl, ada_node &useExpr) {
+    auto location = loc(useExpr);
+
+    ada_big_integer bigint;
+    if (!ada_enum_literal_decl_p_enum_rep(&enumLitDecl, &bigint)) {
+      mlir::emitError(location, "failed to get enum literal representation");
+      return nullptr;
+    }
+    ada_text text;
+    ada_big_integer_text(bigint, &text);
+    std::string s = libadalang::textToString(text);
+    ada_big_integer_decref(bigint);
+
+    errno = 0;
+    char *end;
+    int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
+    if (end == s.c_str() || errno == ERANGE) {
+      mlir::emitError(location, "enum literal value out of range for i64");
+      return nullptr;
+    }
+
+    ada_node type_decl;
+    if (!ada_expr_p_expression_type(&useExpr, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
+      mlir::emitError(location, "failed to resolve type of enum literal");
+      return nullptr;
+    }
+    mlir::Type type = getMLIRTypeFromDecl(type_decl, location);
+    if (!type)
+      return nullptr;
+    return emitIntConstant(value, mlir::cast<mlir::IntegerType>(type),
+                           location);
   }
 
   /// Emit a subprogram call from an ada_identifier (no-arg) or ada_call_expr
@@ -677,6 +726,13 @@ private:
         if (it != numberDeclExprs.end())
           return visit_static_expr(it->second, expr);
       }
+      // Enum literal: emit as its integer representation.
+      ada_node ref_decl;
+      if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
+                                     &ref_decl) &&
+          !ada_node_is_null(&ref_decl) &&
+          ada_node_kind(&ref_decl) == ada_enum_literal_decl)
+        return mlirGenEnumLit(ref_decl, expr);
       return mlirGenVariable(expr);
     }
     case ada_int_literal:
@@ -1114,6 +1170,29 @@ private:
                                              &canon_type) ||
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
+
+    // Enumeration types (RM 3.5.1): choose the smallest integer width that
+    // can hold all literals (GNAT convention: up to 256 -> i8, up to 65536
+    // -> i16, else i32).
+    // TODO: representation clauses (RM 13.4) can assign arbitrary values to
+    // literals; the width should then cover the range of those values, not the
+    // literal count. Until representation clauses are supported,
+    // emitIntConstant will catch out-of-range rep values and report an error.
+    ada_node type_def;
+    if (ada_type_decl_f_type_def(&canon_type, &type_def) &&
+        !ada_node_is_null(&type_def) &&
+        ada_node_kind(&type_def) == ada_enum_type_def) {
+      ada_node literals;
+      ada_enum_type_def_f_enum_literals(&type_def, &literals);
+      unsigned count = ada_node_children_count(&literals);
+      if (count <= 2)
+        return builder.getIntegerType(1);
+      if (count <= 256)
+        return builder.getIntegerType(8);
+      if (count <= 65536)
+        return builder.getIntegerType(16);
+      return builder.getIntegerType(32);
+    }
 
     // f_name gives the defining identifier of the type declaration, whose
     // lower-cased text we use to drive the mapping below.
