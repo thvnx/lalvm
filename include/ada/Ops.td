@@ -39,16 +39,45 @@ class Ada_Op<string mnemonic, list<Trait> traits = []> :
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// Operators
+//===----------------------------------------------------------------------===//
+
+// Logical operators (RM 4.5.1)
+def AdaOp_And     : I32EnumAttrCase<"And",     0,  "and">;
+def AdaOp_Or      : I32EnumAttrCase<"Or",      1,  "or">;
+def AdaOp_Xor     : I32EnumAttrCase<"Xor",     2,  "xor">;
+def AdaOp_AndThen : I32EnumAttrCase<"AndThen", 3,  "and then">;
+def AdaOp_OrElse  : I32EnumAttrCase<"OrElse",  4,  "or else">;
+// Relational operators (RM 4.5.2)
+def AdaOp_Eq      : I32EnumAttrCase<"Eq",      5,  "=">;
+def AdaOp_Neq     : I32EnumAttrCase<"Neq",     6,  "/=">;
+def AdaOp_Lt      : I32EnumAttrCase<"Lt",      7,  "<">;
+def AdaOp_Lte     : I32EnumAttrCase<"Lte",     8,  "<=">;
+def AdaOp_Gt      : I32EnumAttrCase<"Gt",      9,  ">">;
+def AdaOp_Gte     : I32EnumAttrCase<"Gte",     10, ">=">;
+def AdaOp_In      : I32EnumAttrCase<"In",      11, "in">;
+def AdaOp_NotIn   : I32EnumAttrCase<"NotIn",   12, "not in">;
+// Binary adding operators (RM 4.5.3)
+def AdaOp_Plus    : I32EnumAttrCase<"Plus",    13, "+">;
+def AdaOp_Minus   : I32EnumAttrCase<"Minus",   14, "-">;
+def AdaOp_Concat  : I32EnumAttrCase<"Concat",  15, "&">;
+// Multiplying operators (RM 4.5.5)
+def AdaOp_Mult    : I32EnumAttrCase<"Mult",    16, "*">;
+def AdaOp_Div     : I32EnumAttrCase<"Div",     17, "/">;
+def AdaOp_Mod     : I32EnumAttrCase<"Mod",     18, "mod">;
+def AdaOp_Rem     : I32EnumAttrCase<"Rem",     19, "rem">;
+// Highest precedence operators (RM 4.5.6)
+def AdaOp_Pow     : I32EnumAttrCase<"Pow",     20, "**">;
+def AdaOp_Abs     : I32EnumAttrCase<"Abs",     21, "abs">;
+def AdaOp_Not     : I32EnumAttrCase<"Not",     22, "not">;
+
+//===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
 
-def AdaBinaryOp_Add : I32EnumAttrCase<"Add", 0, "+">;
-def AdaBinaryOp_Sub : I32EnumAttrCase<"Sub", 1, "-">;
-def AdaBinaryOp_Mul : I32EnumAttrCase<"Mul", 2, "*">;
-
 def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
     "Ada predefined binary operator kind",
-    [AdaBinaryOp_Add, AdaBinaryOp_Sub, AdaBinaryOp_Mul]> {
+    [AdaOp_Plus, AdaOp_Minus, AdaOp_Mult]> {
   let cppNamespace = "::mlir::ada";
 }
 

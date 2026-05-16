@@ -134,13 +134,13 @@ struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
         rewriter.replaceOpWithNewOp<decltype(fOp)>(op, op->getOperands());
     };
     switch (op.getKind()) {
-    case ada::AdaBinaryOp::Add:
+    case ada::AdaBinaryOp::Plus:
       lower(isInt, arith::AddIOp{}, arith::AddFOp{});
       break;
-    case ada::AdaBinaryOp::Sub:
+    case ada::AdaBinaryOp::Minus:
       lower(isInt, arith::SubIOp{}, arith::SubFOp{});
       break;
-    case ada::AdaBinaryOp::Mul:
+    case ada::AdaBinaryOp::Mult:
       lower(isInt, arith::MulIOp{}, arith::MulFOp{});
       break;
     }

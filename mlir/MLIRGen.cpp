@@ -283,13 +283,13 @@ private:
     mlir::ada::AdaBinaryOp kind;
     switch (ada_node_kind(&op)) {
     case ada_op_plus:
-      kind = mlir::ada::AdaBinaryOp::Add;
+      kind = mlir::ada::AdaBinaryOp::Plus;
       break;
     case ada_op_minus:
-      kind = mlir::ada::AdaBinaryOp::Sub;
+      kind = mlir::ada::AdaBinaryOp::Minus;
       break;
     case ada_op_mult:
-      kind = mlir::ada::AdaBinaryOp::Mul;
+      kind = mlir::ada::AdaBinaryOp::Mult;
       break;
     default:
       mlir::emitError(location, "invalid binary operator '")
