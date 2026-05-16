@@ -1,7 +1,7 @@
 #ifndef ADA_MLIRGEN_H
 #define ADA_MLIRGEN_H
 
-#include "lal/AST.h"
+#include "frontend/AST.h"
 
 namespace mlir {
 class MLIRContext;

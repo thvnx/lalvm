@@ -1,6 +1,8 @@
 #include "ada/MLIRGen.h"
 
 #include "ada/Dialect.h"
+#include "frontend/AST.h"
+#include "frontend/DiagnosticPrinter.h"
 #include "libadalang.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Diagnostics.h"
@@ -17,9 +19,8 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/WithColor.h"
-#include "llvm/Support/raw_ostream.h"
+
+namespace libadalang = frontend::libadalang;
 
 #define DEBUG_TYPE "ada-mlirgen"
 
@@ -72,29 +73,7 @@ public:
     // drops non-error diagnostics.
     mlir::ScopedDiagnosticHandler diagHandler(
         builder.getContext(), [](mlir::Diagnostic &diag) {
-          if (auto loc =
-                  mlir::dyn_cast<mlir::FileLineColRange>(diag.getLocation()))
-            llvm::errs() << llvm::sys::path::filename(loc.getFilename()) << ":"
-                         << loc.getStartLine() << ":" << loc.getStartColumn()
-                         << ": ";
-          else
-            llvm::errs() << diag.getLocation() << ": ";
-          switch (diag.getSeverity()) {
-          case mlir::DiagnosticSeverity::Error:
-            llvm::WithColor::error();
-            break;
-          case mlir::DiagnosticSeverity::Warning:
-            llvm::WithColor::warning();
-            break;
-          case mlir::DiagnosticSeverity::Note:
-            llvm::WithColor::note();
-            break;
-          case mlir::DiagnosticSeverity::Remark:
-            llvm::WithColor::remark();
-            break;
-          }
-          diag.print(llvm::errs());
-          llvm::errs() << '\n';
+          frontend::DiagnosticPrinter().emitDiag(diag);
           return mlir::success();
         });
 
@@ -185,6 +164,11 @@ private:
   // Returning early (without visiting children) stops descent into a subtree
   // (used when a handler already walked it, e.g. mlirGenSubpBody visits stmts).
   mlir::LogicalResult visit(ada_node &moduleAST) {
+    ada_bool isEntryPoint = 0;
+    if (ada_ada_node_p_xref_entry_point(&moduleAST, &isEntryPoint) &&
+        isEntryPoint && libadalang::emitSolverDiagnostics(&moduleAST))
+      return mlir::failure();
+
     switch (ada_node_kind(&moduleAST)) {
     case ada_subp_body:
       // Top-level subprograms are emitted at module scope. The insertion point
@@ -256,7 +240,8 @@ private:
   mlir::Value mlirGenVariable(ada_node &expr) {
     // Fast path: resolve to DefiningName and look up in nodeValues.
     ada_node def_name;
-    if (ada_name_p_referenced_defining_name(&expr, 0, &def_name) &&
+    if (ada_name_p_referenced_defining_name(&expr, /*imprecise_fallback=*/0,
+                                            &def_name) &&
         !ada_node_is_null(&def_name)) {
       if (auto it = nodeValues.find(def_name.node); it != nodeValues.end())
         return it->second;
@@ -264,7 +249,8 @@ private:
 
     // Slow path: distinguish error kinds for better diagnostics.
     ada_node ref_decl;
-    if (ada_name_p_referenced_decl(&expr, 0, &ref_decl) &&
+    if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
+                                   &ref_decl) &&
         !ada_node_is_null(&ref_decl)) {
       if (ada_node_kind(&ref_decl) == ada_object_decl) {
         // Declared but not yet in nodeValues: never initialised or assigned.
@@ -679,7 +665,8 @@ private:
     switch (ada_node_kind(&expr)) {
     case ada_identifier: {
       ada_node def_name;
-      if (ada_name_p_referenced_defining_name(&expr, 0, &def_name) &&
+      if (ada_name_p_referenced_defining_name(&expr, /*imprecise_fallback=*/0,
+                                              &def_name) &&
           !ada_node_is_null(&def_name)) {
         auto it = numberDeclExprs.find(def_name.node);
         if (it != numberDeclExprs.end())
@@ -1080,7 +1067,8 @@ private:
     }
 
     ada_node def_name;
-    if (!ada_name_p_referenced_defining_name(&dest_node, 0, &def_name) ||
+    if (!ada_name_p_referenced_defining_name(
+            &dest_node, /*imprecise_fallback=*/0, &def_name) ||
         ada_node_is_null(&def_name)) {
       mlir::emitError(loc(dest_node), "unknown variable '")
           << libadalang::getName(&dest_node, false) << "'";

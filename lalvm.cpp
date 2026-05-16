@@ -28,11 +28,12 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "lal/AST.h"
+#include "frontend/AST.h"
 
 // Command line
 
 namespace cl = llvm::cl;
+namespace libadalang = frontend::libadalang;
 
 static cl::opt<std::string> inputFilename(cl::Positional,
                                           cl::desc("<input Ada file>"),
@@ -59,40 +60,15 @@ static cl::opt<enum Action> emitAction(
     cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")));
 
-int dumpAST(libadalang::AdaAST ast) {
-  if (inputType == InputType::MLIR) {
-    llvm::errs() << "Can't dump a Libadalang AST when the input is MLIR\n";
-    return 1;
-  }
-
-  if (!ast.isValid())
-    return 1;
-
-  ast.dump();
-
-  return 0;
-}
-
-int loadMLIR(libadalang::AdaAST ast, mlir::MLIRContext &context,
-             mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  // Handle '.ad[bs]' input to the compiler.
-  if (inputType != InputType::MLIR &&
-      !llvm::StringRef(inputFilename).ends_with(".mlir")) {
-    if (!ast.isValid())
-      return 1;
-    module = ada::mlirGen(context, ast.getUnitRootNode());
-    return !module ? 1 : 0;
-  }
-
-  // Otherwise, the input is '.mlir'.
+// Load a .mlir file directly, bypassing Libadalang entirely.
+static int loadMLIRFile(mlir::MLIRContext &context,
+                        mlir::OwningOpRef<mlir::ModuleOp> &module) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
   if (std::error_code ec = fileOrErr.getError()) {
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";
     return 1;
   }
-
-  // Parse the input mlir.
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
   module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
@@ -103,16 +79,13 @@ int loadMLIR(libadalang::AdaAST ast, mlir::MLIRContext &context,
   return 0;
 }
 
-int dumpMLIR(libadalang::AdaAST ast) {
-  mlir::MLIRContext context;
-  context.getOrLoadDialect<mlir::ada::AdaDialect>();
-  context.getOrLoadDialect<mlir::arith::ArithDialect>();
-  mlir::OwningOpRef<mlir::ModuleOp> module;
-  if (int error = loadMLIR(ast, context, module))
-    return error;
-  module->print(llvm::outs());
-  llvm::outs() << "\n";
-  return 0;
+// Generate MLIR from Ada source via Libadalang.
+static int loadMLIR(libadalang::AdaAST &ast, mlir::MLIRContext &context,
+                    mlir::OwningOpRef<mlir::ModuleOp> &module) {
+  if (!ast.isValid())
+    return 1;
+  module = ada::mlirGen(context, ast.getUnitRootNode());
+  return !module ? 1 : 0;
 }
 
 /// Attach an Ada-correct DICompileUnitAttr to the module location so that
@@ -139,14 +112,10 @@ static void setAdaDebugInfo(mlir::ModuleOp module) {
   module->setLoc(mlir::FusedLoc::get(ctx, {module.getLoc()}, cuAttr));
 }
 
-// Full compilation pipeline: Ada source → Ada MLIR dialect → LLVM dialect.
-// The MLIR module is modified in place; the caller then translates it to LLVM
-// IR. Pre-condition: context must have AdaDialect and ArithDialect loaded.
-int loadAndProcessMLIR(libadalang::AdaAST ast, mlir::MLIRContext &context,
-                       mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  if (int error = loadMLIR(ast, context, module))
-    return error;
-
+// Lower Ada dialect ops to LLVM dialect and attach debug info.
+// Pre-condition: context must have AdaDialect and ArithDialect loaded.
+static int applyLoweringPasses(mlir::MLIRContext &context,
+                               mlir::OwningOpRef<mlir::ModuleOp> &module) {
   // DI attribute types (DIFileAttr, DICompileUnitAttr, …) belong to the LLVM
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
@@ -165,14 +134,18 @@ int loadAndProcessMLIR(libadalang::AdaAST ast, mlir::MLIRContext &context,
   return 0;
 }
 
-int dumpLLVMIR(mlir::ModuleOp module) {
+static int dumpLLVMIR(mlir::MLIRContext &context,
+                      mlir::OwningOpRef<mlir::ModuleOp> &module) {
+  if (int error = applyLoweringPasses(context, module))
+    return error;
+
   // Register the translation to LLVM IR with the MLIR context.
-  mlir::registerBuiltinDialectTranslation(*module->getContext());
-  mlir::registerLLVMDialectTranslation(*module->getContext());
+  mlir::registerBuiltinDialectTranslation(context);
+  mlir::registerLLVMDialectTranslation(context);
 
   // Convert the module to LLVM IR in a new LLVM IR context.
   llvm::LLVMContext llvmContext;
-  auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
+  auto llvmModule = mlir::translateModuleToLLVMIR(*module, llvmContext);
   if (!llvmModule) {
     llvm::errs() << "Failed to emit LLVM IR\n";
     return 1;
@@ -214,28 +187,55 @@ int main(int argc, char **argv) {
   mlir::registerMLIRContextCLOptions();
   cl::ParseCommandLineOptions(argc, argv, "ada compiler\n");
 
-  libadalang::AdaAST ast(inputFilename);
-
-  switch (emitAction) {
-  case Action::DumpAST:
-    return dumpAST(ast);
-  case Action::DumpMLIR:
-    return dumpMLIR(ast);
-  case Action::DumpLLVMIR: {
-    mlir::MLIRContext context;
-    // Load our Dialect in this MLIR Context.
-    context.getOrLoadDialect<mlir::ada::AdaDialect>();
-    context.getOrLoadDialect<mlir::arith::ArithDialect>();
-    mlir::OwningOpRef<mlir::ModuleOp> module;
-    if (int error = loadAndProcessMLIR(ast, context, module))
-      return error;
-    return dumpLLVMIR(*module);
-  }
-  default:
+  if (emitAction == Action::None) {
     llvm::errs()
         << "No action specified (parsing only?), use --emit=<action>\n";
     return 1;
   }
 
-  return 0;
+  bool isMLIRInput = inputType == InputType::MLIR ||
+                     llvm::StringRef(inputFilename).ends_with(".mlir");
+
+  // DumpAST is Ada-only and needs no MLIR context.
+  if (emitAction == Action::DumpAST) {
+    if (isMLIRInput) {
+      llvm::errs() << "Can't dump a Libadalang AST when the input is MLIR\n";
+      return 1;
+    }
+    libadalang::AdaAST ast(inputFilename);
+    if (ast.emitParserDiagnostics())
+      return 1;
+    if (!ast.isValid())
+      return 1;
+    ast.dump();
+    return 0;
+  }
+
+  // DumpMLIR and DumpLLVMIR: load a module then emit.
+  mlir::MLIRContext context;
+  context.getOrLoadDialect<mlir::ada::AdaDialect>();
+  context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  mlir::OwningOpRef<mlir::ModuleOp> module;
+
+  if (isMLIRInput) {
+    if (int error = loadMLIRFile(context, module))
+      return error;
+  } else {
+    libadalang::AdaAST ast(inputFilename);
+    if (ast.emitParserDiagnostics())
+      return 1;
+    if (int error = loadMLIR(ast, context, module))
+      return error;
+  }
+
+  switch (emitAction) {
+  case Action::DumpMLIR:
+    module->print(llvm::outs());
+    llvm::outs() << "\n";
+    return 0;
+  case Action::DumpLLVMIR:
+    return dumpLLVMIR(context, module);
+  default:
+    llvm_unreachable("unhandled emit action");
+  }
 }

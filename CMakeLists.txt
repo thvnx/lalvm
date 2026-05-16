@@ -53,14 +53,15 @@ endif()
 include_directories(${LIBADALANG_INCLUDE_DIR})
 # TODO: replace global include_directories with target_include_directories(lalvm ...)
 # so that source-relative paths are scoped to the lalvm target only.
-include_directories(mlir parser)
+include_directories(mlir frontend)
 
 
 add_llvm_executable(lalvm
+  frontend/DiagnosticPrinter.cpp
   mlir/MLIRGen.cpp
   mlir/Dialect.cpp
   mlir/LowerToLLVM.cpp
-  parser/AST.cpp
+  frontend/AST.cpp
   lalvm.cpp
 
   DEPENDS

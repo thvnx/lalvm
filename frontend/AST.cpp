@@ -1,4 +1,6 @@
-#include "lal/AST.h"
+#include "frontend/AST.h"
+
+#include "frontend/DiagnosticPrinter.h"
 
 #include "mlir/IR/Diagnostics.h"
 
@@ -6,6 +8,8 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
+
+namespace libadalang = frontend::libadalang;
 
 static bool print_exception(bool or_silent) {
   const ada_exception *exc = ada_get_last_exception();
@@ -170,4 +174,42 @@ mlir::Diagnostic &libadalang::operator<<(mlir::Diagnostic &diag,
   llvm::raw_string_ostream os(buf);
   os << np;
   return diag << buf;
+}
+
+bool libadalang::AdaAST::emitParserDiagnostics() const {
+  if (!unit)
+    return false;
+  unsigned count = ada_unit_diagnostic_count(unit);
+  if (count == 0)
+    return false;
+
+  // Only the first diagnostic is reported: parse errors are often cascading,
+  // and showing just the root cause is less noisy.
+  char *rawFilename = ada_unit_filename(unit);
+  ada_diagnostic diag;
+  if (ada_unit_diagnostic(unit, 0, &diag))
+    frontend::DiagnosticPrinter().emitDiag(rawFilename, diag);
+  free(rawFilename);
+  return true;
+}
+
+bool libadalang::emitSolverDiagnostics(ada_node *node) {
+  ada_bool resolved;
+  if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)
+    return false;
+
+  // Resolution failed; emit diagnostics if available.
+  ada_internal_solver_diagnostic_array diags = nullptr;
+  if (ada_ada_node_p_nameres_diagnostics(node, &diags) && diags &&
+      diags->n > 0) {
+    frontend::DiagnosticPrinter printer;
+    for (int i = 0; i < diags->n; ++i)
+      printer.emitDiag(diags->items[i]);
+  } else {
+    llvm::errs()
+        << "error: name resolution failed but no diagnostics to report\n";
+  }
+  if (diags)
+    ada_internal_solver_diagnostic_array_dec_ref(diags);
+  return true;
 }

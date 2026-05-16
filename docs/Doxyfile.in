@@ -8,6 +8,7 @@ OUTPUT_DIRECTORY = @PROJECT_BINARY_DIR@/docs
 # Sources: public headers, implementation files, driver.
 # AdaOps.md is the generated op-reference produced by mlir-tblgen.
 INPUT         = @PROJECT_SOURCE_DIR@/include \
+                @PROJECT_SOURCE_DIR@/frontend \
                 @PROJECT_SOURCE_DIR@/mlir \
                 @PROJECT_SOURCE_DIR@/lalvm.cpp \
                 @PROJECT_BINARY_DIR@/include/ada/AdaOps.md

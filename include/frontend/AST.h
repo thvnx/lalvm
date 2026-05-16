@@ -1,5 +1,5 @@
-#ifndef LAL_AST_H
-#define LAL_AST_H
+#ifndef FRONTEND_AST_H
+#define FRONTEND_AST_H
 
 #include <string>
 
@@ -12,6 +12,7 @@ namespace mlir {
 class Diagnostic;
 } // namespace mlir
 
+namespace frontend {
 namespace libadalang {
 
 /// Dump an ada_node tree.
@@ -55,8 +56,18 @@ public:
   /// Return whether everything went well during object construction.
   bool isValid() { return valid; }
   void dump() { libadalang::dump(&root); }
+
+  /// Print any Libadalang parse/lex diagnostics for this unit to stderr,
+  /// matching the standard "file:line:col: error: msg" diagnostic format.
+  /// Returns true if any diagnostics were emitted (i.e. the unit has errors).
+  bool emitParserDiagnostics() const;
 };
 
-} // namespace libadalang
+/// Call p_resolve_names on node, emit any solver diagnostics to stderr, and
+/// return true if name resolution failed.
+bool emitSolverDiagnostics(ada_node *node);
 
-#endif // LAL_AST_H
+} // namespace libadalang
+} // namespace frontend
+
+#endif // FRONTEND_AST_H
