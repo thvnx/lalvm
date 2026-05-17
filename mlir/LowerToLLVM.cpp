@@ -42,10 +42,11 @@ using namespace mlir;
 // are allowed to survive.
 //
 // Lowering chain overview:
-//   ada.subp   →  func.func
-//   ada.return →  func.return
-//   ada.binop  →  arith.addi/subi/muli  (integers)
-//                 arith.addf/subf/mulf  (floats)
+//   ada.constant →  arith.constant
+//   ada.subp     →  func.func
+//   ada.return   →  func.return
+//   ada.binop    →  arith.addi/subi/muli  (integers)
+//                   arith.addf/subf/mulf  (floats)
 //   func.func / arith.*  →  LLVM dialect  (via upstream conversion patterns)
 
 //===----------------------------------------------------------------------===//
@@ -64,6 +65,19 @@ struct AdaToLLVMLoweringPass
   void runOnOperation() final;
 };
 } // namespace
+
+// ada.constant carries the Ada type reference for DWARF debug info generation.
+// The runtime value is lowered to arith.constant; DWARF emission is deferred.
+struct ConstantOpLowering : public OpRewritePattern<ada::ConstantOp> {
+  using OpRewritePattern<ada::ConstantOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ada::ConstantOp op,
+                                PatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(
+        op, mlir::cast<mlir::IntegerAttr>(op.getValueAttr()));
+    return success();
+  }
+};
 
 // ada.type carries metadata for DWARF debug info generation. It has no runtime
 // value and is erased during lowering. Full DWARF emission is a future item.
@@ -268,9 +282,9 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<TypeOpLowering, NullOpLowering, BlockStmtOpLowering,
-               ReturnOpLowering, CallOpLowering, SubpOpLowering, BinOpLowering>(
-      &getContext());
+  patterns.add<ConstantOpLowering, TypeOpLowering, NullOpLowering,
+               BlockStmtOpLowering, ReturnOpLowering, CallOpLowering,
+               SubpOpLowering, BinOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

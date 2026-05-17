@@ -106,6 +106,37 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 }
 
 //===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+
+// Represents an Ada typed constant: an enum literal use or a constant object
+// declaration (RM 3.3). Carries the enumerator rep value as an integer
+// attribute and a symbol reference to the corresponding ada.type op so that
+// lowering can reconstruct the DWARF type.
+//
+// The Ada name of the constant or literal is carried in the op location as a
+// NameLoc: "C" for `C : constant Color := Green`, "green" for an anonymous
+// use such as `return Green`.
+def ConstantOp : Ada_Op<"constant", [Pure]> {
+  let summary = "Ada typed constant (enum literal or constant object declaration)";
+  let arguments = (ins
+    APIntAttr:$value,
+    FlatSymbolRefAttr:$ada_type
+  );
+  let results = (outs AnyInteger:$result);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins
+      "mlir::IntegerAttr":$value,
+      "llvm::StringRef":$adaType)>
+  ];
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
 

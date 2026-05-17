@@ -2,8 +2,10 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- Boolean has 2 literals (False=0, True=1) so it maps to i1.
+-- Predefined types are lazily emitted at module level on first use.
+-- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @test_boolean
--- MLIR:         %true = arith.constant true
+-- MLIR:         %{{.*}} = ada.constant @standard.boolean true
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 

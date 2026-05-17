@@ -150,6 +150,51 @@ llvm::LogicalResult TypeOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+
+void ConstantOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                       mlir::IntegerAttr value, llvm::StringRef adaType) {
+  state.addTypes(value.getType());
+  state.addAttribute(getValueAttrName(state.name), value);
+  state.addAttribute(getAdaTypeAttrName(state.name),
+                     mlir::SymbolRefAttr::get(builder.getContext(), adaType));
+}
+
+/// Assembly format: @ada_type value : type
+mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser,
+                                    mlir::OperationState &result) {
+  mlir::FlatSymbolRefAttr adaType;
+  if (parser.parseAttribute(adaType, getAdaTypeAttrName(result.name),
+                            result.attributes))
+    return mlir::failure();
+
+  mlir::IntegerAttr value;
+  if (parser.parseAttribute(value, getValueAttrName(result.name),
+                            result.attributes))
+    return mlir::failure();
+
+  result.addTypes(value.getType());
+  return mlir::success();
+}
+
+void ConstantOp::print(mlir::OpAsmPrinter &p) {
+  p << ' ';
+  p.printAttribute(getAdaTypeAttr());
+  p << ' ';
+  p.printAttribute(getValueAttr());
+}
+
+llvm::LogicalResult ConstantOp::verify() {
+  auto intAttr = mlir::cast<mlir::IntegerAttr>(getValueAttr());
+  if (intAttr.getType() != getResult().getType())
+    return emitOpError() << "value type " << intAttr.getType()
+                         << " does not match result type "
+                         << getResult().getType();
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // Ada Operations
 //===----------------------------------------------------------------------===//
 

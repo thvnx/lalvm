@@ -125,8 +125,9 @@ private:
   llvm::DenseMap<ada_base_node, ada_node> numberDeclExprs;
 
   // Maps each concrete type decl node to its emitted ada.type op.
-  // TODO: use in mlirGenEnumLit to resolve an enum literal reference to its
-  // type's ada.type op without re-querying LAL.
+  // mlirGenEnumLit consults this to find the ada.type op by type_decl node,
+  // falling back to a lazy emit for types not declared in the current unit
+  // (e.g. Boolean).
   llvm::DenseMap<ada_base_node, mlir::ada::TypeOp> typeDecls;
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
@@ -497,9 +498,35 @@ private:
                             loc(node));
   }
 
+  /// Return the `ada.type` op for `type_decl`, emitting it lazily at module
+  /// level if not yet present in `typeDecls` (used for predefined and external
+  /// types such as `Boolean`). Returns a null `TypeOp` and emits a diagnostic
+  /// on failure.
+  mlir::ada::TypeOp lookupOrEmitTypeOp(ada_node &type_decl,
+                                       mlir::Location location) {
+    auto it = typeDecls.find(type_decl.node);
+    if (it == typeDecls.end()) {
+      mlir::OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointToStart(adaModule.getBody());
+      if (mlir::failed(mlirGenTypeDecl(type_decl, /*qualifiedName=*/true)))
+        return {};
+      it = typeDecls.find(type_decl.node);
+      if (it == typeDecls.end()) {
+        mlir::emitError(location, "ada.type not found for enum type");
+        return {};
+      }
+    }
+    return it->second;
+  }
+
   /// Emit an enum literal as its integer representation (Ada RM 13.4).
-  /// Uses `p_enum_rep` which returns the representation value, equal to the
-  /// position unless a representation clause overrides it.
+  /// The rep value and MLIR type are read from the `ada.type` op metadata;
+  /// Libadalang is only consulted for the literal name and the enclosing type.
+  ///
+  /// @param enumLitDecl `EnumLiteralDecl` for the literal; supplies the
+  ///                    canonical name used for the `NameLoc` and for the
+  ///                    lookup in the `ada.type` op metadata.
+  /// @param useExpr     Use-site expression node; provides the source location.
   ///
   /// @todo Support equality and relational operators on enumeration values.
   /// @todo Support enumeration attributes ('Pos, 'Val, 'Succ, 'Pred, 'Image,
@@ -509,35 +536,49 @@ private:
   mlir::Value mlirGenEnumLit(ada_node &enumLitDecl, ada_node &useExpr) {
     auto location = loc(useExpr);
 
-    ada_big_integer bigint;
-    if (!ada_enum_literal_decl_p_enum_rep(&enumLitDecl, &bigint)) {
-      mlir::emitError(location, "failed to get enum literal representation");
+    // Get the literal's canonical name for the NameLoc.
+    ada_node lit_name_node;
+    if (!ada_enum_literal_decl_f_name(&enumLitDecl, &lit_name_node) ||
+        ada_node_is_null(&lit_name_node)) {
+      mlir::emitError(location, "failed to get enum literal name");
       return nullptr;
     }
-    ada_text text;
-    ada_big_integer_text(bigint, &text);
-    std::string s = libadalang::textToString(text);
-    ada_big_integer_decref(bigint);
-
-    errno = 0;
-    char *end;
-    int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
-    if (end == s.c_str() || errno == ERANGE) {
-      mlir::emitError(location, "enum literal value out of range for i64");
-      return nullptr;
-    }
+    std::string litName =
+        libadalang::getName(&lit_name_node, /*canonical=*/true);
 
     ada_node type_decl;
-    if (!ada_expr_p_expression_type(&useExpr, &type_decl) ||
+    if (!ada_enum_literal_decl_p_enum_type(&enumLitDecl, &type_decl) ||
         ada_node_is_null(&type_decl)) {
       mlir::emitError(location, "failed to resolve type of enum literal");
       return nullptr;
     }
-    mlir::Type type = getMLIRTypeFromDecl(type_decl, location);
-    if (!type)
+
+    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
+    if (!typeOp)
       return nullptr;
-    return emitIntConstant(value, mlir::cast<mlir::IntegerType>(type),
-                           location);
+
+    // Derive the rep value and MLIR type from the ada.type op metadata rather
+    // than querying Libadalang again: ada.type is the single source of truth
+    // for enum type information within the pipeline.
+    auto typeInfo =
+        mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
+    auto names = typeInfo.getNames();
+    auto nameIt = llvm::find(names, litName);
+    if (nameIt == names.end()) {
+      mlir::emitError(location, "enum literal '")
+          << litName << "' not found in ada.type '" << typeOp.getSymName()
+          << "'";
+      return nullptr;
+    }
+    int64_t value = typeInfo.getValues()[nameIt - names.begin()];
+    mlir::Type type = typeOp.getMlirType();
+
+    auto attr =
+        mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(type), value);
+    auto namedLoc =
+        mlir::NameLoc::get(builder.getStringAttr(litName), location);
+    return builder.create<mlir::ada::ConstantOp>(namedLoc, attr,
+                                                 typeOp.getSymName());
   }
 
   /// Emit a subprogram call from an ada_identifier (no-arg) or ada_call_expr
@@ -813,8 +854,14 @@ private:
   /// enumeration types (RM 3.5.1) are handled; other kinds are silently skipped
   /// and will be added as support for each kind is implemented.
   ///
+  /// When `qualifiedName` is true the symbol name uses the canonical fully
+  /// qualified Ada name (e.g. `standard.boolean`), suitable for module-level
+  /// ops where multiple packages might export types with the same simple name.
+  /// Local types within a subprogram use the simple name (default).
+  ///
   /// @todo IntegerTypeInfoAttr, FloatTypeInfoAttr, RecordTypeInfoAttr, etc.
-  llvm::LogicalResult mlirGenTypeDecl(ada_node &type_decl) {
+  llvm::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
+                                      bool qualifiedName = false) {
     auto location = loc(type_decl);
 
     ada_node type_def;
@@ -828,14 +875,32 @@ private:
     if (!mlirType)
       return mlir::failure();
 
-    // Get the Ada type name (canonical form, i.e. lowercased).
-    ada_node type_name;
-    if (!ada_base_type_decl_f_name(&type_decl, &type_name) ||
-        ada_node_is_null(&type_name)) {
-      mlir::emitError(location, "failed to get type name");
-      return mlir::failure();
+    // Get the Ada type name. For module-level (external) types use the
+    // canonical fully qualified name to avoid collisions between packages that
+    // export types with the same simple name. For local types use the simple
+    // canonical name.
+    std::string typeName;
+    if (qualifiedName) {
+      ada_string_type fqn;
+      if (!ada_basic_decl_p_canonical_fully_qualified_name(&type_decl, &fqn)) {
+        mlir::emitError(location, "failed to get fully qualified type name");
+        return mlir::failure();
+      }
+      char *buf;
+      size_t len;
+      ada_string_to_utf8(fqn, &buf, &len);
+      typeName = std::string(buf, len);
+      free(buf);
+      ada_string_dec_ref(fqn);
+    } else {
+      ada_node type_name;
+      if (!ada_base_type_decl_f_name(&type_decl, &type_name) ||
+          ada_node_is_null(&type_name)) {
+        mlir::emitError(location, "failed to get type name");
+        return mlir::failure();
+      }
+      typeName = libadalang::getName(&type_name, /*canonical=*/true);
     }
-    std::string typeName = libadalang::getName(&type_name, /*canonical=*/true);
 
     // Collect enumerator names (canonical) and representation values.
     ada_node literals;
