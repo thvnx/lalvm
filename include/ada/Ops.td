@@ -13,7 +13,8 @@
 #ifndef ADA_OPS
 #define ADA_OPS
 
-include "mlir/IR/OpBase.td"
+include "Dialect.td"
+include "Attrs.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
@@ -21,18 +22,6 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 
 // C++ implementation in mlir/IR/OpDefinition.h.
 def SameOperandsAndResultType : NativeOpTrait<"SameOperandsAndResultType">;
-
-// Provide a definition of the 'Ada' dialect in the ODS framework so that we
-// can define our operations.
-def Ada_Dialect : Dialect {
-  let name = "ada";
-  let cppNamespace = "::mlir::ada";
-}
-
-// Base class for all Ada dialect operations. Binds each op to the Ada dialect
-// and its mnemonic (the part after the "ada." prefix in MLIR text form).
-class Ada_Op<string mnemonic, list<Trait> traits = []> :
-    Op<Ada_Dialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
 // Ada Operations
@@ -80,6 +69,45 @@ def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
     [AdaOp_Plus, AdaOp_Minus, AdaOp_Mult, AdaOp_Div]> {
   let cppNamespace = "::mlir::ada";
 }
+
+//===----------------------------------------------------------------------===//
+// TypeOp
+//===----------------------------------------------------------------------===//
+
+// Represents an Ada type declaration. Metadata-only op with no runtime value:
+// its sole purpose is to carry type information (name, MLIR type, kind-specific
+// data) through the pipeline for DWARF debug info generation. Currently erased
+// during lowering; full DWARF emission is not yet implemented.
+//
+// type_info holds an EnumTypeInfoAttr for enumeration types. Future kinds
+// (integer, float, record, array, ...) will use additional AttrDef subclasses.
+//
+// Implements Symbol so that ada.constant ops can reference it by name via
+// FlatSymbolRefAttr. Local types live inside the enclosing ada.subp region;
+// external types are emitted at module level.
+def TypeOp : Ada_Op<"type", [Symbol]> {
+  let summary = "Ada type declaration (metadata only, for DWARF debug info)";
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    TypeAttr:$mlir_type,
+    AnyAttr:$type_info
+  );
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins
+      "llvm::StringRef":$name,
+      "mlir::Type":$mlirType,
+      "mlir::Attribute":$typeInfo)>
+  ];
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// BinOp
+//===----------------------------------------------------------------------===//
 
 // SameOperandsAndResultType constrains the op so that all operands and the
 // result share one type. It also auto-generates build(AdaBinaryOp, Value, Value)

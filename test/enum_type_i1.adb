@@ -2,7 +2,8 @@
 
 -- 2 literals -> i1; On has position 1.
 -- MLIR-LABEL: ada.subp @test_enum_type_i1
--- MLIR:         %true = arith.constant true
+-- MLIR:         ada.type @switch : i1 = #ada.enum_info<"off" = 0, "on" = 1>
+-- MLIR-NEXT:    %true = arith.constant true
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 

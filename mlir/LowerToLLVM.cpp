@@ -65,6 +65,18 @@ struct AdaToLLVMLoweringPass
 };
 } // namespace
 
+// ada.type carries metadata for DWARF debug info generation. It has no runtime
+// value and is erased during lowering. Full DWARF emission is a future item.
+struct TypeOpLowering : public OpRewritePattern<ada::TypeOp> {
+  using OpRewritePattern<ada::TypeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ada::TypeOp op,
+                                PatternRewriter &rewriter) const final {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
   using OpRewritePattern<ada::NullOp>::OpRewritePattern;
 
@@ -256,8 +268,9 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<NullOpLowering, BlockStmtOpLowering, ReturnOpLowering,
-               CallOpLowering, SubpOpLowering, BinOpLowering>(&getContext());
+  patterns.add<TypeOpLowering, NullOpLowering, BlockStmtOpLowering,
+               ReturnOpLowering, CallOpLowering, SubpOpLowering, BinOpLowering>(
+      &getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

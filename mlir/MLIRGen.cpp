@@ -124,6 +124,11 @@ private:
   // Integer).
   llvm::DenseMap<ada_base_node, ada_node> numberDeclExprs;
 
+  // Maps each concrete type decl node to its emitted ada.type op.
+  // TODO: use in mlirGenEnumLit to resolve an enum literal reference to its
+  // type's ada.type op without re-querying LAL.
+  llvm::DenseMap<ada_base_node, mlir::ada::TypeOp> typeDecls;
+
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(const ada_node &node) {
     // INFO: MLIR provides richer location kinds (NameLoc, FusedLoc,
@@ -804,6 +809,89 @@ private:
     return mlir::success();
   }
 
+  /// Emit an ada.type op for an Ada type declaration (RM 3.1). Currently only
+  /// enumeration types (RM 3.5.1) are handled; other kinds are silently skipped
+  /// and will be added as support for each kind is implemented.
+  ///
+  /// @todo IntegerTypeInfoAttr, FloatTypeInfoAttr, RecordTypeInfoAttr, etc.
+  llvm::LogicalResult mlirGenTypeDecl(ada_node &type_decl) {
+    auto location = loc(type_decl);
+
+    ada_node type_def;
+    if (!ada_type_decl_f_type_def(&type_decl, &type_def) ||
+        ada_node_is_null(&type_def) ||
+        ada_node_kind(&type_def) != ada_enum_type_def)
+      return mlir::success();
+
+    // Get the MLIR integer type for this enum.
+    mlir::Type mlirType = getMLIRTypeFromDecl(type_decl, location);
+    if (!mlirType)
+      return mlir::failure();
+
+    // Get the Ada type name (canonical form, i.e. lowercased).
+    ada_node type_name;
+    if (!ada_base_type_decl_f_name(&type_decl, &type_name) ||
+        ada_node_is_null(&type_name)) {
+      mlir::emitError(location, "failed to get type name");
+      return mlir::failure();
+    }
+    std::string typeName = libadalang::getName(&type_name, /*canonical=*/true);
+
+    // Collect enumerator names (canonical) and representation values.
+    ada_node literals;
+    ada_enum_type_def_f_enum_literals(&type_def, &literals);
+    unsigned litCount = ada_node_children_count(&literals);
+
+    llvm::SmallVector<std::string> nameStorage;
+    llvm::SmallVector<int64_t> values;
+    nameStorage.reserve(litCount);
+    values.reserve(litCount);
+
+    for (unsigned i = 0; i < litCount; ++i) {
+      ada_node lit;
+      if (ada_node_child(&literals, i, &lit) == 0) {
+        mlir::emitError(location, "failed to get enum literal");
+        return mlir::failure();
+      }
+
+      ada_node lit_name;
+      if (!ada_enum_literal_decl_f_name(&lit, &lit_name) ||
+          ada_node_is_null(&lit_name)) {
+        mlir::emitError(location, "failed to get enum literal name");
+        return mlir::failure();
+      }
+      nameStorage.push_back(libadalang::getName(&lit_name, /*canonical=*/true));
+
+      ada_big_integer bigint;
+      if (!ada_enum_literal_decl_p_enum_rep(&lit, &bigint)) {
+        mlir::emitError(location, "failed to get enum literal rep value");
+        return mlir::failure();
+      }
+      ada_text text;
+      ada_big_integer_text(bigint, &text);
+      std::string s = libadalang::textToString(text);
+      ada_big_integer_decref(bigint);
+
+      errno = 0;
+      char *end;
+      int64_t val = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
+      if (end == s.c_str() || errno == ERANGE) {
+        mlir::emitError(location, "enum rep value out of range: ") << s;
+        return mlir::failure();
+      }
+      values.push_back(val);
+    }
+
+    llvm::SmallVector<llvm::StringRef> names(nameStorage.begin(),
+                                             nameStorage.end());
+    auto typeInfo =
+        mlir::ada::EnumTypeInfoAttr::get(builder.getContext(), names, values);
+    auto typeOp = builder.create<mlir::ada::TypeOp>(location, typeName,
+                                                    mlirType, typeInfo);
+    typeDecls[type_decl.node] = typeOp;
+    return mlir::success();
+  }
+
   /// Emit an object declaration (RM 3.3.1).
   ///
   /// Syntax:
@@ -917,6 +1005,10 @@ private:
         switch (ada_node_kind(&decl)) {
         case ada_number_decl:
           if (mlir::failed(mlirGenNumberDecl(decl)))
+            return mlir::failure();
+          break;
+        case ada_concrete_type_decl:
+          if (mlir::failed(mlirGenTypeDecl(decl)))
             return mlir::failure();
           break;
         case ada_object_decl:

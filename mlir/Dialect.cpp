@@ -16,6 +16,7 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
@@ -25,6 +26,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Casting.h"
 #include <string>
 
@@ -32,6 +34,10 @@ using namespace mlir;
 using namespace mlir::ada;
 
 #include "ada/AdaOpsEnums.cpp.inc"
+
+#define GET_ATTRDEF_CLASSES
+#include "ada/Attrs.cpp.inc"
+
 #include "ada/Dialect.cpp.inc"
 
 //===----------------------------------------------------------------------===//
@@ -45,6 +51,102 @@ void AdaDialect::initialize() {
 #define GET_OP_LIST
 #include "ada/Ops.cpp.inc"
       >();
+  addAttributes<
+#define GET_ATTRDEF_LIST
+#include "ada/Attrs.cpp.inc"
+      >();
+}
+
+//===----------------------------------------------------------------------===//
+// EnumTypeInfoAttr
+//===----------------------------------------------------------------------===//
+
+/// Assembly format: <"name1" = val1, "name2" = val2>
+mlir::Attribute EnumTypeInfoAttr::parse(mlir::AsmParser &parser, mlir::Type) {
+  if (parser.parseLess())
+    return {};
+
+  llvm::SmallVector<std::string> nameStorage;
+  llvm::SmallVector<int64_t> values;
+
+  if (parser.parseCommaSeparatedList([&]() -> mlir::ParseResult {
+        std::string s;
+        int64_t val;
+        if (parser.parseString(&s) || parser.parseEqual() ||
+            parser.parseInteger(val))
+          return mlir::failure();
+        nameStorage.push_back(std::move(s));
+        values.push_back(val);
+        return mlir::success();
+      }))
+    return {};
+
+  if (parser.parseGreater())
+    return {};
+
+  llvm::SmallVector<llvm::StringRef> names(nameStorage.begin(),
+                                           nameStorage.end());
+  return EnumTypeInfoAttr::get(parser.getContext(), names, values);
+}
+
+void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
+  p << '<';
+  llvm::interleaveComma(llvm::zip(getNames(), getValues()), p.getStream(),
+                        [&](auto pair) {
+                          auto [name, val] = pair;
+                          p << '"' << name << "\" = " << val;
+                        });
+  p << '>';
+}
+
+//===----------------------------------------------------------------------===//
+// TypeOp
+//===----------------------------------------------------------------------===//
+
+void TypeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                   llvm::StringRef name, mlir::Type mlirType,
+                   mlir::Attribute typeInfo) {
+  state.addAttribute(getSymNameAttrName(state.name),
+                     builder.getStringAttr(name));
+  state.addAttribute(getMlirTypeAttrName(state.name),
+                     mlir::TypeAttr::get(mlirType));
+  state.addAttribute(getTypeInfoAttrName(state.name), typeInfo);
+}
+
+mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
+                                mlir::OperationState &result) {
+  mlir::StringAttr symName;
+  if (parser.parseSymbolName(symName, getSymNameAttrName(result.name),
+                             result.attributes))
+    return mlir::failure();
+
+  mlir::Type mlirType;
+  if (parser.parseColon() || parser.parseType(mlirType))
+    return mlir::failure();
+  result.addAttribute(getMlirTypeAttrName(result.name),
+                      mlir::TypeAttr::get(mlirType));
+
+  if (parser.parseEqual())
+    return mlir::failure();
+  mlir::Attribute typeInfo;
+  if (parser.parseAttribute(typeInfo, getTypeInfoAttrName(result.name),
+                            result.attributes))
+    return mlir::failure();
+
+  return mlir::success();
+}
+
+void TypeOp::print(mlir::OpAsmPrinter &p) {
+  p << ' ';
+  p.printSymbolName(getSymName());
+  p << " : " << getMlirType() << " = ";
+  p.printAttribute(getTypeInfo());
+}
+
+llvm::LogicalResult TypeOp::verify() {
+  if (!mlir::isa<EnumTypeInfoAttr>(getTypeInfo()))
+    return emitOpError() << "unsupported type_info attribute kind";
+  return mlir::success();
 }
 
 //===----------------------------------------------------------------------===//
