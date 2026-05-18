@@ -117,7 +117,8 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 // The Ada name of the constant or literal is carried in the op location as a
 // NameLoc: "C" for `C : constant Color := Green`, "green" for an anonymous
 // use such as `return Green`.
-def ConstantOp : Ada_Op<"constant", [Pure]> {
+def ConstantOp : Ada_Op<"constant", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Ada typed constant (enum literal or constant object declaration)";
   let arguments = (ins
     APIntAttr:$value,

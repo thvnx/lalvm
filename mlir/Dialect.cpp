@@ -194,6 +194,24 @@ llvm::LogicalResult ConstantOp::verify() {
   return mlir::success();
 }
 
+// ada.subp carries SymbolTable, making it an opaque scope boundary: a plain
+// FlatSymbolRefAttr on a ConstantOp inside a subp body is only resolved
+// against that subp's own SymbolTable, missing module-level ada.type ops
+// (e.g. standard.boolean). Walk the full parent chain explicitly instead.
+llvm::LogicalResult
+ConstantOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  auto name = mlir::StringAttr::get(getContext(), getAdaType());
+  for (mlir::Operation *cur = getOperation(); cur;) {
+    mlir::Operation *table = mlir::SymbolTable::getNearestSymbolTable(cur);
+    if (!table)
+      break;
+    if (mlir::SymbolTable::lookupSymbolIn(table, name))
+      return mlir::success();
+    cur = table->getParentOp();
+  }
+  return emitOpError() << "unknown ada.type '" << getAdaType() << "'";
+}
+
 //===----------------------------------------------------------------------===//
 // Ada Operations
 //===----------------------------------------------------------------------===//
