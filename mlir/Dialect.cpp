@@ -15,6 +15,7 @@
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
@@ -296,6 +297,16 @@ llvm::LogicalResult BinOp::verify() { return verifyNumericOp(*this); }
 //===----------------------------------------------------------------------===//
 // SubpOp
 //===----------------------------------------------------------------------===//
+
+std::string SubpOp::getMangledName() {
+  std::string name = getName().str();
+  if (mlir::isa<mlir::ModuleOp>((*this)->getParentOp()))
+    return "_ada_" + name;
+  for (mlir::Operation *p = (*this)->getParentOp(); mlir::isa<SubpOp>(p);
+       p = p->getParentOp())
+    name = mlir::SymbolTable::getSymbolName(p).str() + "__" + name;
+  return name;
+}
 
 void SubpOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::FunctionType type,

@@ -58,6 +58,13 @@ using llvm::SmallVector;
 
 namespace {
 
+static bool isEnumTypeDecl(ada_node &typeDecl) {
+  ada_node typeDef{};
+  return ada_type_decl_f_type_def(&typeDecl, &typeDef) &&
+         !ada_node_is_null(&typeDef) &&
+         ada_node_kind(&typeDef) == ada_enum_type_def;
+}
+
 /// Walks a Libadalang AST and emits Ada dialect MLIR operations into a module
 /// (i.e.: a compilation unit). The public entry point is mlirGen() at the
 /// bottom of this file.
@@ -864,10 +871,9 @@ private:
                                       bool qualifiedName = false) {
     auto location = loc(type_decl);
 
-    ada_node type_def;
-    if (!ada_type_decl_f_type_def(&type_decl, &type_def) ||
-        ada_node_is_null(&type_def) ||
-        ada_node_kind(&type_def) != ada_enum_type_def)
+    ada_node type_def{};
+    if (!isEnumTypeDecl(type_decl) ||
+        !ada_type_decl_f_type_def(&type_decl, &type_def))
       return mlir::success();
 
     // Get the MLIR integer type for this enum.
@@ -1221,14 +1227,31 @@ private:
     ada_node ids;
     ada_base_subp_spec_p_params(&subp_spec, &params);
 
+    // Collect one (typeDecl, loc) entry per identifier before releasing the
+    // array. One entry per id (not per spec) so each carries its own loc.
+    struct ParamEntry {
+      ada_node typeDecl;
+      mlir::Location loc;
+    };
+    llvm::SmallVector<ParamEntry, 4> paramEntries;
+
     llvm::SmallVector<mlir::Type, 4> argTypes;
     for (int i = 0; i < params->n; i++) {
       ada_node type_expr;
       ada_param_spec_f_type_expr(&params->items[i], &type_expr);
       mlir::Type paramType = getMLIRType(type_expr);
       ada_param_spec_f_ids(&params->items[i], &ids);
-      for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
+
+      ada_node typeDecl{};
+      ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
+
+      for (unsigned j = 0; j < ada_node_children_count(&ids); j++) {
         argTypes.push_back(paramType);
+        ada_node child;
+        mlir::Location childLoc =
+            (ada_node_child(&ids, j, &child) != 0) ? loc(child) : loc(ids);
+        paramEntries.push_back({typeDecl, childLoc});
+      }
     }
     ada_node_array_dec_ref(params);
 
@@ -1246,8 +1269,27 @@ private:
       retTypes.push_back(retType);
     }
     auto funcType = builder.getFunctionType(argTypes, retTypes);
-    return builder.create<mlir::ada::SubpOp>(
+    auto subpOp = builder.create<mlir::ada::SubpOp>(
         location, libadalang::getName(&name).data(), funcType);
+
+    // Set "ada.type" arg attrs for parameters whose type is a known enum type.
+    // Non-enum types (integer, float, ...) are silently skipped until later
+    // phases add their AdaTypeInfoAttr kinds.
+    for (auto [argIdx, entry] : llvm::enumerate(paramEntries)) {
+      if (ada_node_is_null(&entry.typeDecl))
+        continue;
+      ada_node typeDef{};
+      if (!ada_type_decl_f_type_def(&entry.typeDecl, &typeDef) ||
+          ada_node_is_null(&typeDef) ||
+          ada_node_kind(&typeDef) != ada_enum_type_def)
+        continue;
+      if (auto typeOp = lookupOrEmitTypeOp(entry.typeDecl, entry.loc))
+        subpOp.setArgAttr(argIdx, "ada.type",
+                          mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                       typeOp.getSymName()));
+    }
+
+    return subpOp;
   }
 
   /// Emit an assignment statement. In SSA form this rebinds the name to the

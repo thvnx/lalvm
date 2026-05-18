@@ -263,6 +263,10 @@ def SubpOp : Ada_Op<"subp", [
     ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
     Region *getCallableRegion() { return &getBody(); }
+    /// ABI renaming contract (matches LowerToLLVM):
+    ///   - library-level: "_ada_" + bare name
+    ///   - nested: "outer__inner" (no _ada_ prefix)
+    std::string getMangledName();
   }];
 
   let hasCustomAssemblyFormat = 1;

@@ -20,10 +20,10 @@
 -- "return True" resolves to standard Boolean.
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @e
--- MLIR:         ada.subp @inner(
+-- MLIR:         ada.subp @inner(%arg0: i1 {ada.type = @standard.boolean}
 -- MLIR:           ada.type @boolean : i1 = #ada.enum_info<"true" = 0, "false" = 1>
 -- MLIR:           ada.constant @boolean false
--- MLIR:           ada.subp @inner(
+-- MLIR:           ada.subp @inner(%arg1: i1 {ada.type = @boolean}
 -- MLIR:             ada.type @boolean : i1 = #ada.enum_info<"not_true" = 0, "true" = 1>
 -- MLIR:             ada.constant @boolean true
 -- MLIR:             ada.return
@@ -39,6 +39,14 @@
 -- LLVM:          call i1 @e__inner(
 -- LLVM-LABEL: define i1 @e__inner__inner(
 -- LLVM-LABEL: define i1 @e__inner(
+-- Locally-declared Boolean types use the enclosing subprogram as DWARF scope,
+-- not the compile unit.
+-- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE1:[0-9]+]],
+-- LLVM-DAG: ![[BSCOPE1]] = distinct !DISubprogram(name: "e__inner",
+-- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE2:[0-9]+]],
+-- LLVM-DAG: ![[BSCOPE2]] = distinct !DISubprogram(name: "e__inner__inner",
+-- LLVM: DILocalVariable(name: "B", arg: 1,
+-- LLVM: DILocalVariable(name: "B", arg: 1,
 
 function E return Boolean is
    function Inner (B : Boolean) return Boolean is

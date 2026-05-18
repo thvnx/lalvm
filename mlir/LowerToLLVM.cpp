@@ -227,11 +227,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
       librarySubps.push_back(op);
       return;
     }
-    std::string name = mlir::SymbolTable::getSymbolName(op).str();
-    for (Operation *p = op->getParentOp(); isa<ada::SubpOp>(p);
-         p = p->getParentOp())
-      name = mlir::SymbolTable::getSymbolName(p).str() + "__" + name;
-    nestedSubps.emplace_back(op, std::move(name));
+    nestedSubps.emplace_back(op, cast<ada::SubpOp>(op).getMangledName());
   });
   for (auto &[op, mangledName] : nestedSubps) {
     auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
@@ -253,8 +249,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
     op->moveBefore(module.getBody(), module.getBody()->end());
   }
   for (Operation *op : librarySubps) {
-    std::string mangledName =
-        "_ada_" + mlir::SymbolTable::getSymbolName(op).str();
+    std::string mangledName = cast<ada::SubpOp>(op).getMangledName();
     auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
     if (mlir::failed(
             mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
