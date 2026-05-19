@@ -6,11 +6,14 @@
 -- symbol table rejecting the parameter declaration as a duplicate.
 
 -- MLIR-LABEL: ada.subp @p() -> i32
--- MLIR:         %[[I:.*]] = arith.constant 12 : i32
+-- MLIR:         %[[I_INIT:.*]] = arith.constant 12 : i32
+-- MLIR-NEXT:    %[[I_PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR-NEXT:    memref.store %[[I_INIT]], %[[I_PTR]][] : memref<i32>
 -- MLIR:         ada.subp @inner(
 -- MLIR:           %[[ONE:.*]] = arith.constant 1 : i32
 -- MLIR:           %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] : i32
 -- MLIR:           ada.return %[[R]] : i32
+-- MLIR:         %[[I:.*]] = memref.load %[[I_PTR]][] : memref<i32>
 -- MLIR:         %[[RES:.*]] = ada.call @inner(%[[I]]) : (i32) -> i32
 -- MLIR-NEXT:    ada.return %[[RES]] : i32
 

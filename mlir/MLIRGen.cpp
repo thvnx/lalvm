@@ -17,6 +17,7 @@
 #include "mlir/IR/Verifier.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include "llvm/Support/Debug.h"
 
@@ -25,6 +26,7 @@ namespace libadalang = frontend::libadalang;
 #define DEBUG_TYPE "ada-mlirgen"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -48,13 +50,6 @@ using llvm::SmallVector;
 //    wrapping semantics with no overflow check. Any Ada code relying on
 //    Constraint_Error for integer overflow will silently produce wrong results.
 //
-//  - Uninitialized variables: variables without an initializer are not
-//    supported; a reference to one is diagnosed as an error. Supporting them
-//    requires switching to an alloca-based model (stack slot per variable,
-//    llvm.load/llvm.store, mem2reg to promote to SSA).
-//
-//  - `in out` parameters: write-back to the caller's variable is not
-//    implemented. The updated value is stored in the local symbol table only.
 
 namespace {
 
@@ -117,11 +112,20 @@ private:
   // resolve to the correct declaration regardless of name shadowing —
   // Libadalang's cross-references handle scoping for us.
   //
-  // In the SSA model, assignment rebinds the same key to a new value rather
-  // than mutating it; nodeValues always holds the latest SSA value for each
-  // declaration. No scope cleanup is needed: for valid Ada, Libadalang
-  // rejects references to out-of-scope declarations before MLIRGen runs.
+  // In the alloca model, nodeValues maps each ObjectDecl's defining name to
+  // its memref.alloca pointer (memref<T>), `in`/default-in parameters to
+  // their direct block-argument SSA value, and `in out`/`out` parameters to
+  // the caller's memref<T> alloca pointer passed by reference. Reads of
+  // ObjectDecl variables emit a memref.load; stores emit memref.store.
+  // `in`/default-in parameters are returned directly.
+  // No scope cleanup is needed: for valid Ada, Libadalang rejects references
+  // to out-of-scope declarations before MLIRGen runs.
   llvm::DenseMap<ada_base_node, mlir::Value> nodeValues;
+
+  // Tracks alloca pointers for ObjectDecl variables declared without an
+  // initializer that have not yet been written to. Used to detect reads before
+  // first assignment. Erased on the first memref.store to the alloca.
+  llvm::DenseSet<mlir::Value> uninitAllocas;
 
   // Named numbers (RM 3.3.2) have universal integer or real type with no
   // concrete type annotation.  We stash the expression node at declaration
@@ -162,9 +166,7 @@ private:
     return result;
   }
 
-  /// Bind a DefiningName node to an SSA value. For assignment, this overwrites
-  /// the previous binding for the same node — the SSA model's way of tracking
-  /// the latest value of a mutable variable without alloca/load/store.
+  /// Bind a DefiningName node to a Value in nodeValues.
   void declare(ada_node &def_name, mlir::Value value) {
     LLVM_DEBUG(llvm::dbgs()
                << "declare: " << libadalang::image(&def_name) << "\n");
@@ -247,16 +249,49 @@ private:
     return mlir::success();
   }
 
-  /// Emit a variable reference. Resolves via Libadalang cross-reference to
-  /// the unique DefiningName node, then looks up the current SSA value.
-  mlir::Value mlirGenVariable(ada_node &expr) {
-    // Fast path: resolve to DefiningName and look up in nodeValues.
+  /// Resolve a name expression to its bound Value via Libadalang
+  /// cross-reference + nodeValues lookup. Returns a null Value (without
+  /// emitting any diagnostic) if the name cannot be resolved or is not bound.
+  mlir::Value findVarValue(ada_node &expr) {
     ada_node def_name;
-    if (ada_name_p_referenced_defining_name(&expr, /*imprecise_fallback=*/0,
-                                            &def_name) &&
-        !ada_node_is_null(&def_name)) {
-      if (auto it = nodeValues.find(def_name.node); it != nodeValues.end())
-        return it->second;
+    if (!ada_name_p_referenced_defining_name(&expr, /*imprecise_fallback=*/0,
+                                             &def_name) ||
+        ada_node_is_null(&def_name))
+      return {};
+    auto it = nodeValues.find(def_name.node);
+    return it != nodeValues.end() ? it->second : mlir::Value{};
+  }
+
+  /// Return the alloca pointer (memref<T>) for a variable expression without
+  /// emitting a load. Used to pass `in out` / `out` actual parameters by
+  /// reference. Ada requires the actual for such a formal to be a variable
+  /// (RM 6.4.1), so the resolved value is always a memref.
+  mlir::Value resolveVarPtr(ada_node &expr) {
+    mlir::Value val = findVarValue(expr);
+    if (!val || !mlir::isa<mlir::MemRefType>(val.getType())) {
+      mlir::emitError(loc(expr),
+                      "actual for `in out`/`out` parameter must be a variable");
+      return nullptr;
+    }
+    return val;
+  }
+
+  /// Emit a variable reference. Resolves via Libadalang cross-reference to
+  /// the unique DefiningName node, then looks up the bound value.
+  /// For ObjectDecl variables (alloca-backed), emits a memref.load.
+  /// For `in`/default-in parameters (direct SSA values), returns the value
+  /// directly.
+  mlir::Value mlirGenVariable(ada_node &expr) {
+    if (mlir::Value val = findVarValue(expr)) {
+      if (auto memrefTy = mlir::dyn_cast<mlir::MemRefType>(val.getType())) {
+        if (uninitAllocas.contains(val))
+          mlir::emitWarning(loc(expr), "variable '")
+              << libadalang::getName(&expr, false)
+              << "' is read before first assignment";
+        return builder.create<mlir::memref::LoadOp>(
+            loc(expr), memrefTy.getElementType(), val);
+      }
+      return val; // direct SSA value (in/default-in parameter)
     }
 
     // Slow path: distinguish error kinds for better diagnostics.
@@ -264,19 +299,7 @@ private:
     if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
                                    &ref_decl) &&
         !ada_node_is_null(&ref_decl)) {
-      if (ada_node_kind(&ref_decl) == ada_object_decl) {
-        // Declared but not yet in nodeValues: never initialised or assigned.
-        ada_node default_expr;
-        ada_object_decl_f_default_expr(&ref_decl, &default_expr);
-        if (ada_node_is_null(&default_expr)) {
-          // TODO: downgrade to a warning once the alloca-based model is in
-          // place.
-          mlir::emitError(loc(ref_decl), "variable '")
-              << libadalang::getName(&expr, false)
-              << "' is read but never assigned";
-          return nullptr;
-        }
-      } else {
+      if (ada_node_kind(&ref_decl) != ada_object_decl) {
         // Declared but not a variable (type, subprogram, etc.).
         mlir::emitError(loc(expr), "cannot use '")
             << libadalang::getName(&expr, false) << "' as a value";
@@ -595,28 +618,16 @@ private:
     auto location = loc(call);
 
     ada_node name_node;
-    llvm::SmallVector<mlir::Value> args;
+    ada_node suffix{};
 
     switch (ada_node_kind(&call)) {
     case ada_identifier:
       name_node = call;
       break;
-    case ada_call_expr: {
+    case ada_call_expr:
       ada_call_expr_f_name(&call, &name_node);
-      ada_node suffix;
       ada_call_expr_f_suffix(&call, &suffix);
-      int n = ada_node_children_count(&suffix);
-      for (int i = 0; i < n; ++i) {
-        ada_node assoc, r_expr;
-        ada_node_child(&suffix, i, &assoc);
-        ada_param_assoc_f_r_expr(&assoc, &r_expr);
-        mlir::Value val = visit_expr(r_expr);
-        if (!val)
-          return nullptr;
-        args.push_back(val);
-      }
       break;
-    }
     default:
       mlir::emitError(location, "unsupported call expression");
       return nullptr;
@@ -647,12 +658,36 @@ private:
     }
 
     auto callLoc = mlir::CallSiteLoc::get(calleeOp->getLoc(), location);
+    auto calleeSubp = mlir::cast<mlir::ada::SubpOp>(calleeOp);
+
+    // Evaluate arguments. Formals with a memref type (in out / out) receive the
+    // caller's alloca pointer directly; scalar formals (in) receive a value.
+    auto funcTy = calleeSubp.getFunctionType();
+    llvm::SmallVector<mlir::Value> args;
+    if (!ada_node_is_null(&suffix)) {
+      auto formalTypes = funcTy.getInputs();
+      int n = ada_node_children_count(&suffix);
+      for (int i = 0; i < n; ++i) {
+        ada_node assoc, r_expr;
+        ada_node_child(&suffix, i, &assoc);
+        ada_param_assoc_f_r_expr(&assoc, &r_expr);
+        if (mlir::isa<mlir::MemRefType>(formalTypes[i])) {
+          mlir::Value ptr = resolveVarPtr(r_expr);
+          if (!ptr)
+            return nullptr;
+          args.push_back(ptr);
+        } else {
+          mlir::Value val = visit_expr(r_expr);
+          if (!val)
+            return nullptr;
+          args.push_back(val);
+        }
+      }
+    }
 
     // Function call: resolve the return type from LAL and pass it to CallOp.
     // Procedure call: no result, fall through to the no-result builder.
-    if (mlir::cast<mlir::ada::SubpOp>(calleeOp)
-            .getFunctionType()
-            .getNumResults() > 0) {
+    if (funcTy.getNumResults() > 0) {
       ada_node type_decl;
       if (!ada_expr_p_expression_type(&call, &type_decl) ||
           ada_node_is_null(&type_decl)) {
@@ -1015,29 +1050,28 @@ private:
   ///            `single_task_declaration`, and `single_protected_declaration`
   ///            forms are not handled.
   ///
-  /// @warning Declarations without an initializer are silently skipped: the
-  ///          variable will not be in the symbol table; a later reference will
-  ///          produce an "unknown variable" error.
-  ///
-  /// @todo Support uninitialized scalar variables: requires switching from the
-  ///       current pure-SSA model to an alloca-based model (stack slot per
-  ///       variable via `llvm.alloca`, reads via `llvm.load`, writes via
-  ///       `llvm.store`); the same strategy used by clang and GNAT for stack
-  ///       locals before mem2reg promotes them to SSA values.
-  ///
-  /// @todo Typed constants (`ada_object_decl` with `ada_constant_present`) are
-  ///       currently treated as mutable variables; the `constant` keyword is
-  ///       ignored.
+  /// @todo The `constant` keyword on ObjectDecl is not yet enforced:
+  ///       a future `ada.object` op will carry `is_constant` for DWARF.
   llvm::LogicalResult mlirGenObjectDecl(ada_node &object_decl) {
+    auto declLoc = loc(object_decl);
+
+    ada_node type_expr;
+    ada_object_decl_f_type_expr(&object_decl, &type_expr);
+    mlir::Type elemType = getMLIRType(type_expr);
+    if (!elemType)
+      return mlir::failure();
+    auto memrefType = mlir::MemRefType::get({}, elemType);
+
+    // Evaluate the initializer once (if present); each identifier gets its own
+    // alloca but they all share the same initial value.
     ada_node default_expr;
     ada_object_decl_f_default_expr(&object_decl, &default_expr);
-
-    if (ada_node_is_null(&default_expr))
-      return mlir::success();
-
-    mlir::Value init = visit_expr(default_expr);
-    if (!init)
-      return mlir::failure();
+    mlir::Value init;
+    if (!ada_node_is_null(&default_expr)) {
+      init = visit_expr(default_expr);
+      if (!init)
+        return mlir::failure();
+    }
 
     ada_node ids;
     ada_object_decl_f_ids(&object_decl, &ids);
@@ -1045,10 +1079,16 @@ private:
     for (unsigned i = 0; i < count; ++i) {
       ada_node id;
       if (ada_node_child(&ids, i, &id) == 0) {
-        mlir::emitError(loc(object_decl), "failed to get declared identifier");
+        mlir::emitError(declLoc, "failed to get declared identifier");
         return mlir::failure();
       }
-      declare(id, init);
+      mlir::Value ptr =
+          builder.create<mlir::memref::AllocaOp>(declLoc, memrefType);
+      if (init)
+        builder.create<mlir::memref::StoreOp>(declLoc, init, ptr);
+      else
+        uninitAllocas.insert(ptr);
+      declare(id, ptr);
     }
     return mlir::success();
   }
@@ -1120,13 +1160,19 @@ private:
       return nullptr;
     mlir::Block *entryBlock = &op->getRegion(0).front();
 
-    std::vector<ada_node> args_v;
+    // Collect (id, mode) pairs for all parameters.
+    using ParamEntry = std::pair<ada_node, ada_node_kind_enum>;
+    llvm::SmallVector<ParamEntry, 4> args_v;
 
     ada_node_array params;
     ada_node ids;
     ada_base_subp_spec_p_params(&ada_subp_spec, &params);
 
     for (int i = 0; i < params->n; i++) {
+      ada_node mode_node;
+      ada_param_spec_f_mode(&params->items[i], &mode_node);
+      ada_node_kind_enum mode = ada_node_kind(&mode_node);
+
       ada_param_spec_f_ids(&params->items[i], &ids);
       for (unsigned int j = 0; j < ada_node_children_count(&ids); j++) {
         ada_node child;
@@ -1135,20 +1181,25 @@ private:
           mlir::emitError(loc(ids), "failed to get parameter identifier");
           return nullptr;
         }
-        args_v.push_back(child);
+        args_v.push_back({child, mode});
       }
     }
     ada_node_array_dec_ref(params);
 
-    // Declare all the function arguments in the symbol table.
-    // C++17 structured bindings unpack each zip pair into named variables.
-    for (auto [p, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
-      declare(p, arg);
-      arg.setLoc(mlir::NameLoc::get(
-          builder.getStringAttr(libadalang::getName(&p, false)), loc(p)));
-    }
-
     builder.setInsertionPointToStart(entryBlock);
+
+    // Bind parameters. `in` / default parameters are direct SSA values.
+    // `in out` / `out` parameters have memref<T> type and carry the caller's
+    // alloca pointer; stores to them are immediately visible at the call site.
+    // `out` parameters are additionally marked uninitialized.
+    for (auto [entry, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
+      auto [id, mode] = entry;
+      arg.setLoc(mlir::NameLoc::get(
+          builder.getStringAttr(libadalang::getName(&id, false)), loc(id)));
+      if (mode == ada_mode_out)
+        uninitAllocas.insert(arg);
+      declare(id, arg);
+    }
 
     ada_node decls;
     ada_subp_body_f_decls(&subp_body, &decls);
@@ -1159,17 +1210,20 @@ private:
     ada_node stmts;
     ada_subp_body_f_stmts(&subp_body, &stmts);
 
-    {
-      if (mlir::failed(visit(stmts))) {
-        op->erase();
-        return nullptr;
-      }
+    if (mlir::failed(visit(stmts))) {
+      op->erase();
+      return nullptr;
     }
 
     // Procedures have no explicit return statement; add an implicit one.
     if (isProc)
       builder.create<mlir::ada::ReturnOp>(loc(subp_body),
                                           ArrayRef<mlir::Value>{});
+
+    // Block arguments are subprogram-local; erase any that were marked
+    // uninitialized so entries don't accumulate across nested subprograms.
+    for (mlir::Value arg : entryBlock->getArguments())
+      uninitAllocas.erase(arg);
 
     return op;
   }
@@ -1245,8 +1299,15 @@ private:
       ada_node typeDecl{};
       ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
 
+      ada_node mode_node;
+      ada_param_spec_f_mode(&params->items[i], &mode_node);
+      ada_node_kind_enum mode = ada_node_kind(&mode_node);
+      bool writable = (mode == ada_mode_in_out || mode == ada_mode_out);
+      mlir::Type argType =
+          writable ? mlir::MemRefType::get({}, paramType) : paramType;
+
       for (unsigned j = 0; j < ada_node_children_count(&ids); j++) {
-        argTypes.push_back(paramType);
+        argTypes.push_back(argType);
         ada_node child;
         mlir::Location childLoc =
             (ada_node_child(&ids, j, &child) != 0) ? loc(child) : loc(ids);
@@ -1272,43 +1333,28 @@ private:
     auto subpOp = builder.create<mlir::ada::SubpOp>(
         location, libadalang::getName(&name).data(), funcType);
 
-    // Set "ada.type" arg attrs for parameters whose type is a known enum type.
-    // Non-enum types (integer, float, ...) are silently skipped until later
-    // phases add their AdaTypeInfoAttr kinds.
+    mlir::MLIRContext *ctx = builder.getContext();
     for (auto [argIdx, entry] : llvm::enumerate(paramEntries)) {
-      if (ada_node_is_null(&entry.typeDecl))
-        continue;
-      ada_node typeDef{};
-      if (!ada_type_decl_f_type_def(&entry.typeDecl, &typeDef) ||
-          ada_node_is_null(&typeDef) ||
-          ada_node_kind(&typeDef) != ada_enum_type_def)
-        continue;
-      if (auto typeOp = lookupOrEmitTypeOp(entry.typeDecl, entry.loc))
-        subpOp.setArgAttr(argIdx, "ada.type",
-                          mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                       typeOp.getSymName()));
+      // Set ada.type attr for parameters with a known enum type.
+      if (!ada_node_is_null(&entry.typeDecl) && isEnumTypeDecl(entry.typeDecl))
+        if (auto typeOp = lookupOrEmitTypeOp(entry.typeDecl, entry.loc))
+          subpOp.setArgAttr(
+              argIdx, "ada.type",
+              mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName()));
     }
 
     return subpOp;
   }
 
-  /// Emit an assignment statement. In SSA form this rebinds the name to the
-  /// new value.
-  ///
-  /// Emit a procedure call statement. Only simple identifier calls (no
-  /// arguments) are supported for now. The callee is looked up first in the
-  /// enclosing ada.subp's SymbolTable (for nested subprograms), then
-  /// in the module-level SymbolTable (for top-level subprograms).
+  /// Emit a procedure call statement. The callee is looked up first in the
+  /// enclosing ada.subp's SymbolTable (for nested subprograms), then in the
+  /// module-level SymbolTable (for top-level subprograms).
   llvm::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
     ada_node call;
     ada_call_stmt_f_call(&call_stmt, &call);
     return mlirGenCallExpr(call) ? mlir::success() : mlir::failure();
   }
 
-  /// Known limitation: `in out` parameter write-back is not implemented.
-  /// The new value is stored in the local symbol table only; it is never
-  /// written back to the caller's variable. Any code relying on `in out`
-  /// semantics will silently produce wrong results.
   llvm::LogicalResult mlirGenAssign(ada_node &assign_stmt) {
     ada_node dest_node, expr_node;
     ada_assign_stmt_f_dest(&assign_stmt, &dest_node);
@@ -1323,16 +1369,20 @@ private:
       return mlir::failure();
     }
 
-    ada_node def_name;
-    if (!ada_name_p_referenced_defining_name(
-            &dest_node, /*imprecise_fallback=*/0, &def_name) ||
-        ada_node_is_null(&def_name)) {
+    mlir::Value ptr = findVarValue(dest_node);
+    if (!ptr) {
       mlir::emitError(loc(dest_node), "unknown variable '")
           << libadalang::getName(&dest_node, false) << "'";
       return mlir::failure();
     }
+    if (!mlir::isa<mlir::MemRefType>(ptr.getType())) {
+      mlir::emitError(loc(dest_node), "cannot assign to '")
+          << libadalang::getName(&dest_node, false) << "'";
+      return mlir::failure();
+    }
 
-    nodeValues[def_name.node] = rhs;
+    builder.create<mlir::memref::StoreOp>(loc(assign_stmt), rhs, ptr);
+    uninitAllocas.erase(ptr);
     return mlir::success();
   }
 

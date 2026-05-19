@@ -26,6 +26,7 @@
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -267,7 +268,11 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   // LLVMTypeConverter maps MLIR types (i32, f64, …) to their LLVM equivalents.
   // It is threaded through the upstream conversion patterns that need it.
-  LLVMTypeConverter typeConverter(&getContext());
+  // Use bare pointer calling convention so memref<T> function arguments lower
+  // to a single ptr instead of the full { ptr, ptr, i64 } descriptor struct.
+  mlir::LowerToLLVMOptions opts(&getContext());
+  opts.useBarePtrCallConv = true;
+  LLVMTypeConverter typeConverter(&getContext(), opts);
 
   // Provide the patterns used for lowering.
   RewritePatternSet patterns(&getContext());
@@ -276,6 +281,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+  populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
 
   patterns.add<ConstantOpLowering, TypeOpLowering, NullOpLowering,
                BlockStmtOpLowering, ReturnOpLowering, CallOpLowering,

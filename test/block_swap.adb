@@ -1,21 +1,37 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
+-- With the alloca model, the Swap block body correctly emits loads and stores
+-- that propagate assignments through the enclosing-scope alloca pointers for
+-- U and V.
 -- MLIR-LABEL: ada.subp @test
+-- MLIR:         %[[INIT_U:.*]] = arith.constant 5 : i32
+-- MLIR:         %[[U_PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR:         memref.store %[[INIT_U]], %[[U_PTR]][] : memref<i32>
+-- MLIR:         %[[INIT_V:.*]] = arith.constant 3 : i32
+-- MLIR:         %[[V_PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR:         memref.store %[[INIT_V]], %[[V_PTR]][] : memref<i32>
 -- MLIR:         ada.block_stmt "Swap" {
--- MLIR-NEXT:    }
--- MLIR:         ada.return
+-- MLIR:           %[[T_PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR:           %[[V0:.*]] = memref.load %[[V_PTR]][] : memref<i32>
+-- MLIR:           memref.store %[[V0]], %[[T_PTR]][] : memref<i32>
+-- MLIR:           %[[U0:.*]] = memref.load %[[U_PTR]][] : memref<i32>
+-- MLIR:           memref.store %[[U0]], %[[V_PTR]][] : memref<i32>
+-- MLIR:           %[[T0:.*]] = memref.load %[[T_PTR]][] : memref<i32>
+-- MLIR:           memref.store %[[T0]], %[[U_PTR]][] : memref<i32>
+-- MLIR:         }
+-- MLIR:         %[[U1:.*]] = memref.load %[[U_PTR]][] : memref<i32>
+-- MLIR:         ada.return %[[U1]] : i32
 
--- LLVM-LABEL: define void @_ada_test(
--- LLVM:          ret void
+-- LLVM mem2reg cannot cross the ada.block_stmt region boundary, so the
+-- alloca for U survives lowering. The function still returns the correct
+-- runtime value (original V = 3) through a load of the swapped alloca.
+-- LLVM-LABEL: define i32 @_ada_test(
+-- LLVM:          ret i32
 
--- Note: the Swap block body is empty at the MLIR level. In the current pure-SSA
--- model, assignments only rebind names in the compiler's symbol table without
--- emitting ops. Propagating those rebindings back to the enclosing scope (U, V)
--- after the block exits requires the alloca-based model.
-
-procedure Test is
-   U, V : Integer := 0;
+function Test return Integer is
+   U : Integer := 5;
+   V : Integer := 3;
 begin
    Swap:
       declare
@@ -23,4 +39,5 @@ begin
       begin
          Temp := V; V := U; U := Temp;
       end Swap;
+   return U;
 end Test;

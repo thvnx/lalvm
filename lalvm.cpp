@@ -16,11 +16,13 @@
 #include "mlir/Parser/Parser.h"
 
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
@@ -214,6 +216,7 @@ applyLoweringPasses(mlir::MLIRContext &context,
   // DI attribute types (DIFileAttr, DICompileUnitAttr, …) belong to the LLVM
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+  context.getOrLoadDialect<mlir::memref::MemRefDialect>();
 
   // Pre-set Ada debug info so DIScopeForLLVMFuncOp uses our compile unit.
   setAdaDebugInfo(*module);
@@ -221,6 +224,8 @@ applyLoweringPasses(mlir::MLIRContext &context,
   mlir::PassManager pm(module.get()->getName());
   // Collect Ada type metadata before ada.type ops are erased.
   pm.addPass(mlir::ada::createAddAdaDebugInfoPass(enumInfos, paramInfos));
+  // Promote alloca-backed variables to SSA values where possible.
+  pm.addPass(mlir::createMem2Reg());
   // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
   // Attach DI scope metadata so debuggers can map LLVM IR back to source lines.
@@ -316,6 +321,7 @@ int main(int argc, char **argv) {
   mlir::MLIRContext context;
   context.getOrLoadDialect<mlir::ada::AdaDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  context.getOrLoadDialect<mlir::memref::MemRefDialect>();
   mlir::OwningOpRef<mlir::ModuleOp> module;
 
   if (isMLIRInput) {

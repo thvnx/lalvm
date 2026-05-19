@@ -226,7 +226,8 @@ def CallOp : Ada_Op<"call", []> {
 // Ada's scoping rules. SymbolTable scopes nested subprogram bodies to the
 // enclosing subprogram rather than to the module.
 def SubpOp : Ada_Op<"subp", [
-    FunctionOpInterface, IsolatedFromAbove, SymbolTable
+    FunctionOpInterface, IsolatedFromAbove, SymbolTable,
+    AutomaticAllocationScope
   ]> {
   let summary = "Ada subprogram (function or procedure)";
   let description = [{

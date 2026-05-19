@@ -5,7 +5,9 @@
 -- Predefined types are lazily emitted at module level on first use.
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @test_boolean
--- MLIR:         %{{.*}} = ada.constant @standard.boolean true
+-- MLIR:         %[[C:.*]] = ada.constant @standard.boolean true
+-- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() : memref<i1>
+-- MLIR-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<i1>
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 
