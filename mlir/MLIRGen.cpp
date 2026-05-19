@@ -675,6 +675,9 @@ private:
           mlir::Value ptr = resolveVarPtr(r_expr);
           if (!ptr)
             return nullptr;
+          // After the call the variable is considered initialized: `out`
+          // formals are contractually written by the callee (RM 6.4.1).
+          uninitAllocas.erase(ptr);
           args.push_back(ptr);
         } else {
           mlir::Value val = visit_expr(r_expr);
