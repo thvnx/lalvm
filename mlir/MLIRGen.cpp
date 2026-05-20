@@ -106,6 +106,10 @@ private:
   /// point" that determines where the next operation will be emitted.
   mlir::OpBuilder builder;
 
+  mlir::StringAttr getNameAttr(ada_node *node) {
+    return builder.getStringAttr(libadalang::getName(node));
+  }
+
   // Maps each DefiningName node to its current SSA Value. The key is the
   // ada_base_node pointer, which is Libadalang's unique node identity.
   // Using node identity instead of name strings means references always
@@ -1053,8 +1057,6 @@ private:
   ///            `single_task_declaration`, and `single_protected_declaration`
   ///            forms are not handled.
   ///
-  /// @todo The `constant` keyword on ObjectDecl is not yet enforced:
-  ///       a future `ada.object` op will carry `is_constant` for DWARF.
   llvm::LogicalResult mlirGenObjectDecl(ada_node &object_decl) {
     auto declLoc = loc(object_decl);
 
@@ -1092,6 +1094,7 @@ private:
       else
         uninitAllocas.insert(ptr);
       declare(id, ptr);
+      builder.create<mlir::ada::ObjectOp>(loc(id), getNameAttr(&id), ptr);
     }
     return mlir::success();
   }

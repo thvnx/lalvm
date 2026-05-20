@@ -23,6 +23,7 @@
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -98,6 +99,44 @@ void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
                           p << '"' << name << "\" = " << val;
                         });
   p << '>';
+}
+
+//===----------------------------------------------------------------------===//
+// ObjectOp
+//===----------------------------------------------------------------------===//
+
+void ObjectOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+                     mlir::StringAttr name, mlir::Value object) {
+  state.addAttribute(getNameAttrName(state.name), name);
+  state.addOperands(object);
+}
+
+// PromotableOpInterface: allow mem2reg to promote the alloca referenced by
+// $object. When the alloca is promoted, visitReplacedValues re-creates the
+// ada.object with the promoted SSA value so FinalizeAdaObjectPass can emit
+// dbg.value instead of dbg.declare.
+bool ObjectOp::canUsesBeRemoved(
+    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
+    llvm::SmallVectorImpl<mlir::OpOperand *> &newBlockingUses,
+    const mlir::DataLayout &dataLayout) {
+  return true;
+}
+
+mlir::DeletionKind ObjectOp::removeBlockingUses(
+    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
+    mlir::OpBuilder &builder) {
+  return mlir::DeletionKind::Delete;
+}
+
+bool ObjectOp::requiresReplacedValues() { return true; }
+
+void ObjectOp::visitReplacedValues(
+    llvm::ArrayRef<std::pair<mlir::Operation *, mlir::Value>> mutatedDefs,
+    mlir::OpBuilder &builder) {
+  for (auto [op, value] : mutatedDefs) {
+    builder.setInsertionPointAfter(op);
+    builder.create<ObjectOp>(getLoc(), getNameAttr(), value);
+  }
 }
 
 //===----------------------------------------------------------------------===//

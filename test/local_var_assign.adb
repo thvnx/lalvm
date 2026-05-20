@@ -14,6 +14,7 @@
 -- MLIR:         ada.return %[[X2]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_assign(
+-- LLVM:         #dbg_value(
 -- LLVM:         ret i32 5
 
 function Test_Local_Var_Assign return Integer is

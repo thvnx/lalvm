@@ -62,6 +62,12 @@ createAddAdaDebugInfoPass(llvm::SmallVector<AdaEnumInfo> &enumInfos,
 /// Create a pass for lowering Ada dialect operations to the LLVM dialect.
 std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
 
+/// Create a pass that finalizes ada.object ops: emits LLVM debug intrinsics
+/// (llvm.dbg.declare / llvm.dbg.value) and erases the ops. Must run after
+/// DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on each
+/// llvm.func.
+std::unique_ptr<mlir::Pass> createFinalizeAdaObjectPass();
+
 } // namespace ada
 } // namespace mlir
 

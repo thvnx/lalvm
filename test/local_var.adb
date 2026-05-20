@@ -6,15 +6,19 @@
 -- MLIR:         %[[X_INIT:.*]] = arith.constant 5 : i32
 -- MLIR-NEXT:    %[[X_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR-NEXT:    memref.store %[[X_INIT]], %[[X_PTR]][] : memref<i32>
+-- MLIR-NEXT:    ada.object "x" %[[X_PTR]] : memref<i32>
 -- MLIR-NEXT:    %[[Y_INIT:.*]] = arith.constant 3 : i32
 -- MLIR-NEXT:    %[[Y_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR-NEXT:    memref.store %[[Y_INIT]], %[[Y_PTR]][] : memref<i32>
+-- MLIR-NEXT:    ada.object "y" %[[Y_PTR]] : memref<i32>
 -- MLIR:         %[[X:.*]] = memref.load %[[X_PTR]][] : memref<i32>
 -- MLIR:         %[[Y:.*]] = memref.load %[[Y_PTR]][] : memref<i32>
 -- MLIR:         %[[R:.*]] = ada.binop "+" %[[X]], %[[Y]] : i32
 -- MLIR:         ada.return %[[R]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var(
+-- LLVM:         #dbg_value(
+-- LLVM:         #dbg_value(
 -- LLVM:         ret i32 8
 
 function Test_Local_Var return Integer is

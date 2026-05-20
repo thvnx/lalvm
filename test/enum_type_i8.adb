@@ -7,6 +7,7 @@
 -- MLIR-NEXT:    %[[C:.*]] = ada.constant @color 1 : i8
 -- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() : memref<i8>
 -- MLIR-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<i8>
+-- MLIR-NEXT:    ada.object "c" %[[PTR]] : memref<i8>
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 

@@ -178,6 +178,23 @@ struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
   }
 };
 
+// ada.object must survive into FinalizeAdaObjectPass, which runs after
+// LowerToLLVM. The conversion framework remaps operands automatically, but only
+// for ops that participate in the conversion, so ada.object must be rebuilt
+// with the converted operand (llvm.ptr) to prevent a type mismatch when
+// FinalizeAdaObjectPass inspects $object.
+struct ObjectOpLowering : public OpConversionPattern<ada::ObjectOp> {
+  using OpConversionPattern<ada::ObjectOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::ObjectOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const final {
+    rewriter.replaceOpWithNewOp<ada::ObjectOp>(op, op.getNameAttr(),
+                                               adaptor.getObject());
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: Subprogram operations
 //===----------------------------------------------------------------------===//
@@ -185,12 +202,11 @@ struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
 // ada.subp is isomorphic to func.func at this level; we just swap the op type
 // and move the region over. The upstream FuncToLLVM pass then handles the
 // func.func → llvm.func conversion.
-struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
-  using OpConversionPattern<ada::SubpOp>::OpConversionPattern;
+struct SubpOpLowering : public OpRewritePattern<ada::SubpOp> {
+  using OpRewritePattern<ada::SubpOp>::OpRewritePattern;
 
-  LogicalResult
-  matchAndRewrite(ada::SubpOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
+  LogicalResult matchAndRewrite(ada::SubpOp op,
+                                PatternRewriter &rewriter) const final {
     auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
                                                     op.getFunctionType());
     if (ArrayAttr argAttrs = op.getArgAttrsAttr())
@@ -265,6 +281,12 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   // else (including ada.*) as illegal, driving the full conversion.
   LLVMConversionTarget target(getContext());
   target.addLegalOp<ModuleOp>();
+  // ada.object survives lowering for FinalizeAdaObjectPass. It is legal once
+  // its $object operand has been converted to a non-memref LLVM type;
+  // ObjectOpLowering rebuilds it with the converted operand.
+  target.addDynamicallyLegalOp<ada::ObjectOp>([](ada::ObjectOp op) {
+    return !mlir::isa<mlir::MemRefType>(op.getObject().getType());
+  });
 
   // LLVMTypeConverter maps MLIR types (i32, f64, …) to their LLVM equivalents.
   // It is threaded through the upstream conversion patterns that need it.
@@ -285,7 +307,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   patterns.add<ConstantOpLowering, TypeOpLowering, NullOpLowering,
                BlockStmtOpLowering, ReturnOpLowering, CallOpLowering,
-               SubpOpLowering, BinOpLowering>(&getContext());
+               BinOpLowering, SubpOpLowering>(&getContext());
+  patterns.add<ObjectOpLowering>(typeConverter, &getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

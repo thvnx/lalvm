@@ -10,6 +10,7 @@
 -- MLIR:         ada.return %[[X]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_constant_decl(
+-- LLVM:         #dbg_value(
 -- LLVM:         ret i32 5
 
 function Test_Constant_Decl return Integer is

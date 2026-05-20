@@ -8,6 +8,7 @@
 -- MLIR:         %[[C:.*]] = ada.constant @standard.boolean true
 -- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() : memref<i1>
 -- MLIR-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<i1>
+-- MLIR-NEXT:    ada.object "b" %[[PTR]] : memref<i1>
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 

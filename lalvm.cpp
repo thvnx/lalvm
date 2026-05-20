@@ -28,6 +28,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
@@ -174,7 +175,8 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
       elems.push_back(db.createEnumerator(name, static_cast<uint64_t>(val)));
 
     auto *enumType = db.createEnumerationType(
-        scope, info.typeName, getOrCreateFile(filePath), line, info.bitWidth,
+        scope, info.typeName, getOrCreateFile(filePath), line,
+        llvm::alignTo(info.bitWidth, 8),
         /*AlignInBits=*/0, db.getOrCreateArray(elems),
         /*UnderlyingType=*/nullptr);
     db.retainType(enumType);
@@ -230,6 +232,8 @@ applyLoweringPasses(mlir::MLIRContext &context,
   pm.addPass(mlir::ada::createLowerToLLVMPass());
   // Attach DI scope metadata so debuggers can map LLVM IR back to source lines.
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+  // Emit debug intrinsics for ada.object ops and erase them.
+  pm.addPass(mlir::ada::createFinalizeAdaObjectPass());
 
   if (mlir::failed(pm.run(*module)))
     return 1;

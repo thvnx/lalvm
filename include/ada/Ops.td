@@ -18,6 +18,7 @@ include "Attrs.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/MemorySlotInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 // C++ implementation in mlir/IR/OpDefinition.h.
@@ -103,6 +104,31 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ObjectOp
+//===----------------------------------------------------------------------===//
+
+// Ada object (RM 3.3). Binds an Ada source name to the SSA value that holds
+// the object for DWARF debug info generation. In Ada, objects include
+// variables, constants, and formal parameters: anything created at run time
+// to hold a value of a given type. The DWARF tag and intrinsic are
+// inferred by FinalizeAdaObjectPass from the $object operand kind and type.
+// Kept alive through LowerToLLVM as a legal op so the $object operand is
+// automatically remapped by the conversion framework (e.g. memref<T> to
+// llvm.ptr). Erased by FinalizeAdaObjectPass after debug intrinsics are
+// emitted.
+def ObjectOp : Ada_Op<"object", [DeclareOpInterfaceMethods<PromotableOpInterface,
+    ["requiresReplacedValues", "visitReplacedValues"]>]> {
+  let summary = "A run time object that contain a value of a given type";
+  let arguments = (ins StrAttr:$name, AnyType:$object);
+  let assemblyFormat = "$name $object `:` type($object) attr-dict";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilder<(ins "mlir::StringAttr":$name, "mlir::Value":$object)>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
