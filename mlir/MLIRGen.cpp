@@ -64,6 +64,11 @@ static bool isEnumTypeDecl(ada_node &typeDecl) {
 /// (i.e.: a compilation unit). The public entry point is mlirGen() at the
 /// bottom of this file.
 class MLIRGenImpl {
+  static constexpr llvm::StringLiteral kUniversalIntTypeName =
+      "universal_int_type_";
+  static constexpr llvm::StringLiteral kUniversalRealTypeName =
+      "universal_real_type_";
+
 public:
   MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
 
@@ -132,12 +137,18 @@ private:
   llvm::DenseSet<mlir::Value> uninitAllocas;
 
   // Named numbers (RM 3.3.2) have universal integer or real type with no
-  // concrete type annotation.  We stash the expression node at declaration
-  // time and re-emit the constant at each use site so that the use-site
-  // identifier's p_expected_expression_type resolves the concrete MLIR type
-  // (e.g. Integer → i32 for `return Max_Size;` in a function returning
-  // Integer).
-  llvm::DenseMap<ada_base_node, ada_node> numberDeclExprs;
+  // concrete type annotation. `expr` is stashed at declaration time for
+  // lazy use-site evaluation; it is the fallback for real named numbers
+  // whose expression is not a simple literal, since libadalang exposes no
+  // eval_as_real for composite real static expressions.
+  // `value` holds the ada.constant SSA value when the number was successfully
+  // evaluated at declaration time; use-site resolution reuses it (with a cast
+  // to the concrete target type) instead of re-evaluating the expression.
+  struct NumberDeclInfo {
+    ada_node expr;
+    mlir::Value value; // null if not pre-evaluated
+  };
+  llvm::DenseMap<ada_base_node, NumberDeclInfo> numberDecls;
 
   // Maps each concrete type decl node to its emitted ada.type op.
   // mlirGenEnumLit consults this to find the ada.type op by type_decl node,
@@ -470,12 +481,12 @@ private:
     if (!value)
       return nullptr;
     // p_expression_type on an integer literal returns universal_integer
-    // (Libadalang's "universal_int_type_"), not the concrete type.
+    // (Libadalang's kUniversalIntTypeName), not the concrete type.
     // When that happens, p_expected_expression_type gives the type required
     // by the surrounding context (e.g. the return type of the enclosing
     // function).
     ada_node type_decl =
-        resolveLiteralType(node, loc(node), "universal_int_type_");
+        resolveLiteralType(node, loc(node), kUniversalIntTypeName);
     if (ada_node_is_null(&type_decl))
       return nullptr;
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
@@ -522,7 +533,7 @@ private:
     // Real literals have universal_real type; fall back to the expected type
     // to get the concrete type required by the surrounding context.
     ada_node type_decl =
-        resolveLiteralType(node, loc(node), "universal_real_type_");
+        resolveLiteralType(node, loc(node), kUniversalRealTypeName);
     if (ada_node_is_null(&type_decl))
       return nullptr;
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
@@ -735,44 +746,14 @@ private:
                                     ? ""
                                     : libadalang::getName(&typeNameNode);
 
-    if (universalType == "universal_int_type_") {
-      ada_big_integer bigint;
-      if (!ada_expr_p_eval_as_int(&staticExpr, &bigint)) {
-        mlir::emitError(loc(typeContext),
-                        "failed to evaluate static integer expression");
-        return nullptr;
-      }
-      ada_text text;
-      ada_big_integer_text(bigint, &text);
-      std::string s = libadalang::textToString(text);
-      ada_big_integer_decref(bigint);
-      errno = 0;
-      char *end;
-      int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
-      if (end == s.c_str() || errno == ERANGE) {
-        mlir::emitError(loc(typeContext),
-                        "static integer value out of range for i64");
-        return nullptr;
-      }
-      ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext),
-                                            "universal_int_type_");
-      if (ada_node_is_null(&typDecl))
-        return nullptr;
-      mlir::Type type = getMLIRTypeFromDecl(typDecl, loc(typeContext));
-      if (!type)
-        return nullptr;
-      return emitIntConstant(value, mlir::cast<mlir::IntegerType>(type),
-                             loc(typeContext));
-    }
-
-    if (universalType == "universal_real_type_") {
+    if (universalType == kUniversalRealTypeName) {
       switch (ada_node_kind(&staticExpr)) {
       case ada_real_literal: {
         auto value = evalRealLiteral(staticExpr);
         if (!value)
           return nullptr;
         ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext),
-                                              "universal_real_type_");
+                                              kUniversalRealTypeName);
         if (ada_node_is_null(&typDecl))
           return nullptr;
         mlir::Type type = getMLIRTypeFromDecl(typDecl, loc(typeContext));
@@ -817,9 +798,39 @@ private:
       if (ada_name_p_referenced_defining_name(&expr, /*imprecise_fallback=*/0,
                                               &def_name) &&
           !ada_node_is_null(&def_name)) {
-        auto it = numberDeclExprs.find(def_name.node);
-        if (it != numberDeclExprs.end())
-          return visit_static_expr(it->second, expr);
+        auto it = numberDecls.find(def_name.node);
+        if (it != numberDecls.end()) {
+          const NumberDeclInfo &info = it->second;
+          if (info.value) {
+            // Re-emit the pre-evaluated constant in the concrete type required
+            // by the use-site context. The value is always a static constant so
+            // we convert at compile time and range-check; no cast op is
+            // emitted.
+            mlir::Type srcType = info.value.getType();
+            bool isIntKind = mlir::isa<mlir::IntegerType>(srcType);
+            llvm::StringRef univName =
+                isIntKind ? kUniversalIntTypeName : kUniversalRealTypeName;
+            ada_node typDecl = resolveLiteralType(expr, loc(expr), univName);
+            if (ada_node_is_null(&typDecl))
+              return nullptr;
+            mlir::Type tgtType = getMLIRTypeFromDecl(typDecl, loc(expr));
+            if (!tgtType)
+              return nullptr;
+            auto defOp = info.value.getDefiningOp<mlir::ada::ConstantOp>();
+            if (isIntKind) {
+              int64_t val =
+                  mlir::cast<mlir::IntegerAttr>(defOp.getValue()).getInt();
+              return emitIntConstant(
+                  val, mlir::cast<mlir::IntegerType>(tgtType), loc(expr));
+            }
+            double val = mlir::cast<mlir::FloatAttr>(defOp.getValue())
+                             .getValueAsDouble();
+            return emitRealConstant(val, mlir::cast<mlir::FloatType>(tgtType),
+                                    loc(expr));
+          }
+          ada_node fallbackExpr = info.expr;
+          return visit_static_expr(fallbackExpr, expr);
+        }
       }
       // Enum literal: emit as its integer representation.
       ada_node ref_decl;
@@ -875,15 +886,87 @@ private:
   /// @todo Named numbers can be used with (non-numeric) types that define
   ///       user-defined literals (Ada 2012).
   ///
-  /// **Implementation Details**: Rather than evaluating the expression now (the
-  /// universal type has no concrete annotation to resolve to), we stash the
-  /// expression node in `numberDeclExprs` keyed by each `DefiningName`. The
-  /// `arith.constant` is emitted lazily in `visit_static_expr` when the name is
-  /// first used, at which point the use-site context provides the concrete MLIR
-  /// type via `p_expected_expression_type`.
+  /// **Implementation Details**: Each `DefiningName` is entered in
+  /// `numberDecls` with the expression node and, when the value can be
+  /// evaluated at declaration time, the resulting `ada.constant` SSA value.
+  /// Use-site resolution re-emits the pre-computed value directly in the
+  /// concrete type required by the surrounding context; for unevaluated cases
+  /// (composite real expressions, which libadalang cannot fold) it falls back
+  /// to `visit_static_expr` using the stashed expression node.
   llvm::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
+
+    // Determine the universal type of the static expression.
+    ada_node exprType;
+    bool hasConstantValue = ada_expr_p_expression_type(&expr, &exprType) &&
+                            !ada_node_is_null(&exprType);
+
+    enum class UniversalKind { Unknown, Int, Real };
+    UniversalKind kind = UniversalKind::Unknown;
+    if (hasConstantValue) {
+      ada_node typeNameNode;
+      ada_base_type_decl_f_name(&exprType, &typeNameNode);
+      if (!ada_node_is_null(&typeNameNode))
+        kind = llvm::StringSwitch<UniversalKind>(
+                   libadalang::getName(&typeNameNode))
+                   .Case(kUniversalIntTypeName, UniversalKind::Int)
+                   .Case(kUniversalRealTypeName, UniversalKind::Real)
+                   .Default(UniversalKind::Unknown);
+    }
+
+    // Eager evaluation for DWARF metadata; the expression node is also stashed
+    // for lazy use-site evaluation, which resolves the concrete type from
+    // context.
+    mlir::Value constantValue;
+    switch (kind) {
+    case UniversalKind::Int: {
+      ada_big_integer bigint;
+      if (ada_expr_p_eval_as_int(&expr, &bigint)) {
+        ada_text text;
+        ada_big_integer_text(bigint, &text);
+        std::string s = libadalang::textToString(text);
+        ada_big_integer_decref(bigint);
+        errno = 0;
+        char *end;
+        int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
+        if (end != s.c_str() && errno != ERANGE) {
+          mlir::ada::TypeOp typeOp =
+              lookupOrEmitTypeOp(exprType, loc(number_decl));
+          if (typeOp) {
+            mlir::IntegerAttr attr =
+                mlir::IntegerAttr::get(builder.getI64Type(), value);
+            constantValue = builder.create<mlir::ada::ConstantOp>(
+                loc(number_decl), attr, typeOp.getName());
+          }
+        }
+      }
+      break;
+    }
+    case UniversalKind::Real: {
+      if (ada_node_kind(&expr) == ada_real_literal) {
+        auto value = evalRealLiteral(expr);
+        if (value) {
+          mlir::ada::TypeOp typeOp =
+              lookupOrEmitTypeOp(exprType, loc(number_decl));
+          if (typeOp) {
+            mlir::FloatAttr attr =
+                mlir::FloatAttr::get(builder.getF64Type(), *value);
+            constantValue = builder.create<mlir::ada::ConstantOp>(
+                loc(number_decl), attr, typeOp.getName());
+          }
+        }
+      } else {
+        mlir::emitWarning(loc(number_decl),
+                          "ada.object skipped for real named number: "
+                          "expression is not a simple literal");
+      }
+      break;
+    }
+    case UniversalKind::Unknown:
+      mlir::emitError(loc(number_decl), "named number has unsupported type");
+      return mlir::failure();
+    }
 
     ada_node ids;
     ada_number_decl_f_ids(&number_decl, &ids);
@@ -894,7 +977,10 @@ private:
         mlir::emitError(loc(number_decl), "failed to get declared identifier");
         return mlir::failure();
       }
-      numberDeclExprs[id.node] = expr;
+      numberDecls[id.node] = {expr, constantValue};
+      if (constantValue)
+        builder.create<mlir::ada::ObjectOp>(loc(id), getNameAttr(&id),
+                                            constantValue);
     }
     return mlir::success();
   }
@@ -912,6 +998,33 @@ private:
   llvm::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
                                       bool qualifiedName = false) {
     auto location = loc(type_decl);
+
+    // Universal types (RM 3.4.1): no type_def, emitted with ScalarTypeInfoAttr.
+    ada_node type_name_node;
+    if (ada_base_type_decl_f_name(&type_decl, &type_name_node) &&
+        !ada_node_is_null(&type_name_node)) {
+      std::string typeName = libadalang::getName(&type_name_node);
+      mlir::ada::ScalarEncoding enc;
+      uint64_t bitWidth = 0;
+      if (typeName == kUniversalIntTypeName) {
+        enc = mlir::ada::ScalarEncoding::Signed;
+        bitWidth = 64;
+      } else if (typeName == kUniversalRealTypeName) {
+        enc = mlir::ada::ScalarEncoding::Float;
+        bitWidth = 64;
+      }
+      if (bitWidth != 0) {
+        mlir::Type mlirType = getMLIRTypeFromDecl(type_decl, location);
+        if (!mlirType)
+          return mlir::failure();
+        auto typeInfo = mlir::ada::ScalarTypeInfoAttr::get(builder.getContext(),
+                                                           enc, bitWidth);
+        auto typeOp = builder.create<mlir::ada::TypeOp>(location, typeName,
+                                                        mlirType, typeInfo);
+        typeDecls[type_decl.node] = typeOp;
+        return mlir::success();
+      }
+    }
 
     ada_node type_def{};
     if (!isEnumTypeDecl(type_decl) ||
@@ -1468,6 +1581,10 @@ private:
     if (name == "float")
       return builder.getF32Type();
     if (name == "long_float")
+      return builder.getF64Type();
+    if (name == kUniversalIntTypeName)
+      return builder.getI64Type();
+    if (name == kUniversalRealTypeName)
       return builder.getF64Type();
 
     mlir::emitError(diagLoc, "unsupported Ada type '") << name << "'";

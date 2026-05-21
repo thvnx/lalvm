@@ -135,27 +135,29 @@ def ObjectOp : Ada_Op<"object", [DeclareOpInterfaceMethods<PromotableOpInterface
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-// Represents an Ada typed constant: an enum literal use or a constant object
-// declaration (RM 3.3). Carries the enumerator rep value as an integer
-// attribute and a symbol reference to the corresponding ada.type op so that
-// lowering can reconstruct the DWARF type.
+// Represents an Ada typed constant: an enum literal use, a constant object
+// declaration denoting a static expression evaluated at compile time, or a
+// named number declaration (RM 3.3). Carries the value as a
+// typed attribute (IntegerAttr for integer/enum constants, FloatAttr for real
+// named numbers) and a symbol reference to the corresponding ada.type op so
+// that lowering can reconstruct the DWARF type.
 //
 // The Ada name of the constant or literal is carried in the op location as a
 // NameLoc: "C" for `C : constant Color := Green`, "green" for an anonymous
 // use such as `return Green`.
 def ConstantOp : Ada_Op<"constant", [Pure,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Ada typed constant (enum literal or constant object declaration)";
+  let summary = "Ada typed constant (enum literal, constant object, or named number)";
   let arguments = (ins
-    APIntAttr:$value,
+    AnyAttr:$value,
     FlatSymbolRefAttr:$ada_type
   );
-  let results = (outs AnyInteger:$result);
+  let results = (outs AnyType:$result);
 
   let skipDefaultBuilders = 1;
   let builders = [
     OpBuilder<(ins
-      "mlir::IntegerAttr":$value,
+      "mlir::TypedAttr":$value,
       "llvm::StringRef":$adaType)>
   ];
 

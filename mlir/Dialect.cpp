@@ -184,7 +184,7 @@ void TypeOp::print(mlir::OpAsmPrinter &p) {
 }
 
 llvm::LogicalResult TypeOp::verify() {
-  if (!mlir::isa<EnumTypeInfoAttr>(getTypeInfo()))
+  if (!mlir::isa<EnumTypeInfoAttr, ScalarTypeInfoAttr>(getTypeInfo()))
     return emitOpError() << "unsupported type_info attribute kind";
   return mlir::success();
 }
@@ -194,7 +194,7 @@ llvm::LogicalResult TypeOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void ConstantOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                       mlir::IntegerAttr value, llvm::StringRef adaType) {
+                       mlir::TypedAttr value, llvm::StringRef adaType) {
   state.addTypes(value.getType());
   state.addAttribute(getValueAttrName(state.name), value);
   state.addAttribute(getAdaTypeAttrName(state.name),
@@ -209,12 +209,16 @@ mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser,
                             result.attributes))
     return mlir::failure();
 
-  mlir::IntegerAttr value;
+  mlir::Attribute value;
   if (parser.parseAttribute(value, getValueAttrName(result.name),
                             result.attributes))
     return mlir::failure();
 
-  result.addTypes(value.getType());
+  auto typedValue = mlir::dyn_cast<mlir::TypedAttr>(value);
+  if (!typedValue)
+    return parser.emitError(parser.getCurrentLocation(),
+                            "expected a typed attribute (integer or float)");
+  result.addTypes(typedValue.getType());
   return mlir::success();
 }
 
@@ -226,9 +230,11 @@ void ConstantOp::print(mlir::OpAsmPrinter &p) {
 }
 
 llvm::LogicalResult ConstantOp::verify() {
-  auto intAttr = mlir::cast<mlir::IntegerAttr>(getValueAttr());
-  if (intAttr.getType() != getResult().getType())
-    return emitOpError() << "value type " << intAttr.getType()
+  if (!mlir::isa<mlir::IntegerAttr, mlir::FloatAttr>(getValueAttr()))
+    return emitOpError() << "value must be an integer or float attribute";
+  auto typedValue = mlir::cast<mlir::TypedAttr>(getValueAttr());
+  if (typedValue.getType() != getResult().getType())
+    return emitOpError() << "value type " << typedValue.getType()
                          << " does not match result type "
                          << getResult().getType();
   return mlir::success();

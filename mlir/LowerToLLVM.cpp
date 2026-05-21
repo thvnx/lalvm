@@ -75,7 +75,7 @@ struct ConstantOpLowering : public OpRewritePattern<ada::ConstantOp> {
   LogicalResult matchAndRewrite(ada::ConstantOp op,
                                 PatternRewriter &rewriter) const final {
     rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(
-        op, mlir::cast<mlir::IntegerAttr>(op.getValueAttr()));
+        op, mlir::cast<mlir::TypedAttr>(op.getValueAttr()));
     return success();
   }
 };
