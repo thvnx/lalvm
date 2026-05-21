@@ -87,7 +87,10 @@ struct FinalizeAdaObjectPass
       // File and source line for the variable declaration.
       LLVM::DIFileAttr fileAttr;
       unsigned line = 0;
-      if (auto flc = dyn_cast<FileLineColRange>(op.getLoc())) {
+      mlir::Location innerLoc = op.getLoc();
+      if (auto nl = dyn_cast<NameLoc>(innerLoc))
+        innerLoc = nl.getChildLoc();
+      if (auto flc = dyn_cast<FileLineColRange>(innerLoc)) {
         StringRef filePath = flc.getFilename().getValue();
         fileAttr =
             LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),

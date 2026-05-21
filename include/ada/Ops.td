@@ -122,7 +122,7 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 def ObjectOp : Ada_Op<"object", [DeclareOpInterfaceMethods<PromotableOpInterface,
     ["requiresReplacedValues", "visitReplacedValues"]>]> {
   let summary = "A run time object that contain a value of a given type";
-  let arguments = (ins StrAttr:$name, AnyType:$object);
+  let arguments = (ins SymbolNameAttr:$name, AnyType:$object);
   let assemblyFormat = "$name $object `:` type($object) attr-dict";
 
   let skipDefaultBuilders = 1;

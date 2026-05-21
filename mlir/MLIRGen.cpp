@@ -978,9 +978,11 @@ private:
         return mlir::failure();
       }
       numberDecls[id.node] = {expr, constantValue};
-      if (constantValue)
-        builder.create<mlir::ada::ObjectOp>(loc(id), getNameAttr(&id),
-                                            constantValue);
+      if (constantValue) {
+        auto nameAttr = getNameAttr(&id);
+        builder.create<mlir::ada::ObjectOp>(
+            mlir::NameLoc::get(nameAttr, loc(id)), nameAttr, constantValue);
+      }
     }
     return mlir::success();
   }
@@ -1207,7 +1209,9 @@ private:
       else
         uninitAllocas.insert(ptr);
       declare(id, ptr);
-      builder.create<mlir::ada::ObjectOp>(loc(id), getNameAttr(&id), ptr);
+      auto nameAttr = getNameAttr(&id);
+      builder.create<mlir::ada::ObjectOp>(mlir::NameLoc::get(nameAttr, loc(id)),
+                                          nameAttr, ptr);
     }
     return mlir::success();
   }

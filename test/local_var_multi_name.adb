@@ -8,13 +8,13 @@
 -- MLIR:         %[[V:.*]] = arith.constant 3 : i32
 -- MLIR-NEXT:    %[[X_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR-NEXT:    memref.store %[[V]], %[[X_PTR]][] : memref<i32>
--- MLIR-NEXT:    ada.object "x" %[[X_PTR]] : memref<i32>
+-- MLIR-NEXT:    ada.object @x %[[X_PTR]] : memref<i32>
 -- MLIR-NEXT:    %[[Y_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR-NEXT:    memref.store %[[V]], %[[Y_PTR]][] : memref<i32>
--- MLIR-NEXT:    ada.object "y" %[[Y_PTR]] : memref<i32>
+-- MLIR-NEXT:    ada.object @y %[[Y_PTR]] : memref<i32>
 -- MLIR-NEXT:    %[[Z_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR-NEXT:    memref.store %[[V]], %[[Z_PTR]][] : memref<i32>
--- MLIR-NEXT:    ada.object "z" %[[Z_PTR]] : memref<i32>
+-- MLIR-NEXT:    ada.object @z %[[Z_PTR]] : memref<i32>
 -- MLIR:         %[[X:.*]] = memref.load %[[X_PTR]][] : memref<i32>
 -- MLIR:         %[[Y:.*]] = memref.load %[[Y_PTR]][] : memref<i32>
 -- MLIR:         %[[R1:.*]] = ada.binop "+" %[[X]], %[[Y]] : i32
