@@ -7,7 +7,7 @@
 
 -- MLIR-LABEL: ada.subp @p() -> i32
 -- MLIR:         %[[I_INIT:.*]] = arith.constant 12 : i32
--- MLIR-NEXT:    %[[I_PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR-NEXT:    %[[I_PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
 -- MLIR-NEXT:    memref.store %[[I_INIT]], %[[I_PTR]][] : memref<i32>
 -- MLIR:         ada.subp @inner(
 -- MLIR:           %[[ONE:.*]] = arith.constant 1 : i32

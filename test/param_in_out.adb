@@ -10,7 +10,7 @@
 -- MLIR:           %[[R:.*]] = ada.binop "+" %[[V]], {{.*}} : i32
 -- MLIR:           memref.store %[[R]], %arg0[] : memref<i32>
 -- MLIR:           ada.return
--- MLIR:         %[[N_PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR:         %[[N_PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
 -- MLIR:         ada.call @increment(%[[N_PTR]]) : (memref<i32>) -> ()
 -- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<i32>
 -- MLIR:         ada.return %[[N]] : i32

@@ -1,4 +1,4 @@
-//===- FinalizeAdaObject.cpp - Finalize ada.object ops --------------------===//
+//===- FinalizeAdaObject.cpp - Emit LLVM debug intrinsics from NameLoc ----===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,22 +6,25 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass finalizes ada.object ops by emitting LLVM debug intrinsics and
-// erasing the ops. It runs after DIScopeForLLVMFuncOpPass so that
-// DISubprogramAttr is available on each llvm.func.
+// This pass emits LLVM debug intrinsics for Ada objects. It runs after
+// DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on each
+// llvm.func.
 //
-// ada.object ops are kept alive through LowerToLLVM so that the $object
-// operand is remapped by the conversion framework (memref<T> becomes llvm.ptr).
-// This pass is the consumer of those surviving ops.
+// Objects are identified by their NameLoc, set by MLIRGen on:
+//   - memref.alloca (ObjectDecl): lowered to llvm.alloca
+//   - arith.constant init expr (ObjectDecl with init): lowered to
+//     llvm.mlir.constant (if mem2reg promotes the alloca)
+//   - arith.constant (NumberDecl): lowered to llvm.mlir.constant
 //
 // Dispatch strategy:
-//   llvm.alloca result  -> DW_TAG_variable + llvm.intr.dbg.declare
-//   scalar value        -> DW_TAG_variable + llvm.intr.dbg.value
-// Block-argument cases (parameters, i.e. block arguments) are not yet handled.
+//   llvm.alloca with NameLoc          -> DW_TAG_variable + dbg.declare
+//   other op with NameLoc, no alloca  -> DW_TAG_variable + dbg.value
+//
+// When an llvm.alloca with NameLoc("x") exists in a function, scalar ops with
+// the same NameLoc("x") are suppressed to avoid duplicate debug entries.
 //
 //===----------------------------------------------------------------------===//
 
-#include "ada/Dialect.h"
 #include "ada/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -29,6 +32,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/MathExtras.h"
@@ -38,9 +42,6 @@ using namespace mlir;
 
 namespace {
 
-// Returns a DIBasicTypeAttr for an MLIR IntegerType. Type name is a
-// placeholder; proper Ada type names will be threaded via ada.type in the
-// future.
 static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
                                            IntegerType intType) {
   unsigned w = intType.getWidth();
@@ -58,39 +59,67 @@ struct FinalizeAdaObjectPass
 
   void runOnOperation() final {
     MLIRContext *ctx = &getContext();
-    llvm::SmallVector<ada::ObjectOp> toErase;
+    ModuleOp module = getOperation();
 
-    getOperation().walk([&](ada::ObjectOp op) {
-      toErase.push_back(op);
+    // Pass 1: record (func, name) pairs for all llvm.alloca ops with NameLoc.
+    // Used to suppress scalar debug entries when an alloca already tracks the
+    // variable with dbg.declare.
+    using FuncNamePair = std::pair<Operation *, StringAttr>;
+    llvm::DenseSet<FuncNamePair> allocaNames;
+    module.walk([&](LLVM::AllocaOp op) {
+      auto nl = dyn_cast<NameLoc>(op.getLoc());
+      if (!nl)
+        return;
+      auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
+      if (func)
+        allocaNames.insert({func, nl.getName()});
+    });
 
-      auto funcOp = op->getParentOfType<LLVM::LLVMFuncOp>();
-      if (!funcOp) {
-        // TODO: library-level objects live outside any function; emit
-        // DIGlobalVariableAttr on the llvm.mlir.global op instead.
-        op.emitWarning("ada.object outside any llvm.func: debug info skipped");
+    // Pass 2: collect debug entries.
+    struct DebugEntry {
+      Operation *op;
+      Operation *func;
+      StringAttr name;
+      Location innerLoc;
+      bool isDeclare; // alloca: dbg.declare; scalar: dbg.value
+    };
+    llvm::SmallVector<DebugEntry> entries;
+
+    module.walk([&](Operation *op) {
+      auto nl = dyn_cast<NameLoc>(op->getLoc());
+      if (!nl)
         return;
-      }
-      auto fusedLoc = dyn_cast<FusedLoc>(funcOp.getLoc());
-      if (!fusedLoc) {
-        op.emitWarning("enclosing llvm.func has no FusedLoc: "
-                       "debug info skipped");
+
+      auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
+      if (!func)
         return;
+
+      bool isAlloca = isa<LLVM::AllocaOp>(op);
+      if (!isAlloca) {
+        // Skip scalar ops when an alloca with the same name exists.
+        if (allocaNames.contains({func, nl.getName()}))
+          return;
+        // Must produce exactly one result to emit dbg.value.
+        if (op->getNumResults() != 1)
+          return;
       }
+
+      entries.push_back({op, func, nl.getName(), nl.getChildLoc(), isAlloca});
+    });
+
+    // Pass 3: emit debug intrinsics.
+    for (auto &entry : entries) {
+      auto fusedLoc = dyn_cast<FusedLoc>(entry.func->getLoc());
+      if (!fusedLoc)
+        continue;
       auto subprogram =
           dyn_cast_or_null<LLVM::DISubprogramAttr>(fusedLoc.getMetadata());
-      if (!subprogram) {
-        op.emitWarning("enclosing llvm.func FusedLoc carries no "
-                       "DISubprogramAttr: debug info skipped");
-        return;
-      }
+      if (!subprogram)
+        continue;
 
-      // File and source line for the variable declaration.
       LLVM::DIFileAttr fileAttr;
       unsigned line = 0;
-      mlir::Location innerLoc = op.getLoc();
-      if (auto nl = dyn_cast<NameLoc>(innerLoc))
-        innerLoc = nl.getChildLoc();
-      if (auto flc = dyn_cast<FileLineColRange>(innerLoc)) {
+      if (auto flc = dyn_cast<FileLineColRange>(entry.innerLoc)) {
         StringRef filePath = flc.getFilename().getValue();
         fileAttr =
             LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
@@ -100,34 +129,28 @@ struct FinalizeAdaObjectPass
         fileAttr = subprogram.getFile();
       }
 
-      // Determine the declared type and DWARF intrinsic from $object.
-      mlir::Value object = op.getObject();
-      auto allocaOp = object.getDefiningOp<LLVM::AllocaOp>();
-
-      mlir::Type elemType =
-          allocaOp ? allocaOp.getElemType() : object.getType();
+      mlir::Type elemType = entry.isDeclare
+                                ? cast<LLVM::AllocaOp>(entry.op).getElemType()
+                                : entry.op->getResult(0).getType();
       auto intType = dyn_cast<IntegerType>(elemType);
-      if (!intType) {
-        op.emitWarning("unsupported object type for debug info: ") << elemType;
-        return;
-      }
+      if (!intType)
+        continue; // silently skip floats and other types for now
 
       auto diType = makeDIIntType(ctx, intType);
       auto varInfo = LLVM::DILocalVariableAttr::get(
-          subprogram, op.getName(), fileAttr, line,
+          subprogram, entry.name, fileAttr, line,
           /*arg=*/0, /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
 
-      OpBuilder builder(op);
-      if (allocaOp) {
-        builder.setInsertionPointAfter(allocaOp);
-        LLVM::DbgDeclareOp::create(builder, allocaOp.getLoc(), object, varInfo);
-      } else {
-        LLVM::DbgValueOp::create(builder, op.getLoc(), object, varInfo);
-      }
-    });
-
-    for (ada::ObjectOp op : toErase)
-      op.erase();
+      OpBuilder builder(entry.op);
+      builder.setInsertionPointAfter(entry.op);
+      if (entry.isDeclare)
+        LLVM::DbgDeclareOp::create(builder, entry.op->getLoc(),
+                                   cast<LLVM::AllocaOp>(entry.op).getRes(),
+                                   varInfo);
+      else
+        LLVM::DbgValueOp::create(builder, entry.op->getLoc(),
+                                 entry.op->getResult(0), varInfo);
+    }
   }
 };
 } // namespace

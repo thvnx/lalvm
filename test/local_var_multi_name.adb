@@ -1,20 +1,18 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- All three identifiers share one evaluation of the init expression; each
--- gets its own alloca but all three stores reference the same SSA value.
+-- Each identifier gets its own evaluation of the init expression (RM 3.3.1).
 -- MLIR-LABEL: ada.subp @test_local_var_multi_name
 -- MLIR-SAME:    () -> i32
--- MLIR:         %[[V:.*]] = arith.constant 3 : i32
--- MLIR-NEXT:    %[[X_PTR:.*]] = memref.alloca() : memref<i32>
--- MLIR-NEXT:    memref.store %[[V]], %[[X_PTR]][] : memref<i32>
--- MLIR-NEXT:    ada.object @x %[[X_PTR]] : memref<i32>
--- MLIR-NEXT:    %[[Y_PTR:.*]] = memref.alloca() : memref<i32>
--- MLIR-NEXT:    memref.store %[[V]], %[[Y_PTR]][] : memref<i32>
--- MLIR-NEXT:    ada.object @y %[[Y_PTR]] : memref<i32>
--- MLIR-NEXT:    %[[Z_PTR:.*]] = memref.alloca() : memref<i32>
--- MLIR-NEXT:    memref.store %[[V]], %[[Z_PTR]][] : memref<i32>
--- MLIR-NEXT:    ada.object @z %[[Z_PTR]] : memref<i32>
+-- MLIR:         %[[X_INIT:.*]] = arith.constant 3 : i32
+-- MLIR-NEXT:    %[[X_PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
+-- MLIR-NEXT:    memref.store %[[X_INIT]], %[[X_PTR]][] : memref<i32>
+-- MLIR-NEXT:    %[[Y_INIT:.*]] = arith.constant 3 : i32
+-- MLIR-NEXT:    %[[Y_PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
+-- MLIR-NEXT:    memref.store %[[Y_INIT]], %[[Y_PTR]][] : memref<i32>
+-- MLIR-NEXT:    %[[Z_INIT:.*]] = arith.constant 3 : i32
+-- MLIR-NEXT:    %[[Z_PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
+-- MLIR-NEXT:    memref.store %[[Z_INIT]], %[[Z_PTR]][] : memref<i32>
 -- MLIR:         %[[X:.*]] = memref.load %[[X_PTR]][] : memref<i32>
 -- MLIR:         %[[Y:.*]] = memref.load %[[Y_PTR]][] : memref<i32>
 -- MLIR:         %[[R1:.*]] = ada.binop "+" %[[X]], %[[Y]] : i32

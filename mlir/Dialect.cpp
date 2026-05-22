@@ -23,7 +23,6 @@
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
-#include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -102,44 +101,6 @@ void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ObjectOp
-//===----------------------------------------------------------------------===//
-
-void ObjectOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                     mlir::StringAttr name, mlir::Value object) {
-  state.addAttribute(getNameAttrName(state.name), name);
-  state.addOperands(object);
-}
-
-// PromotableOpInterface: allow mem2reg to promote the alloca referenced by
-// $object. When the alloca is promoted, visitReplacedValues re-creates the
-// ada.object with the promoted SSA value so FinalizeAdaObjectPass can emit
-// dbg.value instead of dbg.declare.
-bool ObjectOp::canUsesBeRemoved(
-    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
-    llvm::SmallVectorImpl<mlir::OpOperand *> &newBlockingUses,
-    const mlir::DataLayout &dataLayout) {
-  return true;
-}
-
-mlir::DeletionKind ObjectOp::removeBlockingUses(
-    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
-    mlir::OpBuilder &builder) {
-  return mlir::DeletionKind::Delete;
-}
-
-bool ObjectOp::requiresReplacedValues() { return true; }
-
-void ObjectOp::visitReplacedValues(
-    llvm::ArrayRef<std::pair<mlir::Operation *, mlir::Value>> mutatedDefs,
-    mlir::OpBuilder &builder) {
-  for (auto [op, value] : mutatedDefs) {
-    builder.setInsertionPointAfter(op);
-    builder.create<ObjectOp>(getLoc(), getNameAttr(), value);
-  }
-}
-
-//===----------------------------------------------------------------------===//
 // TypeOp
 //===----------------------------------------------------------------------===//
 
@@ -187,75 +148,6 @@ llvm::LogicalResult TypeOp::verify() {
   if (!mlir::isa<EnumTypeInfoAttr, NumericTypeInfoAttr>(getTypeInfo()))
     return emitOpError() << "unsupported type_info attribute kind";
   return mlir::success();
-}
-
-//===----------------------------------------------------------------------===//
-// ConstantOp
-//===----------------------------------------------------------------------===//
-
-void ConstantOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                       mlir::TypedAttr value, llvm::StringRef adaType) {
-  state.addTypes(value.getType());
-  state.addAttribute(getValueAttrName(state.name), value);
-  state.addAttribute(getAdaTypeAttrName(state.name),
-                     mlir::SymbolRefAttr::get(builder.getContext(), adaType));
-}
-
-/// Assembly format: @ada_type value : type
-mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser,
-                                    mlir::OperationState &result) {
-  mlir::FlatSymbolRefAttr adaType;
-  if (parser.parseAttribute(adaType, getAdaTypeAttrName(result.name),
-                            result.attributes))
-    return mlir::failure();
-
-  mlir::Attribute value;
-  if (parser.parseAttribute(value, getValueAttrName(result.name),
-                            result.attributes))
-    return mlir::failure();
-
-  auto typedValue = mlir::dyn_cast<mlir::TypedAttr>(value);
-  if (!typedValue)
-    return parser.emitError(parser.getCurrentLocation(),
-                            "expected a typed attribute (integer or float)");
-  result.addTypes(typedValue.getType());
-  return mlir::success();
-}
-
-void ConstantOp::print(mlir::OpAsmPrinter &p) {
-  p << ' ';
-  p.printAttribute(getAdaTypeAttr());
-  p << ' ';
-  p.printAttribute(getValueAttr());
-}
-
-llvm::LogicalResult ConstantOp::verify() {
-  if (!mlir::isa<mlir::IntegerAttr, mlir::FloatAttr>(getValueAttr()))
-    return emitOpError() << "value must be an integer or float attribute";
-  auto typedValue = mlir::cast<mlir::TypedAttr>(getValueAttr());
-  if (typedValue.getType() != getResult().getType())
-    return emitOpError() << "value type " << typedValue.getType()
-                         << " does not match result type "
-                         << getResult().getType();
-  return mlir::success();
-}
-
-// ada.subp carries SymbolTable, making it an opaque scope boundary: a plain
-// FlatSymbolRefAttr on a ConstantOp inside a subp body is only resolved
-// against that subp's own SymbolTable, missing module-level ada.type ops
-// (e.g. standard.boolean). Walk the full parent chain explicitly instead.
-llvm::LogicalResult
-ConstantOp::verifySymbolUses(mlir::SymbolTableCollection &) {
-  auto name = mlir::StringAttr::get(getContext(), getAdaType());
-  for (mlir::Operation *cur = getOperation(); cur;) {
-    mlir::Operation *table = mlir::SymbolTable::getNearestSymbolTable(cur);
-    if (!table)
-      break;
-    if (mlir::SymbolTable::lookupSymbolIn(table, name))
-      return mlir::success();
-    cur = table->getParentOp();
-  }
-  return emitOpError() << "unknown ada.type '" << getAdaType() << "'";
 }
 
 //===----------------------------------------------------------------------===//

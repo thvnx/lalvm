@@ -128,7 +128,7 @@ private:
   // lazy use-site evaluation; it is the fallback for real named numbers
   // whose expression is not a simple literal, since libadalang exposes no
   // eval_as_real for composite real static expressions.
-  // `value` holds the ada.constant SSA value when the number was successfully
+  // `value` holds the arith.constant SSA value when the number was successfully
   // evaluated at declaration time; use-site resolution reuses it (with a cast
   // to the concrete target type) instead of re-evaluating the expression.
   struct NumberDeclInfo {
@@ -600,10 +600,11 @@ private:
 
     auto attr =
         mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(type), value);
-    auto namedLoc =
-        mlir::NameLoc::get(builder.getStringAttr(litName), location);
-    return builder.create<mlir::ada::ConstantOp>(namedLoc, attr,
-                                                 typeOp.getSymName());
+    auto constOp = builder.create<mlir::arith::ConstantOp>(location, attr);
+    constOp->setAttr("ada.type",
+                     mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                  typeOp.getSymName()));
+    return constOp.getResult();
   }
 
   /// Emit a subprogram call from an ada_identifier (no-arg) or ada_call_expr
@@ -793,7 +794,7 @@ private:
             mlir::Type tgtType = getMLIRTypeFromDecl(typDecl, loc(expr));
             if (!tgtType)
               return nullptr;
-            auto defOp = info.value.getDefiningOp<mlir::ada::ConstantOp>();
+            auto defOp = info.value.getDefiningOp<mlir::arith::ConstantOp>();
             if (isIntKind) {
               int64_t val =
                   mlir::cast<mlir::IntegerAttr>(defOp.getValue()).getInt();
@@ -865,11 +866,12 @@ private:
   ///
   /// **Implementation Details**: Each `DefiningName` is entered in
   /// `numberDecls` with the expression node and, when the value can be
-  /// evaluated at declaration time, the resulting `ada.constant` SSA value.
-  /// Use-site resolution re-emits the pre-computed value directly in the
-  /// concrete type required by the surrounding context; for unevaluated cases
-  /// (composite real expressions, which libadalang cannot fold) it falls back
-  /// to `visit_static_expr` using the stashed expression node.
+  /// evaluated at declaration time, an `arith.constant` SSA value carrying
+  /// the Ada name via `NameLoc`. Use-site resolution re-emits the pre-computed
+  /// value directly in the concrete type required by the surrounding context;
+  /// for unevaluated cases (composite real expressions, which libadalang cannot
+  /// fold) it falls back to `visit_static_expr` using the stashed expression
+  /// node.
   llvm::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
@@ -896,7 +898,8 @@ private:
     // Eager evaluation for DWARF metadata; the expression node is also stashed
     // for lazy use-site evaluation, which resolves the concrete type from
     // context.
-    mlir::Value constantValue;
+    mlir::TypedAttr constAttr;
+    mlir::ada::TypeOp typeOp;
     switch (kind) {
     case UniversalKind::Int: {
       ada_big_integer bigint;
@@ -909,14 +912,9 @@ private:
         char *end;
         int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
         if (end != s.c_str() && errno != ERANGE) {
-          mlir::ada::TypeOp typeOp =
-              lookupOrEmitTypeOp(exprType, loc(number_decl));
-          if (typeOp) {
-            mlir::IntegerAttr attr =
-                mlir::IntegerAttr::get(builder.getI64Type(), value);
-            constantValue = builder.create<mlir::ada::ConstantOp>(
-                loc(number_decl), attr, typeOp.getName());
-          }
+          typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
+          if (typeOp)
+            constAttr = mlir::IntegerAttr::get(builder.getI64Type(), value);
         }
       }
       break;
@@ -925,19 +923,10 @@ private:
       if (ada_node_kind(&expr) == ada_real_literal) {
         auto value = evalRealLiteral(expr);
         if (value) {
-          mlir::ada::TypeOp typeOp =
-              lookupOrEmitTypeOp(exprType, loc(number_decl));
-          if (typeOp) {
-            mlir::FloatAttr attr =
-                mlir::FloatAttr::get(builder.getF64Type(), *value);
-            constantValue = builder.create<mlir::ada::ConstantOp>(
-                loc(number_decl), attr, typeOp.getName());
-          }
+          typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
+          if (typeOp)
+            constAttr = mlir::FloatAttr::get(builder.getF64Type(), *value);
         }
-      } else {
-        mlir::emitWarning(loc(number_decl),
-                          "ada.object skipped for real named number: "
-                          "expression is not a simple literal");
       }
       break;
     }
@@ -945,6 +934,11 @@ private:
       mlir::emitError(loc(number_decl), "named number has unsupported type");
       return mlir::failure();
     }
+
+    mlir::FlatSymbolRefAttr typeAttr;
+    if (typeOp)
+      typeAttr = mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                              typeOp.getSymName());
 
     ada_node ids;
     ada_number_decl_f_ids(&number_decl, &ids);
@@ -955,12 +949,17 @@ private:
         mlir::emitError(loc(number_decl), "failed to get declared identifier");
         return mlir::failure();
       }
-      numberDecls[id.node] = {expr, constantValue};
-      if (constantValue) {
+      mlir::Value constValue;
+      if (constAttr) {
         auto nameAttr = getNameAttr(&id);
-        builder.create<mlir::ada::ObjectOp>(
-            mlir::NameLoc::get(nameAttr, loc(id)), nameAttr, constantValue);
+        auto namedLoc = mlir::NameLoc::get(nameAttr, loc(id));
+        auto constOp =
+            builder.create<mlir::arith::ConstantOp>(namedLoc, constAttr);
+        if (typeAttr)
+          constOp->setAttr("ada.type", typeAttr);
+        constValue = constOp.getResult();
       }
+      numberDecls[id.node] = {expr, constValue};
     }
     return mlir::success();
   }
@@ -1153,16 +1152,20 @@ private:
       return mlir::failure();
     auto memrefType = mlir::MemRefType::get({}, elemType);
 
-    // Evaluate the initializer once (if present); each identifier gets its own
-    // alloca but they all share the same initial value.
-    ada_node default_expr;
-    ada_object_decl_f_default_expr(&object_decl, &default_expr);
-    mlir::Value init;
-    if (!ada_node_is_null(&default_expr)) {
-      init = visit_expr(default_expr);
-      if (!init)
+    ada_node typeDecl{};
+    ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
+    mlir::ada::TypeOp typeOp{};
+    if (!ada_node_is_null(&typeDecl) &&
+        (libadalang::isEnumTypeDecl(typeDecl) ||
+         libadalang::isNumericTypeDecl(typeDecl))) {
+      typeOp = lookupOrEmitTypeOp(typeDecl, declLoc);
+      if (!typeOp)
         return mlir::failure();
     }
+
+    ada_node default_expr;
+    ada_object_decl_f_default_expr(&object_decl, &default_expr);
+    bool hasInit = !ada_node_is_null(&default_expr);
 
     ada_node ids;
     ada_object_decl_f_ids(&object_decl, &ids);
@@ -1173,16 +1176,30 @@ private:
         mlir::emitError(declLoc, "failed to get declared identifier");
         return mlir::failure();
       }
-      mlir::Value ptr =
-          builder.create<mlir::memref::AllocaOp>(declLoc, memrefType);
+      auto nameAttr = getNameAttr(&id);
+      mlir::Location nameLoc = mlir::NameLoc::get(nameAttr, loc(id));
+
+      mlir::Value init;
+      if (hasInit) {
+        init = visit_expr(default_expr);
+        if (!init)
+          return mlir::failure();
+        if (auto *defOp = init.getDefiningOp())
+          defOp->setLoc(mlir::NameLoc::get(nameAttr, defOp->getLoc()));
+      }
+
+      auto allocaOp =
+          builder.create<mlir::memref::AllocaOp>(nameLoc, memrefType);
+      if (typeOp)
+        allocaOp->setAttr("ada.type",
+                          mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                       typeOp.getSymName()));
+      mlir::Value ptr = allocaOp;
       if (init)
         builder.create<mlir::memref::StoreOp>(declLoc, init, ptr);
       else
         uninitAllocas.insert(ptr);
       declare(id, ptr);
-      auto nameAttr = getNameAttr(&id);
-      builder.create<mlir::ada::ObjectOp>(mlir::NameLoc::get(nameAttr, loc(id)),
-                                          nameAttr, ptr);
     }
     return mlir::success();
   }

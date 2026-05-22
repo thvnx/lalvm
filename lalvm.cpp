@@ -15,6 +15,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Parser/Parser.h"
 
+#include "ada/ToLLVMIRTranslation.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
@@ -250,6 +251,7 @@ static int dumpLLVMIR(mlir::MLIRContext &context,
   // Register the translation to LLVM IR with the MLIR context.
   mlir::registerBuiltinDialectTranslation(context);
   mlir::registerLLVMDialectTranslation(context);
+  mlir::ada::registerAdaDialectTranslation(context);
 
   // Convert the module to LLVM IR in a new LLVM IR context.
   llvm::LLVMContext llvmContext;

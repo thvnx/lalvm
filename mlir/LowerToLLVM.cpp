@@ -43,7 +43,6 @@ using namespace mlir;
 // are allowed to survive.
 //
 // Lowering chain overview:
-//   ada.constant →  arith.constant
 //   ada.subp     →  func.func
 //   ada.return   →  func.return
 //   ada.binop    →  arith.addi/subi/muli  (integers)
@@ -66,31 +65,6 @@ struct AdaToLLVMLoweringPass
   void runOnOperation() final;
 };
 } // namespace
-
-// ada.constant carries the Ada type reference for DWARF debug info generation.
-// The runtime value is lowered to arith.constant; DWARF emission is deferred.
-struct ConstantOpLowering : public OpRewritePattern<ada::ConstantOp> {
-  using OpRewritePattern<ada::ConstantOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ada::ConstantOp op,
-                                PatternRewriter &rewriter) const final {
-    rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(
-        op, mlir::cast<mlir::TypedAttr>(op.getValueAttr()));
-    return success();
-  }
-};
-
-// ada.type carries metadata for DWARF debug info generation. It has no runtime
-// value and is erased during lowering. Full DWARF emission is a future item.
-struct TypeOpLowering : public OpRewritePattern<ada::TypeOp> {
-  using OpRewritePattern<ada::TypeOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ada::TypeOp op,
-                                PatternRewriter &rewriter) const final {
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
 
 struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
   using OpRewritePattern<ada::NullOp>::OpRewritePattern;
@@ -174,23 +148,6 @@ struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
       lower(isInt, arith::DivSIOp{}, arith::DivFOp{});
       break;
     }
-    return success();
-  }
-};
-
-// ada.object must survive into FinalizeAdaObjectPass, which runs after
-// LowerToLLVM. The conversion framework remaps operands automatically, but only
-// for ops that participate in the conversion, so ada.object must be rebuilt
-// with the converted operand (llvm.ptr) to prevent a type mismatch when
-// FinalizeAdaObjectPass inspects $object.
-struct ObjectOpLowering : public OpConversionPattern<ada::ObjectOp> {
-  using OpConversionPattern<ada::ObjectOp>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ada::ObjectOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const final {
-    rewriter.replaceOpWithNewOp<ada::ObjectOp>(op, op.getNameAttr(),
-                                               adaptor.getObject());
     return success();
   }
 };
@@ -281,12 +238,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   // else (including ada.*) as illegal, driving the full conversion.
   LLVMConversionTarget target(getContext());
   target.addLegalOp<ModuleOp>();
-  // ada.object survives lowering for FinalizeAdaObjectPass. It is legal once
-  // its $object operand has been converted to a non-memref LLVM type;
-  // ObjectOpLowering rebuilds it with the converted operand.
-  target.addDynamicallyLegalOp<ada::ObjectOp>([](ada::ObjectOp op) {
-    return !mlir::isa<mlir::MemRefType>(op.getObject().getType());
-  });
+  target.addLegalOp<ada::TypeOp>();
 
   // LLVMTypeConverter maps MLIR types (i32, f64, …) to their LLVM equivalents.
   // It is threaded through the upstream conversion patterns that need it.
@@ -305,10 +257,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
   populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<ConstantOpLowering, TypeOpLowering, NullOpLowering,
-               BlockStmtOpLowering, ReturnOpLowering, CallOpLowering,
-               BinOpLowering, SubpOpLowering>(&getContext());
-  patterns.add<ObjectOpLowering>(typeConverter, &getContext());
+  patterns.add<NullOpLowering, BlockStmtOpLowering, ReturnOpLowering,
+               CallOpLowering, BinOpLowering, SubpOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

@@ -18,7 +18,6 @@ include "Attrs.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
-include "mlir/Interfaces/MemorySlotInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 // C++ implementation in mlir/IR/OpDefinition.h.
@@ -83,10 +82,9 @@ def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
 // type_info holds an EnumTypeInfoAttr for enumeration types. Future kinds
 // (integer, float, record, array, ...) will use additional AttrDef subclasses.
 //
-// Implements Symbol so that ada.constant ops can reference it by name via
-// FlatSymbolRefAttr. Local types live inside the enclosing ada.subp region;
-// external types are emitted at module level.
-def TypeOp : Ada_Op<"type", [Symbol]> {
+// Local types live inside the enclosing region; external types are emitted at
+// module level.
+def TypeOp : Ada_Op<"type", []> {
   let summary = "Ada type declaration (metadata only, for DWARF debug info)";
   let arguments = (ins
     SymbolNameAttr:$sym_name,
@@ -100,65 +98,6 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
       "llvm::StringRef":$name,
       "mlir::Type":$mlirType,
       "mlir::Attribute":$typeInfo)>
-  ];
-
-  let hasCustomAssemblyFormat = 1;
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ObjectOp
-//===----------------------------------------------------------------------===//
-
-// Ada object (RM 3.3). Binds an Ada source name to the SSA value that holds
-// the object for DWARF debug info generation. In Ada, objects include
-// variables, constants, and formal parameters: anything created at run time
-// to hold a value of a given type. The DWARF tag and intrinsic are
-// inferred by FinalizeAdaObjectPass from the $object operand kind and type.
-// Kept alive through LowerToLLVM as a legal op so the $object operand is
-// automatically remapped by the conversion framework (e.g. memref<T> to
-// llvm.ptr). Erased by FinalizeAdaObjectPass after debug intrinsics are
-// emitted.
-def ObjectOp : Ada_Op<"object", [DeclareOpInterfaceMethods<PromotableOpInterface,
-    ["requiresReplacedValues", "visitReplacedValues"]>]> {
-  let summary = "A run time object that contain a value of a given type";
-  let arguments = (ins SymbolNameAttr:$name, AnyType:$object);
-  let assemblyFormat = "$name $object `:` type($object) attr-dict";
-
-  let skipDefaultBuilders = 1;
-  let builders = [
-    OpBuilder<(ins "mlir::StringAttr":$name, "mlir::Value":$object)>
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// ConstantOp
-//===----------------------------------------------------------------------===//
-
-// Represents an Ada typed constant: an enum literal use, a constant object
-// declaration denoting a static expression evaluated at compile time, or a
-// named number declaration (RM 3.3). Carries the value as a
-// typed attribute (IntegerAttr for integer/enum constants, FloatAttr for real
-// named numbers) and a symbol reference to the corresponding ada.type op so
-// that lowering can reconstruct the DWARF type.
-//
-// The Ada name of the constant or literal is carried in the op location as a
-// NameLoc: "C" for `C : constant Color := Green`, "green" for an anonymous
-// use such as `return Green`.
-def ConstantOp : Ada_Op<"constant", [Pure,
-    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "Ada typed constant (enum literal, constant object, or named number)";
-  let arguments = (ins
-    AnyAttr:$value,
-    FlatSymbolRefAttr:$ada_type
-  );
-  let results = (outs AnyType:$result);
-
-  let skipDefaultBuilders = 1;
-  let builders = [
-    OpBuilder<(ins
-      "mlir::TypedAttr":$value,
-      "llvm::StringRef":$adaType)>
   ];
 
   let hasCustomAssemblyFormat = 1;

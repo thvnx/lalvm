@@ -4,7 +4,7 @@
 -- MLIR-LABEL: ada.subp @test_constant_decl
 -- MLIR-SAME:    () -> i32
 -- MLIR:         %[[INIT:.*]] = arith.constant 5 : i32
--- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
 -- MLIR-NEXT:    memref.store %[[INIT]], %[[PTR]][] : memref<i32>
 -- MLIR:         %[[X:.*]] = memref.load %[[PTR]][] : memref<i32>
 -- MLIR:         ada.return %[[X]] : i32

@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test
 -- MLIR:         ada.subp @inner(
--- MLIR:           memref.alloca() : memref<i32>
+-- MLIR:           memref.alloca(){{.*}}: memref<i32>
 -- MLIR:           ada.return %{{.*}} : i32
 -- MLIR:         %[[C1:.*]] = arith.constant 42 : i32
 -- MLIR:         %[[V1:.*]] = ada.call @inner(%[[C1]]) : (i32) -> i32
