@@ -1232,8 +1232,7 @@ private:
             builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
         if (typeOp)
           setAdaNameLoc(storeOp, nameAttr, typeOp);
-      }
-      else
+      } else
         uninitAllocas.insert(ptr);
       declare(id, ptr);
     }
@@ -1364,8 +1363,8 @@ private:
 
     // Procedures have no explicit return statement; add an implicit one.
     if (isProc)
-      builder.create<mlir::ada::ReturnOp>(loc(subp_body),
-                                          ArrayRef<mlir::Value>{});
+      builder.create<mlir::ada::ReturnOp>(
+          mlir::UnknownLoc::get(builder.getContext()), ArrayRef<mlir::Value>{});
 
     // Block arguments are subprogram-local; erase any that were marked
     // uninitialized so entries don't accumulate across nested subprograms.
