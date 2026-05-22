@@ -67,6 +67,10 @@ public:
 /// return true if name resolution failed.
 bool emitSolverDiagnostics(ada_node *node);
 
+/// "No origin" value for Libadalang property calls that take an optional
+/// `const ada_node *origin` parameter.
+inline const ada_node kNullOrigin{};
+
 } // namespace libadalang
 } // namespace frontend
 

@@ -1535,11 +1535,9 @@ private:
   mlir::Type getMLIRTypeFromDecl(ada_node &type_decl, mlir::Location diagLoc) {
     // Follow the subtype chain to the canonical (base) type so that subtypes
     // of Integer map to the same MLIR type as Integer itself.
-    // TODO: nullptr would be the correct origin but crashes with a
-    // CONSTRAINT_ERROR in libadalang-implementation-c.adb; using self for now.
     ada_node canon_type;
-    if (!ada_base_type_decl_p_canonical_type(&type_decl, &type_decl,
-                                             &canon_type) ||
+    if (!ada_base_type_decl_p_canonical_type(
+            &type_decl, &libadalang::kNullOrigin, &canon_type) ||
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
