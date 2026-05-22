@@ -22,14 +22,14 @@
 -- MLIR-LABEL: ada.subp @e
 -- MLIR:         ada.subp @inner(%arg0: i1 {ada.type = @standard.boolean}
 -- MLIR:           ada.type @boolean : i1 = #ada.enum_info<"true" = 0, "false" = 1>
--- MLIR:           arith.constant{{.*}}false
+-- MLIR:           arith.constant {ada.type = @boolean} false
 -- MLIR:           ada.subp @inner(%arg1: i1 {ada.type = @boolean}
 -- MLIR:             ada.type @boolean : i1 = #ada.enum_info<"not_true" = 0, "true" = 1>
--- MLIR:             arith.constant{{.*}}true
+-- MLIR:             arith.constant {ada.type = @boolean} true
 -- MLIR:             ada.return
--- MLIR:           arith.constant{{.*}}true
+-- MLIR:           arith.constant {ada.type = @standard.boolean} true
 -- MLIR:           ada.return
--- MLIR:         arith.constant{{.*}}true
+-- MLIR:         arith.constant {ada.type = @standard.boolean} true
 -- MLIR:         ada.call @inner(
 -- MLIR:         ada.return
 

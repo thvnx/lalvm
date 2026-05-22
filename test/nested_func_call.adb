@@ -3,12 +3,12 @@
 
 -- MLIR-LABEL: ada.subp @test
 -- MLIR:         ada.subp @inner(
--- MLIR:           memref.alloca(){{.*}}: memref<i32>
+-- MLIR:           memref.alloca() {ada.type = @standard.integer} : memref<i32>
 -- MLIR:           ada.return %{{.*}} : i32
--- MLIR:         %[[C1:.*]] = arith.constant 42 : i32
--- MLIR:         %[[V1:.*]] = ada.call @inner(%[[C1]]) : (i32) -> i32
--- MLIR:         %[[C2:.*]] = arith.constant 42 : i32
--- MLIR:         %[[V2:.*]] = ada.call @inner(%[[C2]]) : (i32) -> i32
+-- MLIR:         %[[C1:.*]] = arith.constant {ada.type = @standard.integer} 42 : i32
+-- MLIR:         %[[V1:.*]] = ada.call @inner(%[[C1]]) {ada.type = @standard.integer} : (i32) -> i32
+-- MLIR:         %[[C2:.*]] = arith.constant {ada.type = @standard.integer} 42 : i32
+-- MLIR:         %[[V2:.*]] = ada.call @inner(%[[C2]]) {ada.type = @standard.integer} : (i32) -> i32
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @_ada_test(

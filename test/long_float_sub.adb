@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_long_float_sub
 -- MLIR-SAME:    (%arg0: f64 {ada.type = @standard.long_float}, %arg1: f64 {ada.type = @standard.long_float}) -> f64
--- MLIR:         %[[R:.*]] = ada.binop "-" %arg0, %arg1 : f64
+-- MLIR:         %[[R:.*]] = ada.binop "-" %arg0, %arg1 {ada.type = @standard.long_float} : f64
 -- MLIR-NEXT:    ada.return %[[R]] : f64
 
 -- LLVM-LABEL: define double @_ada_test_long_float_sub(

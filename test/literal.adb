@@ -2,7 +2,7 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_literal
--- MLIR:         %{{.*}} = arith.constant 42 : i32
+-- MLIR:         %{{.*}} = arith.constant {ada.type = @standard.integer} 42 : i32
 -- MLIR-NEXT:    ada.return %{{.*}} : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_literal(

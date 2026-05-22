@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_short
 -- MLIR-SAME:    (%arg0: i16 {ada.type = @standard.short_integer}, %arg1: i16 {ada.type = @standard.short_integer}) -> i16
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : i16
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 {ada.type = @standard.short_integer} : i16
 -- MLIR-NEXT:    ada.return %[[R]] : i16
 
 -- LLVM-LABEL: define i16 @_ada_test_short(

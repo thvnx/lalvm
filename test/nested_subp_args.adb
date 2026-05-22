@@ -4,7 +4,7 @@
 -- MLIR-LABEL: ada.subp @test_nested_subp_args
 -- MLIR:         ada.subp @inner
 -- MLIR:           ada.return
--- MLIR:         [[V:%.*]] = arith.constant 42
+-- MLIR:         [[V:%.*]] = arith.constant {ada.type = @standard.integer} 42
 -- MLIR:         ada.call @inner([[V]]) : (i32) -> ()
 -- MLIR:         ada.return
 

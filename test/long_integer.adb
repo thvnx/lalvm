@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_long
 -- MLIR-SAME:    (%arg0: i64 {ada.type = @standard.long_integer}, %arg1: i64 {ada.type = @standard.long_integer}) -> i64
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : i64
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 {ada.type = @standard.long_integer} : i64
 -- MLIR-NEXT:    ada.return %[[R]] : i64
 
 -- LLVM-LABEL: define i64 @_ada_test_long(

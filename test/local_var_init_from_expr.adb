@@ -3,8 +3,8 @@
 
 -- MLIR-LABEL: ada.subp @test_local_var_init_from_expr
 -- MLIR-SAME:    (%arg0: i32 {ada.type = @standard.integer}, %arg1: i32 {ada.type = @standard.integer}) -> i32
--- MLIR:         %[[INIT:.*]] = ada.binop "+" %arg0, %arg1 : i32
--- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
+-- MLIR:         %[[INIT:.*]] = ada.binop "+" %arg0, %arg1 {ada.type = @standard.integer} : i32
+-- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
 -- MLIR-NEXT:    memref.store %[[INIT]], %[[PTR]][] : memref<i32>
 -- MLIR:         %[[X:.*]] = memref.load %[[PTR]][] : memref<i32>
 -- MLIR:         ada.return %[[X]] : i32

@@ -10,7 +10,7 @@
 -- MLIR-NOT:       memref.load %arg0
 -- MLIR:           memref.store {{.*}}, %arg0[] : memref<i32>
 -- MLIR:           ada.return
--- MLIR:         %[[N_PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
+-- MLIR:         %[[N_PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
 -- MLIR-NOT:     memref.store {{.*}}, %[[N_PTR]]
 -- MLIR:         ada.call @get_value(%[[N_PTR]]) : (memref<i32>) -> ()
 -- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<i32>

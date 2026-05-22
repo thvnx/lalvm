@@ -7,10 +7,10 @@
 -- MLIR-LABEL: ada.subp @test_param_in_out
 -- MLIR:         ada.subp @increment(%arg0: memref<i32> {ada.type = @standard.integer})
 -- MLIR:           %[[V:.*]] = memref.load %arg0[] : memref<i32>
--- MLIR:           %[[R:.*]] = ada.binop "+" %[[V]], {{.*}} : i32
+-- MLIR:           %[[R:.*]] = ada.binop "+" %[[V]], {{.*}} {ada.type = @standard.integer} : i32
 -- MLIR:           memref.store %[[R]], %arg0[] : memref<i32>
 -- MLIR:           ada.return
--- MLIR:         %[[N_PTR:.*]] = memref.alloca(){{.*}}: memref<i32>
+-- MLIR:         %[[N_PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
 -- MLIR:         ada.call @increment(%[[N_PTR]]) : (memref<i32>) -> ()
 -- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<i32>
 -- MLIR:         ada.return %[[N]] : i32

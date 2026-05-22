@@ -7,10 +7,10 @@
 -- MLIR-LABEL: ada.subp @test_param_in
 -- MLIR:         ada.subp @double(%arg0: i32 {ada.type = @standard.integer}) -> i32
 -- MLIR-NOT:       memref
--- MLIR:           %[[R:.*]] = ada.binop "+" %arg0, %arg0 : i32
+-- MLIR:           %[[R:.*]] = ada.binop "+" %arg0, %arg0 {ada.type = @standard.integer} : i32
 -- MLIR:           ada.return %[[R]] : i32
--- MLIR:         %[[C:.*]] = arith.constant 21 : i32
--- MLIR:         %[[V:.*]] = ada.call @double(%[[C]]) : (i32) -> i32
+-- MLIR:         %[[C:.*]] = arith.constant {ada.type = @standard.integer} 21 : i32
+-- MLIR:         %[[V:.*]] = ada.call @double(%[[C]]) {ada.type = @standard.integer} : (i32) -> i32
 -- MLIR:         ada.return %[[V]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_param_in(

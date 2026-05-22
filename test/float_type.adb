@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_float
 -- MLIR-SAME:    (%arg0: f32 {ada.type = @standard.float}, %arg1: f32 {ada.type = @standard.float}) -> f32
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : f32
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 {ada.type = @standard.float} : f32
 -- MLIR-NEXT:    ada.return %[[R]] : f32
 
 -- LLVM-LABEL: define float @_ada_test_float(

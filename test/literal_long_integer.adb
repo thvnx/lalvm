@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_long_literal
 -- MLIR-SAME:    () -> i64
--- MLIR:         %{{.*}} = arith.constant 42 : i64
+-- MLIR:         %{{.*}} = arith.constant {ada.type = @standard.long_integer} 42 : i64
 -- MLIR-NEXT:    ada.return %{{.*}} : i64
 
 -- LLVM-LABEL: define i64 @_ada_test_long_literal(
