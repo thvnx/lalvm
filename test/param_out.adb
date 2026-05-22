@@ -6,7 +6,7 @@
 -- on the parameter must be a store, not a load.
 
 -- MLIR-LABEL: ada.subp @test_param_out
--- MLIR:         ada.subp @get_value(%arg0: memref<i32>)
+-- MLIR:         ada.subp @get_value(%arg0: memref<i32> {ada.type = @standard.integer})
 -- MLIR-NOT:       memref.load %arg0
 -- MLIR:           memref.store {{.*}}, %arg0[] : memref<i32>
 -- MLIR:           ada.return

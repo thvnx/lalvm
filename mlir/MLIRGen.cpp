@@ -35,7 +35,6 @@ namespace libadalang = frontend::libadalang;
 #include <cerrno>
 #include <cstdint>
 #include <optional>
-#include <vector>
 
 using llvm::ArrayRef;
 using llvm::cast;
@@ -53,22 +52,10 @@ using llvm::SmallVector;
 
 namespace {
 
-static bool isEnumTypeDecl(ada_node &typeDecl) {
-  ada_node typeDef{};
-  return ada_type_decl_f_type_def(&typeDecl, &typeDef) &&
-         !ada_node_is_null(&typeDef) &&
-         ada_node_kind(&typeDef) == ada_enum_type_def;
-}
-
 /// Walks a Libadalang AST and emits Ada dialect MLIR operations into a module
 /// (i.e.: a compilation unit). The public entry point is mlirGen() at the
 /// bottom of this file.
 class MLIRGenImpl {
-  static constexpr llvm::StringLiteral kUniversalIntTypeName =
-      "universal_int_type_";
-  static constexpr llvm::StringLiteral kUniversalRealTypeName =
-      "universal_real_type_";
-
 public:
   MLIRGenImpl(mlir::MLIRContext &context) : builder(&context) {}
 
@@ -387,18 +374,14 @@ private:
   /// Resolve the type of a literal expression. For universal types
   /// (universal_int_type_ / universal_real_type_), falls back to the expected
   /// type from the surrounding context. Returns a null node on failure.
-  ada_node resolveLiteralType(ada_node &node, mlir::Location location,
-                              llvm::StringRef universalTypeName) {
+  ada_node resolveLiteralType(ada_node &node, mlir::Location location) {
     ada_node type_decl;
     if (!ada_expr_p_expression_type(&node, &type_decl) ||
         ada_node_is_null(&type_decl)) {
       mlir::emitError(location, "failed to resolve type of literal");
       return {};
     }
-    ada_node type_name;
-    if (ada_base_type_decl_f_name(&type_decl, &type_name) &&
-        !ada_node_is_null(&type_name) &&
-        libadalang::getName(&type_name) == universalTypeName) {
+    if (libadalang::isUniversalTypeDecl(type_decl)) {
       if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
           ada_node_is_null(&type_decl)) {
         mlir::emitError(location, "failed to resolve expected type of literal");
@@ -480,13 +463,11 @@ private:
     auto value = evalIntLiteral(node);
     if (!value)
       return nullptr;
-    // p_expression_type on an integer literal returns universal_integer
-    // (Libadalang's kUniversalIntTypeName), not the concrete type.
-    // When that happens, p_expected_expression_type gives the type required
-    // by the surrounding context (e.g. the return type of the enclosing
-    // function).
-    ada_node type_decl =
-        resolveLiteralType(node, loc(node), kUniversalIntTypeName);
+    // p_expression_type on an integer literal returns universal_integer,
+    // not the concrete type. p_expected_expression_type gives the type
+    // required by the surrounding context (e.g. the return type of the
+    // enclosing function).
+    ada_node type_decl = resolveLiteralType(node, loc(node));
     if (ada_node_is_null(&type_decl))
       return nullptr;
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
@@ -532,8 +513,7 @@ private:
       return nullptr;
     // Real literals have universal_real type; fall back to the expected type
     // to get the concrete type required by the surrounding context.
-    ada_node type_decl =
-        resolveLiteralType(node, loc(node), kUniversalRealTypeName);
+    ada_node type_decl = resolveLiteralType(node, loc(node));
     if (ada_node_is_null(&type_decl))
       return nullptr;
     mlir::Type type = getMLIRTypeFromDecl(type_decl, loc(node));
@@ -557,7 +537,7 @@ private:
         return {};
       it = typeDecls.find(type_decl.node);
       if (it == typeDecls.end()) {
-        mlir::emitError(location, "ada.type not found for enum type");
+        mlir::emitError(location, "ada.type not found for type");
         return {};
       }
     }
@@ -746,14 +726,13 @@ private:
                                     ? ""
                                     : libadalang::getName(&typeNameNode);
 
-    if (universalType == kUniversalRealTypeName) {
+    if (universalType == libadalang::kUniversalRealTypeName) {
       switch (ada_node_kind(&staticExpr)) {
       case ada_real_literal: {
         auto value = evalRealLiteral(staticExpr);
         if (!value)
           return nullptr;
-        ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext),
-                                              kUniversalRealTypeName);
+        ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext));
         if (ada_node_is_null(&typDecl))
           return nullptr;
         mlir::Type type = getMLIRTypeFromDecl(typDecl, loc(typeContext));
@@ -808,9 +787,7 @@ private:
             // emitted.
             mlir::Type srcType = info.value.getType();
             bool isIntKind = mlir::isa<mlir::IntegerType>(srcType);
-            llvm::StringRef univName =
-                isIntKind ? kUniversalIntTypeName : kUniversalRealTypeName;
-            ada_node typDecl = resolveLiteralType(expr, loc(expr), univName);
+            ada_node typDecl = resolveLiteralType(expr, loc(expr));
             if (ada_node_is_null(&typDecl))
               return nullptr;
             mlir::Type tgtType = getMLIRTypeFromDecl(typDecl, loc(expr));
@@ -908,11 +885,12 @@ private:
       ada_node typeNameNode;
       ada_base_type_decl_f_name(&exprType, &typeNameNode);
       if (!ada_node_is_null(&typeNameNode))
-        kind = llvm::StringSwitch<UniversalKind>(
-                   libadalang::getName(&typeNameNode))
-                   .Case(kUniversalIntTypeName, UniversalKind::Int)
-                   .Case(kUniversalRealTypeName, UniversalKind::Real)
-                   .Default(UniversalKind::Unknown);
+        kind =
+            llvm::StringSwitch<UniversalKind>(
+                libadalang::getName(&typeNameNode))
+                .Case(libadalang::kUniversalIntTypeName, UniversalKind::Int)
+                .Case(libadalang::kUniversalRealTypeName, UniversalKind::Real)
+                .Default(UniversalKind::Unknown);
     }
 
     // Eager evaluation for DWARF metadata; the expression node is also stashed
@@ -1001,69 +979,62 @@ private:
                                       bool qualifiedName = false) {
     auto location = loc(type_decl);
 
-    // Universal types (RM 3.4.1): no type_def, emitted with ScalarTypeInfoAttr.
-    ada_node type_name_node;
-    if (ada_base_type_decl_f_name(&type_decl, &type_name_node) &&
-        !ada_node_is_null(&type_name_node)) {
-      std::string typeName = libadalang::getName(&type_name_node);
-      mlir::ada::ScalarEncoding enc;
-      uint64_t bitWidth = 0;
-      if (typeName == kUniversalIntTypeName) {
-        enc = mlir::ada::ScalarEncoding::Signed;
-        bitWidth = 64;
-      } else if (typeName == kUniversalRealTypeName) {
-        enc = mlir::ada::ScalarEncoding::Float;
-        bitWidth = 64;
-      }
-      if (bitWidth != 0) {
-        mlir::Type mlirType = getMLIRTypeFromDecl(type_decl, location);
-        if (!mlirType)
+    // Resolve the Ada type name: fully qualified for module-level types,
+    // simple canonical name for locals.
+    auto resolveTypeName = [&]() -> llvm::FailureOr<std::string> {
+      if (qualifiedName) {
+        ada_string_type fqn;
+        if (!ada_basic_decl_p_canonical_fully_qualified_name(&type_decl,
+                                                             &fqn)) {
+          mlir::emitError(location, "failed to get fully qualified type name");
           return mlir::failure();
-        auto typeInfo = mlir::ada::ScalarTypeInfoAttr::get(builder.getContext(),
-                                                           enc, bitWidth);
-        auto typeOp = builder.create<mlir::ada::TypeOp>(location, typeName,
-                                                        mlirType, typeInfo);
-        typeDecls[type_decl.node] = typeOp;
-        return mlir::success();
+        }
+        char *buf;
+        size_t len;
+        ada_string_to_utf8(fqn, &buf, &len);
+        std::string name(buf, len);
+        free(buf);
+        ada_string_dec_ref(fqn);
+        return name;
       }
+      ada_node nameNode;
+      if (!ada_base_type_decl_f_name(&type_decl, &nameNode) ||
+          ada_node_is_null(&nameNode)) {
+        mlir::emitError(location, "failed to get type name");
+        return mlir::failure();
+      }
+      return libadalang::getName(&nameNode, /*canonical=*/true);
+    };
+
+    // Universal types (RM 3.4.1) and numeric types (RM 3.5.4, 3.5.6, 3.5.7).
+    if (libadalang::isUniversalTypeDecl(type_decl) ||
+        libadalang::isNumericTypeDecl(type_decl)) {
+      mlir::Type mlirType = getMLIRTypeFromDecl(type_decl, location);
+      if (!mlirType)
+        return mlir::failure();
+      auto typeName = resolveTypeName();
+      if (mlir::failed(typeName))
+        return mlir::failure();
+      auto typeInfo = mlir::ada::NumericTypeInfoAttr::get(builder.getContext());
+      auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
+                                                      mlirType, typeInfo);
+      typeDecls[type_decl.node] = typeOp;
+      return mlir::success();
     }
 
     ada_node type_def{};
-    if (!isEnumTypeDecl(type_decl) ||
+    if (!libadalang::isEnumTypeDecl(type_decl) ||
         !ada_type_decl_f_type_def(&type_decl, &type_def))
-      return mlir::success();
+      return mlir::failure();
 
     // Get the MLIR integer type for this enum.
     mlir::Type mlirType = getMLIRTypeFromDecl(type_decl, location);
     if (!mlirType)
       return mlir::failure();
 
-    // Get the Ada type name. For module-level (external) types use the
-    // canonical fully qualified name to avoid collisions between packages that
-    // export types with the same simple name. For local types use the simple
-    // canonical name.
-    std::string typeName;
-    if (qualifiedName) {
-      ada_string_type fqn;
-      if (!ada_basic_decl_p_canonical_fully_qualified_name(&type_decl, &fqn)) {
-        mlir::emitError(location, "failed to get fully qualified type name");
-        return mlir::failure();
-      }
-      char *buf;
-      size_t len;
-      ada_string_to_utf8(fqn, &buf, &len);
-      typeName = std::string(buf, len);
-      free(buf);
-      ada_string_dec_ref(fqn);
-    } else {
-      ada_node type_name;
-      if (!ada_base_type_decl_f_name(&type_decl, &type_name) ||
-          ada_node_is_null(&type_name)) {
-        mlir::emitError(location, "failed to get type name");
-        return mlir::failure();
-      }
-      typeName = libadalang::getName(&type_name, /*canonical=*/true);
-    }
+    auto typeName = resolveTypeName();
+    if (mlir::failed(typeName))
+      return mlir::failure();
 
     // Collect enumerator names (canonical) and representation values.
     ada_node literals;
@@ -1114,7 +1085,7 @@ private:
                                              nameStorage.end());
     auto typeInfo =
         mlir::ada::EnumTypeInfoAttr::get(builder.getContext(), names, values);
-    auto typeOp = builder.create<mlir::ada::TypeOp>(location, typeName,
+    auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
                                                     mlirType, typeInfo);
     typeDecls[type_decl.node] = typeOp;
     return mlir::success();
@@ -1458,12 +1429,17 @@ private:
 
     mlir::MLIRContext *ctx = builder.getContext();
     for (auto [argIdx, entry] : llvm::enumerate(paramEntries)) {
-      // Set ada.type attr for parameters with a known enum type.
-      if (!ada_node_is_null(&entry.typeDecl) && isEnumTypeDecl(entry.typeDecl))
-        if (auto typeOp = lookupOrEmitTypeOp(entry.typeDecl, entry.loc))
-          subpOp.setArgAttr(
-              argIdx, "ada.type",
-              mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName()));
+      // Set ada.type attr for parameters with enum or numeric types.
+      if (ada_node_is_null(&entry.typeDecl))
+        continue;
+      if (!libadalang::isEnumTypeDecl(entry.typeDecl) &&
+          !libadalang::isNumericTypeDecl(entry.typeDecl))
+        continue;
+      auto typeOp = lookupOrEmitTypeOp(entry.typeDecl, entry.loc);
+      if (!typeOp)
+        return nullptr;
+      subpOp.setArgAttr(argIdx, "ada.type",
+                        mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName()));
     }
 
     return subpOp;
@@ -1584,9 +1560,9 @@ private:
       return builder.getF32Type();
     if (name == "long_float")
       return builder.getF64Type();
-    if (name == kUniversalIntTypeName)
+    if (name == libadalang::kUniversalIntTypeName)
       return builder.getI64Type();
-    if (name == kUniversalRealTypeName)
+    if (name == libadalang::kUniversalRealTypeName)
       return builder.getF64Type();
 
     mlir::emitError(diagLoc, "unsupported Ada type '") << name << "'";

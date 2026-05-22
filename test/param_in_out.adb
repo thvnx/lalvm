@@ -5,7 +5,7 @@
 -- and writes through the caller's alloca pointer. No write-back is needed.
 
 -- MLIR-LABEL: ada.subp @test_param_in_out
--- MLIR:         ada.subp @increment(%arg0: memref<i32>)
+-- MLIR:         ada.subp @increment(%arg0: memref<i32> {ada.type = @standard.integer})
 -- MLIR:           %[[V:.*]] = memref.load %arg0[] : memref<i32>
 -- MLIR:           %[[R:.*]] = ada.binop "+" %[[V]], {{.*}} : i32
 -- MLIR:           memref.store %[[R]], %arg0[] : memref<i32>

@@ -3,8 +3,8 @@
 
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @param_nameloc(
--- MLIR-SAME:    %arg0: i32 loc("A"(
--- MLIR-SAME:    %arg1: i32 loc("B"(
+-- MLIR-SAME:    %arg0: i32 {ada.type = @standard.integer} loc("A"(
+-- MLIR-SAME:    %arg1: i32 {ada.type = @standard.integer} loc("B"(
 -- MLIR-SAME:    %arg2: i1 {ada.type = @standard.boolean} loc("C"(
 
 -- LLVM: DILocalVariable(name: "C", arg: 3,

@@ -18,21 +18,6 @@ include "mlir/IR/EnumAttr.td"
 include "Dialect.td"
 
 //===----------------------------------------------------------------------===//
-// Ada Scalar Encoding
-//===----------------------------------------------------------------------===//
-
-def Ada_ScalarEncSigned   : I32EnumAttrCase<"Signed",   0, "signed">;
-def Ada_ScalarEncUnsigned : I32EnumAttrCase<"Unsigned", 1, "unsigned">;
-def Ada_ScalarEncFloat    : I32EnumAttrCase<"Float",    2, "float">;
-
-def Ada_ScalarEncoding : I32EnumAttr<"ScalarEncoding",
-    "scalar type encoding (RM 3.5, 3.5.6, 3.5.7)",
-    [Ada_ScalarEncSigned, Ada_ScalarEncUnsigned, Ada_ScalarEncFloat]> {
-  let cppNamespace = "mlir::ada";
-  let genSpecializedAttr = 0;
-}
-
-//===----------------------------------------------------------------------===//
 // Ada Type Info Attributes
 //===----------------------------------------------------------------------===//
 
@@ -64,17 +49,11 @@ def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
   let hasCustomAssemblyFormat = 1;
 }
 
-// Carries scalar type metadata for non-enumeration Ada types: universal_integer,
-// universal_real, and future concrete integer/float types.
-// Used as the type_info payload of TypeOp.
-def ScalarTypeInfoAttr : AttrDef<Ada_Dialect, "ScalarTypeInfo"> {
-  let mnemonic = "scalar_info";
-  let summary = "Scalar type metadata (encoding and bit width)";
-  let parameters = (ins
-    EnumParameter<Ada_ScalarEncoding>:$encoding,
-    "uint64_t":$bitWidth
-  );
-  let assemblyFormat = "`<` $encoding `,` $bitWidth `>`";
+// Marker attribute for numeric types. Reserved for future range-check metadata.
+def NumericTypeInfoAttr : AttrDef<Ada_Dialect, "NumericTypeInfo"> {
+  let mnemonic = "numeric_info";
+  let summary = "Numeric type metadata (integer or float)";
+  let assemblyFormat = "";
 }
 
 #endif // ADA_ATTRS

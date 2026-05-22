@@ -2,7 +2,7 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_local_var_init_from_param
--- MLIR-SAME:    (%arg0: i32) -> i32
+-- MLIR-SAME:    (%arg0: i32 {ada.type = @standard.integer}) -> i32
 -- MLIR:         %[[PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR-NEXT:    memref.store %arg0, %[[PTR]][] : memref<i32>
 -- MLIR:         %[[X:.*]] = memref.load %[[PTR]][] : memref<i32>

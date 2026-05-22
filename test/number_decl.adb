@@ -5,16 +5,16 @@
 -- declaration for DWARF debug info (universal type). At each use site, the
 -- value is re-emitted in the concrete MLIR type resolved from the use context.
 
--- MLIR: ada.type @universal_real_type_ : f64 = #ada.scalar_info<float, 64>
--- MLIR: ada.type @universal_int_type_ : i64 = #ada.scalar_info<signed, 64>
+-- MLIR: ada.type @standard.universal_real_type_ : f64 = #ada.numeric_info
+-- MLIR: ada.type @standard.universal_int_type_ : i64 = #ada.numeric_info
 -- MLIR-LABEL: ada.subp @test_number_decl()
 -- MLIR:         ada.subp @f() -> i32
--- MLIR:           %[[MAX_DBG:.*]] = ada.constant @universal_int_type_ 200 : i64
+-- MLIR:           %[[MAX_DBG:.*]] = ada.constant @standard.universal_int_type_ 200 : i64
 -- MLIR:           ada.object @max %[[MAX_DBG]] : i64
 -- MLIR:           %[[MAX:.*]] = arith.constant 200 : i32
 -- MLIR:           ada.return %[[MAX]] : i32
 -- MLIR:         ada.subp @g() -> f32
--- MLIR:           %[[PI_DBG:.*]] = ada.constant @universal_real_type_ 3.141590e+00 : f64
+-- MLIR:           %[[PI_DBG:.*]] = ada.constant @standard.universal_real_type_ 3.141590e+00 : f64
 -- MLIR:           ada.object @pi %[[PI_DBG]] : f64
 -- MLIR:           %[[PI:.*]] = arith.constant 3.141590e+00 : f32
 -- MLIR:           ada.return %[[PI]] : f32

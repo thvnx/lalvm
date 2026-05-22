@@ -184,7 +184,7 @@ void TypeOp::print(mlir::OpAsmPrinter &p) {
 }
 
 llvm::LogicalResult TypeOp::verify() {
-  if (!mlir::isa<EnumTypeInfoAttr, ScalarTypeInfoAttr>(getTypeInfo()))
+  if (!mlir::isa<EnumTypeInfoAttr, NumericTypeInfoAttr>(getTypeInfo()))
     return emitOpError() << "unsupported type_info attribute kind";
   return mlir::success();
 }

@@ -193,6 +193,28 @@ bool libadalang::AdaAST::emitParserDiagnostics() const {
   return true;
 }
 
+bool libadalang::isEnumTypeDecl(ada_node &typeDecl) {
+  ada_bool result = false;
+  return ada_base_type_decl_p_is_enum_type(&typeDecl, &kNullOrigin, &result) &&
+         result;
+}
+
+bool libadalang::isUniversalTypeDecl(ada_node &typeDecl) {
+  ada_node nameNode;
+  if (!ada_base_type_decl_f_name(&typeDecl, &nameNode) ||
+      ada_node_is_null(&nameNode))
+    return false;
+  std::string name = getName(&nameNode);
+  return name == kUniversalIntTypeName || name == kUniversalRealTypeName;
+}
+
+bool libadalang::isNumericTypeDecl(ada_node &typeDecl) {
+  ada_bool result = false;
+  return ada_base_type_decl_p_is_numeric_type(&typeDecl, &kNullOrigin,
+                                              &result) &&
+         result;
+}
+
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_bool resolved;
   if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)

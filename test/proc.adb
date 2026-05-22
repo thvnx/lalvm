@@ -5,7 +5,7 @@
 -- operates directly on the caller's alloca. Write-back is automatic.
 
 -- MLIR-LABEL: ada.subp @proc(
--- MLIR-SAME:    %arg0: memref<i32>, %arg1: memref<i32>, %arg2: memref<i32>
+-- MLIR-SAME:    %arg0: memref<i32> {ada.type = @standard.integer}, %arg1: memref<i32> {ada.type = @standard.integer}, %arg2: memref<i32> {ada.type = @standard.integer}
 -- MLIR:         %[[J:.*]] = memref.load %arg1[] : memref<i32>
 -- MLIR:         %[[K:.*]] = memref.load %arg2[] : memref<i32>
 -- MLIR:         %[[R:.*]] = ada.binop "+" %[[J]], %[[K]] : i32

@@ -71,6 +71,13 @@ bool emitSolverDiagnostics(ada_node *node);
 /// `const ada_node *origin` parameter.
 inline const ada_node kNullOrigin{};
 
+constexpr llvm::StringLiteral kUniversalIntTypeName = "universal_int_type_";
+constexpr llvm::StringLiteral kUniversalRealTypeName = "universal_real_type_";
+
+bool isEnumTypeDecl(ada_node &typeDecl);
+bool isUniversalTypeDecl(ada_node &typeDecl);
+bool isNumericTypeDecl(ada_node &typeDecl);
+
 } // namespace libadalang
 } // namespace frontend
 
