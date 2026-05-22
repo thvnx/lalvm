@@ -1227,8 +1227,12 @@ private:
       if (typeOp)
         setAdaNameLoc(allocaOp, nameAttr, typeOp);
       mlir::Value ptr = allocaOp;
-      if (init)
-        builder.create<mlir::memref::StoreOp>(declLoc, init, ptr);
+      if (init) {
+        auto storeOp =
+            builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
+        if (typeOp)
+          setAdaNameLoc(storeOp, nameAttr, typeOp);
+      }
       else
         uninitAllocas.insert(ptr);
       declare(id, ptr);

@@ -7,10 +7,10 @@
 -- MLIR-LABEL: ada.subp @test
 -- MLIR:         %[[INIT_U:.*]] = arith.constant {ada.type = @standard.integer} 5 : i32
 -- MLIR:         %[[U_PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
--- MLIR:         memref.store %[[INIT_U]], %[[U_PTR]][] : memref<i32>
+-- MLIR:         memref.store %[[INIT_U]], %[[U_PTR]][] {ada.type = @standard.integer} : memref<i32>
 -- MLIR:         %[[INIT_V:.*]] = arith.constant {ada.type = @standard.integer} 3 : i32
 -- MLIR:         %[[V_PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
--- MLIR:         memref.store %[[INIT_V]], %[[V_PTR]][] : memref<i32>
+-- MLIR:         memref.store %[[INIT_V]], %[[V_PTR]][] {ada.type = @standard.integer} : memref<i32>
 -- MLIR:         ada.block_stmt "Swap" {
 -- MLIR:           %[[T_PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
 -- MLIR:           %[[V0:.*]] = memref.load %[[V_PTR]][] : memref<i32>

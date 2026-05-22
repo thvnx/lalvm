@@ -7,7 +7,7 @@
 -- MLIR-LABEL: ada.subp @test_boolean
 -- MLIR:         %[[C:.*]] = arith.constant {ada.type = @standard.boolean} true
 -- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() {ada.type = @standard.boolean} : memref<i1>
--- MLIR-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<i1>
+-- MLIR-NEXT:    memref.store %[[C]], %[[PTR]][] {ada.type = @standard.boolean} : memref<i1>
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 

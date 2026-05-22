@@ -5,7 +5,7 @@
 -- MLIR-SAME:    () -> i32
 -- MLIR:         %[[INIT:.*]] = arith.constant {ada.type = @standard.integer} 5 : i32
 -- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
--- MLIR-NEXT:    memref.store %[[INIT]], %[[PTR]][] : memref<i32>
+-- MLIR-NEXT:    memref.store %[[INIT]], %[[PTR]][] {ada.type = @standard.integer} : memref<i32>
 -- MLIR:         %[[X:.*]] = memref.load %[[PTR]][] : memref<i32>
 -- MLIR:         ada.return %[[X]] : i32
 

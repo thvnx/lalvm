@@ -8,7 +8,7 @@
 -- MLIR-LABEL: ada.subp @p() -> i32
 -- MLIR:         %[[I_INIT:.*]] = arith.constant {ada.type = @standard.integer} 12 : i32
 -- MLIR-NEXT:    %[[I_PTR:.*]] = memref.alloca() {ada.type = @standard.integer} : memref<i32>
--- MLIR-NEXT:    memref.store %[[I_INIT]], %[[I_PTR]][] : memref<i32>
+-- MLIR-NEXT:    memref.store %[[I_INIT]], %[[I_PTR]][] {ada.type = @standard.integer} : memref<i32>
 -- MLIR:         ada.subp @inner(
 -- MLIR:           %[[ONE:.*]] = arith.constant {ada.type = @standard.integer} 1 : i32
 -- MLIR:           %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] {ada.type = @standard.integer} : i32

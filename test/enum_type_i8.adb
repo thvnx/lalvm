@@ -6,7 +6,7 @@
 -- MLIR:         ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
 -- MLIR-NEXT:    %[[C:.*]] = arith.constant {ada.type = @color} 1 : i8
 -- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() {ada.type = @color} : memref<i8>
--- MLIR-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<i8>
+-- MLIR-NEXT:    memref.store %[[C]], %[[PTR]][] {ada.type = @color} : memref<i8>
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 
