@@ -13,3 +13,7 @@ config.substitutions.append(('%FileCheck',
     os.path.join(config.llvm_tools_dir, 'FileCheck')))
 config.substitutions.append(('%not',
     os.path.join(config.llvm_tools_dir, 'not')))
+config.substitutions.append(('%llc',
+    os.path.join(config.llvm_tools_dir, 'llc')))
+config.substitutions.append(('%llvm-dwarfdump',
+    os.path.join(config.llvm_tools_dir, 'llvm-dwarfdump')))

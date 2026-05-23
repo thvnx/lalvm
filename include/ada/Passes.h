@@ -38,34 +38,19 @@ struct AdaEnumInfo {
   std::optional<std::string> subpScope;
 };
 
-/// Metadata for the Ada-typed parameters of one subprogram, collected from
-/// `"ada.type"` arg_attrs on an `ada.subp` op. Consumed by
-/// `attachAdaDebugInfo` in lalvm.cpp to emit `DW_TAG_formal_parameter`.
-struct AdaParamInfo {
-  std::string subpScope; // mangled LLVM name of the owning subprogram
-  struct Param {
-    std::string name;
-    std::string typeName;
-    mlir::Location loc;
-    unsigned argIndex;
-  };
-  llvm::SmallVector<Param> params;
-};
-
-/// Create a pass that collects Ada type metadata into `enumInfos` and
-/// `paramInfos` before `ada.type` ops are erased by LowerToLLVM. No IR
-/// mutations.
+/// Create a pass that collects Ada enum type metadata into `enumInfos` before
+/// `ada.type` ops are erased by LowerToLLVM. No IR mutations.
 std::unique_ptr<mlir::Pass>
-createAddAdaDebugInfoPass(llvm::SmallVector<AdaEnumInfo> &enumInfos,
-                          llvm::SmallVector<AdaParamInfo> &paramInfos);
+createAddAdaDebugInfoPass(llvm::SmallVector<AdaEnumInfo> &enumInfos);
 
 /// Create a pass for lowering Ada dialect operations to the LLVM dialect.
 std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
 
-/// Create a pass that finalizes ada.object ops: emits LLVM debug intrinsics
-/// (llvm.dbg.declare / llvm.dbg.value) and erases the ops. Must run after
-/// DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on each
-/// llvm.func.
+/// Create a pass that emits LLVM debug intrinsics for Ada objects and
+/// parameters: `dbg.declare` for allocas and reference parameters,
+/// `dbg.value` for scalars, named numbers, and value parameters. Must run
+/// after DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on
+/// each llvm.func.
 std::unique_ptr<mlir::Pass> createFinalizeAdaObjectPass();
 
 } // namespace ada

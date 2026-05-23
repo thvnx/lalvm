@@ -17,10 +17,12 @@
 
 -- LLVM-LABEL: define i32 @_ada_test_param_in_out(
 -- LLVM-LABEL: define void @test_param_in_out__increment(ptr
+-- LLVM:          #dbg_declare(ptr %0,
 -- LLVM:          load i32, ptr
 -- LLVM:          add i32
 -- LLVM:          store i32
 -- LLVM:          ret void
+-- LLVM:          DILocalVariable(name: "X", arg: 1,
 
 function Test_Param_In_Out return Integer is
    procedure Increment (X : in out Integer);

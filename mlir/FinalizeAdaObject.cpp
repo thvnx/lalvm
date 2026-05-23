@@ -6,32 +6,43 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass emits LLVM debug intrinsics for Ada objects. It runs after
-// DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on each
-// llvm.func.
+// This pass emits LLVM debug intrinsics for Ada objects and parameters. It
+// runs after DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available
+// on each llvm.func.
 //
 // Objects are identified by their NameLoc, set by MLIRGen on:
 //   - memref.alloca (ObjectDecl): lowered to llvm.alloca
 //   - arith.constant init expr (ObjectDecl with init): lowered to
 //     llvm.mlir.constant (if mem2reg promotes the alloca)
 //   - arith.constant (NumberDecl): lowered to llvm.mlir.constant
+//   - llvm.func entry block args (parameters): NameLoc set by mlirGenSubpBody
 //
 // Dispatch strategy:
-//   llvm.alloca with NameLoc          -> DW_TAG_variable + dbg.declare
-//   other op with NameLoc, no alloca  -> DW_TAG_variable + dbg.value
+//   llvm.alloca with NameLoc             -> DW_TAG_variable + dbg.declare
+//   other op with NameLoc, no alloca     -> DW_TAG_variable + dbg.value
+//   scalar entry block arg with NameLoc  -> DW_TAG_formal_parameter + dbg.value
+//   ptr entry block arg with NameLoc     -> DW_TAG_formal_parameter +
+//   dbg.declare
 //
 // When an llvm.alloca with NameLoc("x") exists in a function, scalar ops with
 // the same NameLoc("x") are suppressed to avoid duplicate debug entries.
 //
+// ada.type ops survive LowerToLLVM (marked legal) so that ptr parameters can
+// recover the element type via the "ada.type" arg_attr. They are dropped
+// silently by AdaToLLVMIRTranslation after this pass.
+//
 //===----------------------------------------------------------------------===//
 
+#include "ada/Dialect.h"
 #include "ada/Passes.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -51,6 +62,28 @@ static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
   return LLVM::DIBasicTypeAttr::get(ctx, llvm::dwarf::DW_TAG_base_type,
                                     ("integer_" + llvm::Twine(w)).str(),
                                     sizeInBits, enc);
+}
+
+static std::pair<LLVM::DIFileAttr, unsigned>
+getFileAndLine(MLIRContext *ctx, Location loc,
+               LLVM::DISubprogramAttr subprogram) {
+  if (auto flc = dyn_cast<FileLineColRange>(loc)) {
+    StringRef filePath = flc.getFilename().getValue();
+    return {LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
+                                  llvm::sys::path::parent_path(filePath)),
+            flc.getStartLine()};
+  }
+  return {subprogram.getFile(), 0};
+}
+
+// Returns the DISubprogramAttr attached to `op` by DIScopeForLLVMFuncOpPass,
+// or a null attr if the location is not a FusedLoc with DISubprogramAttr
+// metadata (i.e. the function has no debug info).
+static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
+  auto fl = dyn_cast<FusedLoc>(op->getLoc());
+  if (!fl)
+    return {};
+  return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
 }
 
 struct FinalizeAdaObjectPass
@@ -78,7 +111,7 @@ struct FinalizeAdaObjectPass
     // Pass 2: collect debug entries.
     struct DebugEntry {
       Operation *op;
-      Operation *func;
+      LLVM::DISubprogramAttr subprogram;
       StringAttr name;
       Location innerLoc;
       bool isDeclare; // alloca: dbg.declare; scalar: dbg.value
@@ -94,6 +127,10 @@ struct FinalizeAdaObjectPass
       if (!func)
         return;
 
+      auto subprogram = getSubprogram(func);
+      if (!subprogram)
+        return;
+
       bool isAlloca = isa<LLVM::AllocaOp>(op);
       if (!isAlloca) {
         // Skip scalar ops when an alloca with the same name exists.
@@ -104,30 +141,14 @@ struct FinalizeAdaObjectPass
           return;
       }
 
-      entries.push_back({op, func, nl.getName(), nl.getChildLoc(), isAlloca});
+      entries.push_back(
+          {op, subprogram, nl.getName(), nl.getChildLoc(), isAlloca});
     });
 
     // Pass 3: emit debug intrinsics.
     for (auto &entry : entries) {
-      auto fusedLoc = dyn_cast<FusedLoc>(entry.func->getLoc());
-      if (!fusedLoc)
-        continue;
-      auto subprogram =
-          dyn_cast_or_null<LLVM::DISubprogramAttr>(fusedLoc.getMetadata());
-      if (!subprogram)
-        continue;
-
-      LLVM::DIFileAttr fileAttr;
-      unsigned line = 0;
-      if (auto flc = dyn_cast<FileLineColRange>(entry.innerLoc)) {
-        StringRef filePath = flc.getFilename().getValue();
-        fileAttr =
-            LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
-                                  llvm::sys::path::parent_path(filePath));
-        line = flc.getStartLine();
-      } else {
-        fileAttr = subprogram.getFile();
-      }
+      auto [fileAttr, line] =
+          getFileAndLine(ctx, entry.innerLoc, entry.subprogram);
 
       mlir::Type elemType = entry.isDeclare
                                 ? cast<LLVM::AllocaOp>(entry.op).getElemType()
@@ -138,7 +159,7 @@ struct FinalizeAdaObjectPass
 
       auto diType = makeDIIntType(ctx, intType);
       auto varInfo = LLVM::DILocalVariableAttr::get(
-          subprogram, entry.name, fileAttr, line,
+          entry.subprogram, entry.name, fileAttr, line,
           /*arg=*/0, /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
 
       OpBuilder builder(entry.op);
@@ -151,6 +172,76 @@ struct FinalizeAdaObjectPass
         LLVM::DbgValueOp::create(builder, entry.op->getLoc(),
                                  entry.op->getResult(0), varInfo);
     }
+
+    // Pass 4: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
+    // block args with NameLoc (Ada parameters).
+    //
+    // Pre-build a cache to avoid O(M) symbol-table scans per ptr parameter.
+    llvm::DenseMap<StringAttr, ada::TypeOp> typeOpCache;
+    module.walk([&](ada::TypeOp typeOp) {
+      typeOpCache[typeOp.getSymNameAttr()] = typeOp;
+    });
+
+    OpBuilder builder(ctx);
+    module.walk([&](LLVM::LLVMFuncOp func) {
+      if (func.getBody().empty())
+        return;
+      auto subprogram = getSubprogram(func);
+      if (!subprogram)
+        return;
+
+      Block &entry = func.getBody().front();
+      builder.setInsertionPointToStart(&entry);
+
+      for (BlockArgument arg : entry.getArguments()) {
+        auto nl = dyn_cast<NameLoc>(arg.getLoc());
+        if (!nl)
+          continue;
+
+        unsigned argIdx = arg.getArgNumber();
+        unsigned argNum = argIdx + 1; // 1-based for parameters
+        auto [fileAttr, line] =
+            getFileAndLine(ctx, nl.getChildLoc(), subprogram);
+
+        // Resolve the DI type and declare-vs-value mode for this parameter.
+        LLVM::DITypeAttr diType;
+        bool isDeclare = false;
+        Type argType = arg.getType();
+        if (auto intType = dyn_cast<IntegerType>(argType)) {
+          // Scalar `in` parameter: dbg.value at function entry.
+          diType = makeDIIntType(ctx, intType);
+        } else if (isa<LLVM::LLVMPointerType>(argType)) {
+          // Reference `in out`/`out` parameter: dbg.declare.
+          // Recover the element type from the "ada.type" arg_attr.
+          isDeclare = true;
+          auto typeRef = dyn_cast_or_null<FlatSymbolRefAttr>(
+              func.getArgAttr(argIdx, "ada.type"));
+          if (!typeRef) {
+            func.emitWarning("reference parameter '")
+                << nl.getName().getValue()
+                << "' has no ada.type attr; skipping debug info";
+            continue;
+          }
+          auto it = typeOpCache.find(typeRef.getRootReference());
+          if (it == typeOpCache.end())
+            continue;
+          auto intElemType = dyn_cast<IntegerType>(it->second.getMlirType());
+          if (!intElemType)
+            continue; // silently skip floats and other unsupported types
+          diType = makeDIIntType(ctx, intElemType);
+        } else {
+          continue;
+        }
+
+        auto varInfo = LLVM::DILocalVariableAttr::get(
+            subprogram, nl.getName(), fileAttr, line, argNum,
+            /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
+        if (isDeclare)
+          LLVM::DbgDeclareOp::create(builder, nl, arg, varInfo);
+        else
+          LLVM::DbgValueOp::create(builder, nl, arg, varInfo);
+      }
+    });
   }
 };
 } // namespace

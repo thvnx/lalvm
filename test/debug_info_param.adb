@@ -1,0 +1,30 @@
+-- RUN: %lalvm --emit=llvm %s | %llc -filetype=obj -o %t.o
+-- RUN: %llvm-dwarfdump --debug-info %t.o | %FileCheck %s
+
+-- `in` parameters (scalar) and `out` parameters (reference) both produce
+-- DW_TAG_formal_parameter entries in DWARF, with name and type from NameLoc
+-- and "ada.type" arg_attr.
+
+-- CHECK: DW_TAG_subprogram
+-- CHECK: DW_TAG_formal_parameter
+-- CHECK: DW_AT_name ("A")
+-- CHECK: DW_AT_type ({{.*}} "integer_32")
+-- CHECK: DW_TAG_formal_parameter
+-- CHECK: DW_AT_name ("B")
+-- CHECK: DW_AT_type ({{.*}} "integer_32")
+
+-- CHECK: DW_TAG_subprogram
+-- CHECK: DW_TAG_formal_parameter
+-- CHECK: DW_AT_name ("X")
+-- CHECK: DW_AT_type ({{.*}} "integer_32")
+
+function Test_Param_Debug (A, B : Integer) return Integer is
+   procedure Get_Value (X : out Integer) is
+   begin
+      X := 42;
+   end Get_Value;
+   C : Integer;
+begin
+   Get_Value (C);
+   return A + B + C;
+end Test_Param_Debug;

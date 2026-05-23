@@ -6,29 +6,23 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements AddAdaDebugInfoPass, the first stage of Ada DWARF debug
-// info emission. Emission is split into two stages because MLIR 21 lacks
-// DIEnumeratorAttr and retainedTypes on DICompileUnitAttr, so the final DWARF
-// construction must go through LLVM's native DIBuilder API after MLIR-to-LLVM
-// IR translation.
+// This file implements AddAdaDebugInfoPass, which collects Ada enum type
+// metadata before `ada.type` ops are erased by LowerToLLVM. Emission is split
+// from lowering because MLIR 21 lacks DIEnumeratorAttr and retainedTypes on
+// DICompileUnitAttr, requiring LLVM's native DIBuilder API after translation.
 //
-// Pipeline overview (see lalvm.cpp::dumpLLVMIR for the full sequence):
+// Pipeline overview (see lalvm.cpp::dumpLLVMIR):
 //
-//   lalvm.cpp::dumpLLVMIR owns SmallVector<AdaEnumInfo> enumInfos and
-//   SmallVector<AdaParamInfo> paramInfos and passes them by reference into
-//   applyLoweringPasses, which runs:
-//
-//     AddAdaDebugInfoPass(enumInfos, paramInfos)
-//       -> populate enumInfos from ada.type ops (with subpScope for locally
-//          declared types) and paramInfos from "ada.type" arg_attrs on
-//          ada.subp ops; no IR mutations
-//     LowerToLLVMPass
-//       -> erase ada.type ops and lower remaining Ada ops
+//   AddAdaDebugInfoPass(enumInfos)
+//     -> populate enumInfos from ada.type ops with EnumTypeInfoAttr; no IR
+//        mutations
+//   LowerToLLVMPass
+//     -> lower Ada ops; ada.type ops survive (marked legal)
+//   FinalizeAdaObjectPass
+//     -> emit LLVM debug intrinsics for variables and parameters
 //
 //   After translateModuleToLLVMIR, lalvm.cpp::attachAdaDebugInfo consumes
-//   enumInfos and paramInfos to emit DW_TAG_enumeration_type via
-//   DIBuilder::retainType and DW_TAG_formal_parameter via
-//   DIBuilder::createParameterVariable.
+//   enumInfos to emit DW_TAG_enumeration_type via DIBuilder::retainType.
 //
 //===----------------------------------------------------------------------===//
 
@@ -36,7 +30,6 @@
 #include "ada/Passes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/Location.h"
 #include "mlir/Pass/Pass.h"
 
 using namespace mlir;
@@ -47,9 +40,8 @@ struct AddAdaDebugInfoPass
     : public PassWrapper<AddAdaDebugInfoPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AddAdaDebugInfoPass)
 
-  explicit AddAdaDebugInfoPass(llvm::SmallVector<ada::AdaEnumInfo> &infos,
-                               llvm::SmallVector<ada::AdaParamInfo> &params)
-      : enumInfos(infos), paramInfos(params) {}
+  explicit AddAdaDebugInfoPass(llvm::SmallVector<ada::AdaEnumInfo> &infos)
+      : enumInfos(infos) {}
 
   void runOnOperation() override {
     getOperation().walk([&](ada::TypeOp typeOp) {
@@ -77,34 +69,13 @@ struct AddAdaDebugInfoPass
                            typeOp.getLoc(), std::move(names), std::move(values),
                            std::move(subpScope)});
     });
-
-    getOperation().walk([&](ada::SubpOp subp) {
-      ada::AdaParamInfo info;
-      info.subpScope = subp.getMangledName();
-      for (unsigned i = 0; i < subp.getNumArguments(); ++i) {
-        auto typeRef = mlir::dyn_cast_or_null<mlir::FlatSymbolRefAttr>(
-            subp.getArgAttr(i, "ada.type"));
-        if (!typeRef)
-          continue;
-        mlir::BlockArgument arg = subp.getArgument(i);
-        std::string paramName;
-        if (auto nameLoc = mlir::dyn_cast<mlir::NameLoc>(arg.getLoc()))
-          paramName = nameLoc.getName().str();
-        info.params.push_back(
-            {std::move(paramName), typeRef.getValue().str(), arg.getLoc(), i});
-      }
-      if (!info.params.empty())
-        paramInfos.push_back(std::move(info));
-    });
   }
 
   llvm::SmallVector<ada::AdaEnumInfo> &enumInfos;
-  llvm::SmallVector<ada::AdaParamInfo> &paramInfos;
 };
 } // namespace
 
 std::unique_ptr<mlir::Pass> mlir::ada::createAddAdaDebugInfoPass(
-    llvm::SmallVector<AdaEnumInfo> &enumInfos,
-    llvm::SmallVector<AdaParamInfo> &paramInfos) {
-  return std::make_unique<AddAdaDebugInfoPass>(enumInfos, paramInfos);
+    llvm::SmallVector<AdaEnumInfo> &enumInfos) {
+  return std::make_unique<AddAdaDebugInfoPass>(enumInfos);
 }

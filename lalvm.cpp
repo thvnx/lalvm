@@ -124,17 +124,13 @@ static void setAdaDebugInfo(mlir::ModuleOp module) {
 /// Uses LLVM's DIBuilder API directly since MLIR 21 lacks DIEnumeratorAttr
 /// and retainedTypes on DICompileUnitAttr.
 ///
-/// Two kinds of debug info are emitted:
-///   - DW_TAG_enumeration_type for every AdaEnumInfo (enum type declarations).
-///     Locally-declared types use the enclosing DISubprogram as scope instead
-///     of the compile unit.
-///   - DW_TAG_formal_parameter for every AdaParamInfo entry with a known enum
-///     type, binding the function argument to a DILocalVariable via dbg.value.
+/// Emits DW_TAG_enumeration_type for every AdaEnumInfo (enum type
+/// declarations). Locally-declared types use the enclosing DISubprogram as
+/// scope instead of the compile unit.
 static void
 attachAdaDebugInfo(llvm::Module &llvmModule,
-                   llvm::SmallVector<mlir::ada::AdaEnumInfo> &enumInfos,
-                   llvm::SmallVector<mlir::ada::AdaParamInfo> &paramInfos) {
-  if (enumInfos.empty() && paramInfos.empty())
+                   llvm::SmallVector<mlir::ada::AdaEnumInfo> &enumInfos) {
+  if (enumInfos.empty())
     return;
 
   auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
@@ -159,8 +155,6 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
     return {{}, 0};
   };
 
-  // Build enum types, collecting them in a map for parameter variable emission.
-  llvm::StringMap<llvm::DIType *> typeMap;
   for (auto &info : enumInfos) {
     auto [filePath, line] = getFileAndLine(info.loc);
 
@@ -181,29 +175,6 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
         /*AlignInBits=*/0, db.getOrCreateArray(elems),
         /*UnderlyingType=*/nullptr);
     db.retainType(enumType);
-    typeMap[info.typeName] = enumType;
-  }
-
-  // Emit DW_TAG_formal_parameter for parameters with known enum types.
-  for (auto &info : paramInfos) {
-    auto *fn = llvmModule.getFunction(info.subpScope);
-    if (!fn || !fn->getSubprogram())
-      continue;
-    llvm::DISubprogram *subpMeta = fn->getSubprogram();
-    for (auto &param : info.params) {
-      auto it = typeMap.find(param.typeName);
-      if (it == typeMap.end())
-        continue;
-      auto [filePath, line] = getFileAndLine(param.loc);
-      auto *var = db.createParameterVariable(
-          subpMeta, param.name, param.argIndex + 1, getOrCreateFile(filePath),
-          line, it->second, /*AlwaysPreserve=*/true);
-      auto *loc =
-          llvm::DILocation::get(subpMeta->getContext(), line, 0, subpMeta);
-      db.insertDbgValueIntrinsic(fn->getArg(param.argIndex), var,
-                                 db.createExpression(), loc,
-                                 fn->getEntryBlock().begin());
-    }
   }
 
   db.finalize();
@@ -214,8 +185,7 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
 static int
 applyLoweringPasses(mlir::MLIRContext &context,
                     mlir::OwningOpRef<mlir::ModuleOp> &module,
-                    llvm::SmallVector<mlir::ada::AdaEnumInfo> &enumInfos,
-                    llvm::SmallVector<mlir::ada::AdaParamInfo> &paramInfos) {
+                    llvm::SmallVector<mlir::ada::AdaEnumInfo> &enumInfos) {
   // DI attribute types (DIFileAttr, DICompileUnitAttr, …) belong to the LLVM
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
@@ -225,8 +195,8 @@ applyLoweringPasses(mlir::MLIRContext &context,
   setAdaDebugInfo(*module);
 
   mlir::PassManager pm(module.get()->getName());
-  // Collect Ada type metadata before ada.type ops are erased.
-  pm.addPass(mlir::ada::createAddAdaDebugInfoPass(enumInfos, paramInfos));
+  // Collect Ada enum type metadata before ada.type ops are lowered.
+  pm.addPass(mlir::ada::createAddAdaDebugInfoPass(enumInfos));
   // Promote alloca-backed variables to SSA values where possible.
   pm.addPass(mlir::createMem2Reg());
   // Lower Ada dialect ops to the LLVM dialect.
@@ -244,8 +214,7 @@ applyLoweringPasses(mlir::MLIRContext &context,
 static int dumpLLVMIR(mlir::MLIRContext &context,
                       mlir::OwningOpRef<mlir::ModuleOp> &module) {
   llvm::SmallVector<mlir::ada::AdaEnumInfo> enumInfos;
-  llvm::SmallVector<mlir::ada::AdaParamInfo> paramInfos;
-  if (int error = applyLoweringPasses(context, module, enumInfos, paramInfos))
+  if (int error = applyLoweringPasses(context, module, enumInfos))
     return error;
 
   // Register the translation to LLVM IR with the MLIR context.
@@ -264,7 +233,7 @@ static int dumpLLVMIR(mlir::MLIRContext &context,
   llvmModule->setModuleIdentifier(llvm::sys::path::filename(inputFilename));
   llvmModule->setSourceFileName(inputFilename);
 
-  attachAdaDebugInfo(*llvmModule, enumInfos, paramInfos);
+  attachAdaDebugInfo(*llvmModule, enumInfos);
 
   // Initialize LLVM targets.
   llvm::InitializeNativeTarget();

@@ -16,8 +16,10 @@
 -- LLVM-LABEL: define i32 @_ada_test_param_in(
 -- LLVM-LABEL: define i32 @test_param_in__double(i32
 -- LLVM-NOT:     alloca
+-- LLVM:          #dbg_value(i32 %0,
 -- LLVM:          add i32
 -- LLVM:          ret i32
+-- LLVM:          DILocalVariable(name: "X", arg: 1,
 
 function Test_Param_In return Integer is
    function Double (X : in Integer) return Integer;
