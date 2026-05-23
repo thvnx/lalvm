@@ -8,6 +8,7 @@
 
 #include "llvm/IR/DIBuilder.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/DebugProgramInstruction.h"
 #include "llvm/IR/Module.h"
 
 #include "mlir/IR/AsmState.h"
@@ -155,6 +156,8 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
     return {{}, 0};
   };
 
+  // Build enum types and index them by type name for the placeholder scan.
+  llvm::StringMap<llvm::DICompositeType *> enumTypeByName;
   for (auto &info : enumInfos) {
     auto [filePath, line] = getFileAndLine(info.loc);
 
@@ -174,7 +177,37 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
         llvm::alignTo(info.bitWidth, 8),
         /*AlignInBits=*/0, db.getOrCreateArray(elems),
         /*UnderlyingType=*/nullptr);
-    db.retainType(enumType);
+    enumTypeByName[info.typeName] = enumType;
+  }
+
+  // Replace placeholder DIBasicType entries (named with the Ada type sym_name
+  // by FinalizeAdaObjectPass) with the full DICompositeType in all
+  // DbgVariableRecords across the module.
+  for (auto &F : llvmModule) {
+    for (auto &BB : F) {
+      for (auto &I : BB) {
+        for (llvm::DbgVariableRecord &DVR :
+             llvm::filterDbgVars(I.getDbgRecordRange())) {
+          auto *var = DVR.getVariable();
+          auto *bt = llvm::dyn_cast<llvm::DIBasicType>(var->getType());
+          if (!bt)
+            continue;
+          auto it = enumTypeByName.find(bt->getName());
+          if (it == enumTypeByName.end())
+            continue;
+          llvm::DILocalVariable *newVar;
+          if (var->getArg() > 0)
+            newVar = db.createParameterVariable(var->getScope(), var->getName(),
+                                                var->getArg(), var->getFile(),
+                                                var->getLine(), it->second);
+          else
+            newVar = db.createAutoVariable(var->getScope(), var->getName(),
+                                           var->getFile(), var->getLine(),
+                                           it->second);
+          DVR.setVariable(newVar);
+        }
+      }
+    }
   }
 
   db.finalize();

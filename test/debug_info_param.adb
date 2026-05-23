@@ -8,15 +8,15 @@
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("A")
--- CHECK: DW_AT_type ({{.*}} "integer_32")
+-- CHECK: DW_AT_type ({{.*}} "standard.integer")
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("B")
--- CHECK: DW_AT_type ({{.*}} "integer_32")
+-- CHECK: DW_AT_type ({{.*}} "standard.integer")
 
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("X")
--- CHECK: DW_AT_type ({{.*}} "integer_32")
+-- CHECK: DW_AT_type ({{.*}} "standard.integer")
 
 function Test_Param_Debug (A, B : Integer) return Integer is
    procedure Get_Value (X : out Integer) is

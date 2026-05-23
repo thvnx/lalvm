@@ -55,15 +55,52 @@ using namespace mlir;
 
 namespace {
 
+/// Build a DIBasicTypeAttr from an MLIR type with an explicit name.
+/// Returns null for unsupported MLIR types (not IntegerType or FloatType).
+static LLVM::DIBasicTypeAttr makeDIBasicType(MLIRContext *ctx, StringRef name,
+                                             mlir::Type mlirType) {
+  if (auto intType = dyn_cast<IntegerType>(mlirType)) {
+    unsigned w = intType.getWidth();
+    unsigned enc =
+        (w == 1) ? llvm::dwarf::DW_ATE_boolean : llvm::dwarf::DW_ATE_signed;
+    return LLVM::DIBasicTypeAttr::get(ctx, llvm::dwarf::DW_TAG_base_type, name,
+                                      llvm::alignTo(w, 8), enc);
+  }
+  if (auto floatType = dyn_cast<FloatType>(mlirType))
+    return LLVM::DIBasicTypeAttr::get(ctx, llvm::dwarf::DW_TAG_base_type, name,
+                                      floatType.getWidth(),
+                                      llvm::dwarf::DW_ATE_float);
+  return {};
+}
+
+/// Build a DIBasicTypeAttr for an integer type with a generic "integer_N" name.
 static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
                                            IntegerType intType) {
-  unsigned w = intType.getWidth();
-  unsigned enc =
-      (w == 1) ? llvm::dwarf::DW_ATE_boolean : llvm::dwarf::DW_ATE_signed;
-  unsigned sizeInBits = llvm::alignTo(w, 8);
-  return LLVM::DIBasicTypeAttr::get(ctx, llvm::dwarf::DW_TAG_base_type,
-                                    ("integer_" + llvm::Twine(w)).str(),
-                                    sizeInBits, enc);
+  return makeDIBasicType(
+      ctx, ("integer_" + llvm::Twine(intType.getWidth())).str(), intType);
+}
+
+/// Build a DIBasicTypeAttr using the Ada type name from `typeOp`.
+/// Returns null if the MLIR type is neither IntegerType nor FloatType.
+static LLVM::DIBasicTypeAttr makeDINamedType(MLIRContext *ctx,
+                                             ada::TypeOp typeOp) {
+  return makeDIBasicType(ctx, typeOp.getSymName(), typeOp.getMlirType());
+}
+
+/// Look up a named DI type for `typeRef` in `typeOpCache`.
+/// Returns null if typeRef is null, not in the cache, or has no recognized
+/// Ada type info (NumericTypeInfoAttr or EnumTypeInfoAttr).
+static LLVM::DIBasicTypeAttr
+lookupNamedDIType(MLIRContext *ctx, FlatSymbolRefAttr typeRef,
+                  llvm::DenseMap<StringAttr, ada::TypeOp> &typeOpCache) {
+  if (!typeRef)
+    return {};
+  auto it = typeOpCache.find(typeRef.getRootReference());
+  if (it == typeOpCache.end() ||
+      !isa<ada::NumericTypeInfoAttr, ada::EnumTypeInfoAttr>(
+          it->second.getTypeInfo()))
+    return {};
+  return makeDINamedType(ctx, it->second);
 }
 
 /// Extract the ada.type symbol reference encoded as FusedLoc metadata.
@@ -162,39 +199,8 @@ struct FinalizeAdaObjectPass
           {op, subprogram, nl.getName(), nl.getChildLoc(), isAlloca});
     });
 
-    // Pass 3: emit debug intrinsics.
-    for (auto &entry : entries) {
-      auto [fileAttr, line] =
-          getFileAndLine(ctx, entry.innerLoc, entry.subprogram);
-
-      mlir::Type elemType = entry.isDeclare
-                                ? cast<LLVM::AllocaOp>(entry.op).getElemType()
-                                : entry.op->getResult(0).getType();
-      auto intType = dyn_cast<IntegerType>(elemType);
-      if (!intType)
-        continue; // silently skip floats and other types for now
-
-      auto diType = makeDIIntType(ctx, intType);
-      auto varInfo = LLVM::DILocalVariableAttr::get(
-          entry.subprogram, entry.name, fileAttr, line,
-          /*arg=*/0, /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
-
-      OpBuilder builder(entry.op);
-      builder.setInsertionPointAfter(entry.op);
-      if (entry.isDeclare)
-        LLVM::DbgDeclareOp::create(builder, entry.op->getLoc(),
-                                   cast<LLVM::AllocaOp>(entry.op).getRes(),
-                                   varInfo);
-      else
-        LLVM::DbgValueOp::create(builder, entry.op->getLoc(),
-                                 entry.op->getResult(0), varInfo);
-    }
-
-    // Pass 4: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
-    // block args with NameLoc (Ada parameters).
-    //
-    // Pre-build a cache to avoid O(M) symbol-table scans per ptr parameter.
-    // Also collect enum type metadata into enumInfos for attachAdaDebugInfo.
+    // Build ada.type op cache: avoids O(M) symbol-table scans in Passes 3-4,
+    // and collects enum type metadata into enumInfos for attachAdaDebugInfo.
     llvm::DenseMap<StringAttr, ada::TypeOp> typeOpCache;
     module.walk([&](ada::TypeOp typeOp) {
       StringAttr symName = typeOp.getSymNameAttr();
@@ -222,6 +228,45 @@ struct FinalizeAdaObjectPass
                            std::move(subpScope)});
     });
 
+    // Pass 3: emit debug intrinsics.
+    for (auto &entry : entries) {
+      auto [fileAttr, line] =
+          getFileAndLine(ctx, entry.innerLoc, entry.subprogram);
+
+      mlir::Type elemType = entry.isDeclare
+                                ? cast<LLVM::AllocaOp>(entry.op).getElemType()
+                                : entry.op->getResult(0).getType();
+
+      auto typeRef = getAdaTypeRef(entry.innerLoc);
+      LLVM::DIBasicTypeAttr diType =
+          lookupNamedDIType(ctx, typeRef, typeOpCache);
+      if (!diType) {
+        auto intType = dyn_cast<IntegerType>(elemType);
+        if (!intType)
+          continue; // silently skip floats without type info
+        if (!typeRef)
+          entry.op->emitWarning("'")
+              << entry.name.getValue()
+              << "': no Ada type info; using generic debug type";
+        diType = makeDIIntType(ctx, intType);
+      }
+      auto varInfo = LLVM::DILocalVariableAttr::get(
+          entry.subprogram, entry.name, fileAttr, line,
+          /*arg=*/0, /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
+
+      OpBuilder builder(entry.op);
+      builder.setInsertionPointAfter(entry.op);
+      if (entry.isDeclare)
+        LLVM::DbgDeclareOp::create(builder, entry.op->getLoc(),
+                                   cast<LLVM::AllocaOp>(entry.op).getRes(),
+                                   varInfo);
+      else
+        LLVM::DbgValueOp::create(builder, entry.op->getLoc(),
+                                 entry.op->getResult(0), varInfo);
+    }
+
+    // Pass 4: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
+    // block args with NameLoc (Ada parameters).
     OpBuilder builder(ctx);
     module.walk([&](LLVM::LLVMFuncOp func) {
       if (func.getBody().empty())
@@ -244,12 +289,23 @@ struct FinalizeAdaObjectPass
             getFileAndLine(ctx, nl.getChildLoc(), subprogram);
 
         // Resolve the DI type and declare-vs-value mode for this parameter.
-        LLVM::DITypeAttr diType;
+        LLVM::DIBasicTypeAttr diType;
         bool isDeclare = false;
         Type argType = arg.getType();
-        if (auto intType = dyn_cast<IntegerType>(argType)) {
+        if (isa<IntegerType, FloatType>(argType)) {
           // Scalar `in` parameter: dbg.value at function entry.
-          diType = makeDIIntType(ctx, intType);
+          auto typeRef = getAdaTypeRef(nl.getChildLoc());
+          diType = lookupNamedDIType(ctx, typeRef, typeOpCache);
+          if (!diType) {
+            auto intType = dyn_cast<IntegerType>(argType);
+            if (!intType)
+              continue; // float without type info: skip silently
+            if (!typeRef)
+              func.emitWarning("scalar parameter '")
+                  << nl.getName().getValue()
+                  << "' has no Ada type info; using generic debug type";
+            diType = makeDIIntType(ctx, intType);
+          }
         } else if (isa<LLVM::LLVMPointerType>(argType)) {
           // Reference `in out`/`out` parameter: dbg.declare.
           // Recover the element type from the FusedLoc metadata in the NameLoc
@@ -266,10 +322,16 @@ struct FinalizeAdaObjectPass
           auto it = typeOpCache.find(typeRef.getRootReference());
           if (it == typeOpCache.end())
             continue;
-          auto intElemType = dyn_cast<IntegerType>(it->second.getMlirType());
-          if (!intElemType)
-            continue; // silently skip floats and other unsupported types
-          diType = makeDIIntType(ctx, intElemType);
+          ada::TypeOp typeOp = it->second;
+          if (isa<ada::NumericTypeInfoAttr, ada::EnumTypeInfoAttr>(
+                  typeOp.getTypeInfo()))
+            diType = makeDINamedType(ctx, typeOp);
+          if (!diType) {
+            auto intElemType = dyn_cast<IntegerType>(typeOp.getMlirType());
+            if (!intElemType)
+              continue; // silently skip floats and other unsupported types
+            diType = makeDIIntType(ctx, intElemType);
+          }
         } else {
           continue;
         }
