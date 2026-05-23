@@ -6,9 +6,11 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass emits LLVM debug intrinsics for Ada objects and parameters. It
-// runs after DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available
-// on each llvm.func.
+// This pass emits LLVM debug intrinsics for Ada objects and parameters, and
+// collects Ada enum type metadata from surviving `ada.type` ops into the
+// `enumInfos` out-parameter for use by `attachAdaDebugInfo` in lalvm.cpp.
+// It runs after DIScopeForLLVMFuncOpPass so that DISubprogramAttr is
+// available on each llvm.func.
 //
 // Objects are identified by their NameLoc, set by MLIRGen on:
 //   - memref.alloca (ObjectDecl): lowered to llvm.alloca
@@ -89,6 +91,9 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
 struct FinalizeAdaObjectPass
     : public PassWrapper<FinalizeAdaObjectPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FinalizeAdaObjectPass)
+
+  explicit FinalizeAdaObjectPass(llvm::SmallVector<ada::AdaEnumInfo> &infos)
+      : enumInfos(infos) {}
 
   void runOnOperation() final {
     MLIRContext *ctx = &getContext();
@@ -177,9 +182,32 @@ struct FinalizeAdaObjectPass
     // block args with NameLoc (Ada parameters).
     //
     // Pre-build a cache to avoid O(M) symbol-table scans per ptr parameter.
+    // Also collect enum type metadata into enumInfos for attachAdaDebugInfo.
     llvm::DenseMap<StringAttr, ada::TypeOp> typeOpCache;
     module.walk([&](ada::TypeOp typeOp) {
-      typeOpCache[typeOp.getSymNameAttr()] = typeOp;
+      StringAttr symName = typeOp.getSymNameAttr();
+      typeOpCache[symName] = typeOp;
+
+      auto enumInfo = dyn_cast<ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
+      if (!enumInfo)
+        return;
+      auto intType = dyn_cast<IntegerType>(typeOp.getMlirType());
+      if (!intType)
+        return;
+
+      llvm::SmallVector<std::string> names;
+      for (StringRef name : enumInfo.getNames())
+        names.push_back(name.str());
+      llvm::SmallVector<int64_t> values(enumInfo.getValues().begin(),
+                                        enumInfo.getValues().end());
+
+      std::optional<std::string> subpScope;
+      if (auto func = typeOp->getParentOfType<LLVM::LLVMFuncOp>())
+        subpScope = func.getName().str();
+
+      enumInfos.push_back({symName.getValue().str(), intType.getWidth(),
+                           typeOp.getLoc(), std::move(names), std::move(values),
+                           std::move(subpScope)});
     });
 
     OpBuilder builder(ctx);
@@ -243,9 +271,12 @@ struct FinalizeAdaObjectPass
       }
     });
   }
+
+  llvm::SmallVector<ada::AdaEnumInfo> &enumInfos;
 };
 } // namespace
 
-std::unique_ptr<mlir::Pass> mlir::ada::createFinalizeAdaObjectPass() {
-  return std::make_unique<FinalizeAdaObjectPass>();
+std::unique_ptr<mlir::Pass> mlir::ada::createFinalizeAdaObjectPass(
+    llvm::SmallVector<AdaEnumInfo> &enumInfos) {
+  return std::make_unique<FinalizeAdaObjectPass>(enumInfos);
 }

@@ -24,9 +24,16 @@ class Pass;
 
 namespace ada {
 
-/// Metadata for one Ada enumeration type, collected from an `ada.type` op
-/// before it is erased by LowerToLLVM. Consumed by `attachAdaDebugInfo`
+/// Create a pass for lowering Ada dialect operations to the LLVM dialect.
+std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
+
+/// Metadata for one Ada enumeration type, collected from a surviving
+/// `ada.type` op in `FinalizeAdaObjectPass`. Consumed by `attachAdaDebugInfo`
 /// in lalvm.cpp to emit `DW_TAG_enumeration_type` via LLVM's DIBuilder.
+///
+/// @todo Remove once MLIR gains `DIEnumeratorAttr` support; at that point
+/// enum composite types can be built directly inside `FinalizeAdaObjectPass`
+/// and `attachAdaDebugInfo` can be retired.
 struct AdaEnumInfo {
   std::string typeName;
   unsigned bitWidth;
@@ -38,20 +45,15 @@ struct AdaEnumInfo {
   std::optional<std::string> subpScope;
 };
 
-/// Create a pass that collects Ada enum type metadata into `enumInfos` before
-/// `ada.type` ops are erased by LowerToLLVM. No IR mutations.
-std::unique_ptr<mlir::Pass>
-createAddAdaDebugInfoPass(llvm::SmallVector<AdaEnumInfo> &enumInfos);
-
-/// Create a pass for lowering Ada dialect operations to the LLVM dialect.
-std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
-
 /// Create a pass that emits LLVM debug intrinsics for Ada objects and
 /// parameters: `dbg.declare` for allocas and reference parameters,
-/// `dbg.value` for scalars, named numbers, and value parameters. Must run
-/// after DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on
-/// each llvm.func.
-std::unique_ptr<mlir::Pass> createFinalizeAdaObjectPass();
+/// `dbg.value` for scalars, named numbers, and value parameters. Also
+/// collects Ada enum type metadata into `enumInfos` from surviving `ada.type`
+/// ops for use by `attachAdaDebugInfo`. Must run after
+/// DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on each
+/// llvm.func.
+std::unique_ptr<mlir::Pass>
+createFinalizeAdaObjectPass(llvm::SmallVector<AdaEnumInfo> &enumInfos);
 
 } // namespace ada
 } // namespace mlir

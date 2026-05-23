@@ -41,10 +41,10 @@
 -- LLVM-LABEL: define i1 @e__inner(
 -- Locally-declared Boolean types use the enclosing subprogram as DWARF scope,
 -- not the compile unit.
--- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE1:[0-9]+]],
--- LLVM-DAG: ![[BSCOPE1]] = distinct !DISubprogram(name: "e__inner",
--- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE2:[0-9]+]],
--- LLVM-DAG: ![[BSCOPE2]] = distinct !DISubprogram(name: "e__inner__inner",
+-- LLVM-DAG: ![[BSCOPE1:[0-9]+]] = distinct !DISubprogram(name: "e__inner",
+-- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE1]],
+-- LLVM-DAG: ![[BSCOPE2:[0-9]+]] = distinct !DISubprogram(name: "e__inner__inner",
+-- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE2]],
 -- LLVM: DILocalVariable(name: "B", arg: 1,
 -- LLVM: DILocalVariable(name: "B", arg: 1,
 

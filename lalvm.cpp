@@ -195,16 +195,15 @@ applyLoweringPasses(mlir::MLIRContext &context,
   setAdaDebugInfo(*module);
 
   mlir::PassManager pm(module.get()->getName());
-  // Collect Ada enum type metadata before ada.type ops are lowered.
-  pm.addPass(mlir::ada::createAddAdaDebugInfoPass(enumInfos));
   // Promote alloca-backed variables to SSA values where possible.
   pm.addPass(mlir::createMem2Reg());
   // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
   // Attach DI scope metadata so debuggers can map LLVM IR back to source lines.
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
-  // Emit debug intrinsics for ada.object ops and erase them.
-  pm.addPass(mlir::ada::createFinalizeAdaObjectPass());
+  // Emit debug intrinsics and collect Ada enum type metadata from surviving
+  // ada.type ops.
+  pm.addPass(mlir::ada::createFinalizeAdaObjectPass(enumInfos));
 
   if (mlir::failed(pm.run(*module)))
     return 1;

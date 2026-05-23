@@ -61,7 +61,6 @@ add_llvm_executable(lalvm
   mlir/MLIRGen.cpp
   mlir/Dialect.cpp
   mlir/LowerToLLVM.cpp
-  mlir/AddDebugInfo.cpp
   mlir/AdaToLLVMIRTranslation.cpp
   mlir/FinalizeAdaObject.cpp
   frontend/AST.cpp
