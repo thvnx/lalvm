@@ -465,10 +465,7 @@ private:
       mlir::emitError(loc(node), "failed to evaluate integer literal");
       return std::nullopt;
     }
-    ada_text text;
-    ada_big_integer_text(bigint, &text);
-    std::string literal = libadalang::textToString(text);
-    ada_big_integer_decref(bigint);
+    std::string literal = libadalang::bigIntToString(bigint);
     errno = 0;
     char *endptr;
     int64_t value =
@@ -952,10 +949,7 @@ private:
     case UniversalKind::Int: {
       ada_big_integer bigint;
       if (ada_expr_p_eval_as_int(&expr, &bigint)) {
-        ada_text text;
-        ada_big_integer_text(bigint, &text);
-        std::string s = libadalang::textToString(text);
-        ada_big_integer_decref(bigint);
+        std::string s = libadalang::bigIntToString(bigint);
         errno = 0;
         char *end;
         int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
@@ -1071,10 +1065,7 @@ private:
         if (!ada_expr_p_eval_as_int(&expr, &bigint))
           return mlir::emitError(location,
                                  "failed to evaluate modular type modulus");
-        ada_text text;
-        ada_big_integer_text(bigint, &text);
-        std::string s = libadalang::textToString(text);
-        ada_big_integer_decref(bigint);
+        std::string s = libadalang::bigIntToString(bigint);
         errno = 0;
         char *end;
         modulus = std::strtoull(s.c_str(), &end, 10);
@@ -1149,11 +1140,7 @@ private:
         mlir::emitError(location, "failed to get enum literal rep value");
         return mlir::failure();
       }
-      ada_text text;
-      ada_big_integer_text(bigint, &text);
-      std::string s = libadalang::textToString(text);
-      ada_big_integer_decref(bigint);
-
+      std::string s = libadalang::bigIntToString(bigint);
       errno = 0;
       char *end;
       int64_t val = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));

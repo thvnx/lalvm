@@ -28,6 +28,9 @@ ada_node parent(ada_node *node);
 /// Convert an ada_text to a UTF-8 std::string, freeing the text afterwards.
 std::string textToString(ada_text &text);
 
+/// Convert `bigint` to its decimal string representation, consuming it.
+std::string bigIntToString(ada_big_integer bigint);
+
 /// Wrapper that enables printing an ada_node via operator<<.
 /// Usage: llvm::errs() << libadalang::print(&node);
 struct NodePrinter {

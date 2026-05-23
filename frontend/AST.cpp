@@ -153,6 +153,14 @@ std::string libadalang::textToString(ada_text &text) {
   return result;
 }
 
+std::string libadalang::bigIntToString(ada_big_integer bigint) {
+  ada_text text;
+  ada_big_integer_text(bigint, &text);
+  std::string s = textToString(text);
+  ada_big_integer_decref(bigint);
+  return s;
+}
+
 ada_node libadalang::parent(ada_node *node) {
   ada_node par = {};
   ada_ada_node_parent(node, &par);
