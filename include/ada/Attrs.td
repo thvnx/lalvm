@@ -53,7 +53,10 @@ def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
 def NumericTypeInfoAttr : AttrDef<Ada_Dialect, "NumericTypeInfo"> {
   let mnemonic = "numeric_info";
   let summary = "Numeric type metadata (integer or float)";
-  let assemblyFormat = "";
+  let parameters = (ins
+    OptionalParameter<"uint64_t">:$modulus
+  );
+  let assemblyFormat = "(`<` `mod` `=` $modulus^ `>`)?";
 }
 
 #endif // ADA_ATTRS

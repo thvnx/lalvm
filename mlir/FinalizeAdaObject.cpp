@@ -84,6 +84,13 @@ static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
 /// Returns null if the MLIR type is neither IntegerType nor FloatType.
 static LLVM::DIBasicTypeAttr makeDINamedType(MLIRContext *ctx,
                                              ada::TypeOp typeOp) {
+  // Modular types use DW_ATE_unsigned instead of DW_ATE_signed.
+  if (auto numInfo = dyn_cast<ada::NumericTypeInfoAttr>(typeOp.getTypeInfo()))
+    if (numInfo.getModulus())
+      return LLVM::DIBasicTypeAttr::get(
+          ctx, llvm::dwarf::DW_TAG_base_type, typeOp.getSymName(),
+          llvm::alignTo(cast<IntegerType>(typeOp.getMlirType()).getWidth(), 8),
+          llvm::dwarf::DW_ATE_unsigned);
   return makeDIBasicType(ctx, typeOp.getSymName(), typeOp.getMlirType());
 }
 

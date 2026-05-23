@@ -1049,13 +1049,56 @@ private:
     // Universal types (RM 3.4.1) and numeric types (RM 3.5.4, 3.5.6, 3.5.7).
     if (libadalang::isUniversalTypeDecl(type_decl) ||
         libadalang::isNumericTypeDecl(type_decl)) {
-      mlir::Type mlirType = getMLIRTypeFromDecl(type_decl, location);
-      if (!mlirType)
-        return mlir::failure();
       auto typeName = resolveTypeName();
       if (mlir::failed(typeName))
         return mlir::failure();
-      auto typeInfo = mlir::ada::NumericTypeInfoAttr::get(builder.getContext());
+
+      mlir::Type mlirType;
+      uint64_t modulus = 0;
+      ada_node type_def;
+      if (ada_type_decl_f_type_def(&type_decl, &type_def) &&
+          !ada_node_is_null(&type_def) &&
+          ada_node_kind(&type_def) == ada_mod_int_type_def) {
+        ada_node expr;
+        ada_mod_int_type_def_f_expr(&type_def, &expr);
+        ada_bool isStatic = false;
+        if (!ada_expr_p_is_static_expr(&expr, /*imprecise_fallback=*/false,
+                                       &isStatic) ||
+            !isStatic)
+          return mlir::emitError(
+              location, "modular type modulus is not a static expression");
+        ada_big_integer bigint;
+        if (!ada_expr_p_eval_as_int(&expr, &bigint))
+          return mlir::emitError(location,
+                                 "failed to evaluate modular type modulus");
+        ada_text text;
+        ada_big_integer_text(bigint, &text);
+        std::string s = libadalang::textToString(text);
+        ada_big_integer_decref(bigint);
+        errno = 0;
+        char *end;
+        modulus = std::strtoull(s.c_str(), &end, 10);
+        if (end == s.c_str())
+          return mlir::emitError(location,
+                                 "failed to parse modular type modulus '")
+                 << s << "'";
+        if (errno == ERANGE)
+          return mlir::emitError(location,
+                                 "modular type modulus out of range: ")
+                 << s;
+        unsigned width = modulus <= (1ULL << 8)    ? 8
+                         : modulus <= (1ULL << 16) ? 16
+                         : modulus <= (1ULL << 32) ? 32
+                                                   : 64;
+        mlirType = builder.getIntegerType(width);
+      } else {
+        mlirType = getMLIRTypeFromDecl(type_decl, location);
+        if (!mlirType)
+          return mlir::failure();
+      }
+
+      auto typeInfo =
+          mlir::ada::NumericTypeInfoAttr::get(builder.getContext(), modulus);
       auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
                                                       mlirType, typeInfo);
       typeDecls[type_decl.node] = typeOp;
@@ -1569,8 +1612,21 @@ private:
     // literal count. Until representation clauses are supported,
     // emitIntConstant will catch out-of-range rep values and report an error.
     ada_node type_def;
-    if (ada_type_decl_f_type_def(&canon_type, &type_def) &&
-        !ada_node_is_null(&type_def) &&
+    if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
+        ada_node_is_null(&type_def))
+      type_def = {};
+
+    if (!ada_node_is_null(&type_def) &&
+        ada_node_kind(&type_def) == ada_mod_int_type_def) {
+      auto it = typeDecls.find(canon_type.node);
+      if (it == typeDecls.end()) {
+        mlir::emitError(diagLoc, "modular type used before its declaration");
+        return {};
+      }
+      return it->second.getMlirType();
+    }
+
+    if (!ada_node_is_null(&type_def) &&
         ada_node_kind(&type_def) == ada_enum_type_def) {
       ada_node literals;
       ada_enum_type_def_f_enum_literals(&type_def, &literals);
