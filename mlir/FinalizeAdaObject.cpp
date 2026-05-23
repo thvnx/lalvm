@@ -66,9 +66,21 @@ static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
                                     sizeInBits, enc);
 }
 
+/// Extract the ada.type symbol reference encoded as FusedLoc metadata.
+/// Returns a null attr if `loc` is not a FusedLoc with FlatSymbolRefAttr
+/// metadata (i.e. no ada type info was encoded for this object).
+static FlatSymbolRefAttr getAdaTypeRef(Location loc) {
+  if (auto fl = dyn_cast<FusedLoc>(loc))
+    return dyn_cast_or_null<FlatSymbolRefAttr>(fl.getMetadata());
+  return {};
+}
+
 static std::pair<LLVM::DIFileAttr, unsigned>
 getFileAndLine(MLIRContext *ctx, Location loc,
                LLVM::DISubprogramAttr subprogram) {
+  // Unwrap FusedLoc that may carry ada.type metadata.
+  if (auto fl = dyn_cast<FusedLoc>(loc))
+    loc = fl.getLocations().front();
   if (auto flc = dyn_cast<FileLineColRange>(loc)) {
     StringRef filePath = flc.getFilename().getValue();
     return {LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
@@ -240,14 +252,15 @@ struct FinalizeAdaObjectPass
           diType = makeDIIntType(ctx, intType);
         } else if (isa<LLVM::LLVMPointerType>(argType)) {
           // Reference `in out`/`out` parameter: dbg.declare.
-          // Recover the element type from the "ada.type" arg_attr.
+          // Recover the element type from the FusedLoc metadata in the NameLoc
+          // child (encoded by MLIRGen; survives lowering because locs are
+          // preserved verbatim by standard conversion patterns).
           isDeclare = true;
-          auto typeRef = dyn_cast_or_null<FlatSymbolRefAttr>(
-              func.getArgAttr(argIdx, "ada.type"));
+          auto typeRef = getAdaTypeRef(nl.getChildLoc());
           if (!typeRef) {
             func.emitWarning("reference parameter '")
                 << nl.getName().getValue()
-                << "' has no ada.type attr; skipping debug info";
+                << "' has no type info; skipping debug info";
             continue;
           }
           auto it = typeOpCache.find(typeRef.getRootReference());

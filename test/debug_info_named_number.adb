@@ -8,8 +8,8 @@
 
 -- MLIR-LABEL: ada.subp @test_named_number_dbg
 -- MLIR-SAME:    () -> i32
--- MLIR:         arith.constant {ada.type = @standard.universal_int_type_} 200 : i64 loc("max"(
--- MLIR:         %[[MAX:.*]] = arith.constant {ada.type = @standard.integer} 200 : i32
+-- MLIR:         arith.constant 200 : i64 loc("max"(fused<@standard.universal_int_type_>[
+-- MLIR:         %[[MAX:.*]] = arith.constant 200 : i32
 -- MLIR:         ada.return %[[MAX]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_named_number_dbg(

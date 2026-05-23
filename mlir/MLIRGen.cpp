@@ -102,19 +102,26 @@ private:
     return builder.getStringAttr(libadalang::getName(node));
   }
 
-  /// Set the `"ada.type"` attribute on `op` to reference `typeOp`'s symbol.
-  void setAdaTypeAttr(mlir::Operation *op, mlir::ada::TypeOp typeOp) {
-    op->setAttr("ada.type", mlir::FlatSymbolRefAttr::get(op->getContext(),
-                                                         typeOp.getSymName()));
+  /// Return `loc` wrapped in a FusedLoc carrying `typeOp`'s symbol as metadata.
+  /// The info survives MLIR conversion since locations are preserved verbatim.
+  mlir::Location makeAdaTypeLoc(mlir::Location loc, mlir::ada::TypeOp typeOp) {
+    auto *ctx = loc.getContext();
+    auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
+    return mlir::FusedLoc::get(ctx, {loc}, typeRef);
+  }
+
+  /// Wrap `op`'s location in a FusedLoc carrying `typeOp`'s symbol as
+  /// metadata. The info survives MLIR conversion since locations are preserved.
+  void setAdaTypeLoc(mlir::Operation *op, mlir::ada::TypeOp typeOp) {
+    op->setLoc(makeAdaTypeLoc(op->getLoc(), typeOp));
   }
 
   /// Attach an Ada source name and type reference to `op`.
-  /// Pairs `name` with the operation's existing location in a NameLoc and
-  /// sets the `"ada.type"` attribute, so neither is accidentally omitted.
+  /// Encodes the type reference as FusedLoc metadata in the NameLoc inner
+  /// location so the info survives MLIR conversion patterns.
   void setAdaNameLoc(mlir::Operation *op, mlir::StringAttr name,
                      mlir::ada::TypeOp typeOp) {
-    op->setLoc(mlir::NameLoc::get(name, op->getLoc()));
-    setAdaTypeAttr(op, typeOp);
+    op->setLoc(mlir::NameLoc::get(name, makeAdaTypeLoc(op->getLoc(), typeOp)));
   }
 
   // Maps each DefiningName node to its current SSA Value. The key is the
@@ -386,7 +393,7 @@ private:
       if (ada_expr_p_expression_type(&binop, &type_decl) &&
           !ada_node_is_null(&type_decl))
         if (auto typeOp = lookupOrEmitTypeOp(type_decl, loc(binop)))
-          setAdaTypeAttr(val.getDefiningOp(), typeOp);
+          setAdaTypeLoc(val.getDefiningOp(), typeOp);
     }
     return val;
   }
@@ -498,7 +505,7 @@ private:
         emitIntConstant(*value, mlir::cast<mlir::IntegerType>(type), location);
     if (val)
       if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
-        setAdaTypeAttr(val.getDefiningOp(), typeOp);
+        setAdaTypeLoc(val.getDefiningOp(), typeOp);
     return val;
   }
 
@@ -549,7 +556,7 @@ private:
         emitRealConstant(*value, mlir::cast<mlir::FloatType>(type), location);
     if (val)
       if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
-        setAdaTypeAttr(val.getDefiningOp(), typeOp);
+        setAdaTypeLoc(val.getDefiningOp(), typeOp);
     return val;
   }
 
@@ -728,7 +735,7 @@ private:
       auto callOp = builder.create<mlir::ada::CallOp>(
           callLoc, calleeName.data(), retType, args);
       if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
-        setAdaTypeAttr(callOp, typeOp);
+        setAdaTypeLoc(callOp, typeOp);
       return callOp;
     }
 
@@ -774,7 +781,7 @@ private:
                                     loc(typeContext));
         if (val)
           if (auto typeOp = lookupOrEmitTypeOp(typDecl, loc(typeContext)))
-            setAdaTypeAttr(val.getDefiningOp(), typeOp);
+            setAdaTypeLoc(val.getDefiningOp(), typeOp);
         return val;
       }
       case ada_bin_op: {
@@ -844,7 +851,7 @@ private:
             }
             if (useVal)
               if (auto typeOp = lookupOrEmitTypeOp(typDecl, loc(expr)))
-                setAdaTypeAttr(useVal.getDefiningOp(), typeOp);
+                setAdaTypeLoc(useVal.getDefiningOp(), typeOp);
             return useVal;
           }
           ada_node fallbackExpr = info.expr;
@@ -1303,8 +1310,12 @@ private:
       return nullptr;
     mlir::Block *entryBlock = &op->getRegion(0).front();
 
-    // Collect (id, mode) pairs for all parameters.
-    using ParamEntry = std::pair<ada_node, ada_node_kind_enum>;
+    // Collect (id, mode, typeDecl) triples for all parameters.
+    struct ParamEntry {
+      ada_node id;
+      ada_node_kind_enum mode;
+      ada_node typeDecl;
+    };
     llvm::SmallVector<ParamEntry, 4> args_v;
 
     ada_node_array params;
@@ -1316,6 +1327,11 @@ private:
       ada_param_spec_f_mode(&params->items[i], &mode_node);
       ada_node_kind_enum mode = ada_node_kind(&mode_node);
 
+      ada_node type_expr;
+      ada_param_spec_f_type_expr(&params->items[i], &type_expr);
+      ada_node typeDecl{};
+      ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
+
       ada_param_spec_f_ids(&params->items[i], &ids);
       for (unsigned int j = 0; j < ada_node_children_count(&ids); j++) {
         ada_node child;
@@ -1324,7 +1340,7 @@ private:
           mlir::emitError(loc(ids), "failed to get parameter identifier");
           return nullptr;
         }
-        args_v.push_back({child, mode});
+        args_v.push_back({child, mode, typeDecl});
       }
     }
     ada_node_array_dec_ref(params);
@@ -1336,12 +1352,22 @@ private:
     // alloca pointer; stores to them are immediately visible at the call site.
     // `out` parameters are additionally marked uninitialized.
     for (auto [entry, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
-      auto [id, mode] = entry;
-      arg.setLoc(mlir::NameLoc::get(
-          builder.getStringAttr(libadalang::getName(&id, false)), loc(id)));
-      if (mode == ada_mode_out)
+      auto nameAttr =
+          builder.getStringAttr(libadalang::getName(&entry.id, false));
+      mlir::Location srcLoc = loc(entry.id);
+      mlir::ada::TypeOp typeOp;
+      if (!ada_node_is_null(&entry.typeDecl) &&
+          (libadalang::isEnumTypeDecl(entry.typeDecl) ||
+           libadalang::isNumericTypeDecl(entry.typeDecl)))
+        typeOp = lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
+      if (typeOp)
+        arg.setLoc(
+            mlir::NameLoc::get(nameAttr, makeAdaTypeLoc(srcLoc, typeOp)));
+      else
+        arg.setLoc(mlir::NameLoc::get(nameAttr, srcLoc));
+      if (entry.mode == ada_mode_out)
         uninitAllocas.insert(arg);
-      declare(id, arg);
+      declare(entry.id, arg);
     }
 
     ada_node decls;
@@ -1424,23 +1450,12 @@ private:
     ada_node ids;
     ada_base_subp_spec_p_params(&subp_spec, &params);
 
-    // Collect one (typeDecl, loc) entry per identifier before releasing the
-    // array. One entry per id (not per spec) so each carries its own loc.
-    struct ParamEntry {
-      ada_node typeDecl;
-      mlir::Location loc;
-    };
-    llvm::SmallVector<ParamEntry, 4> paramEntries;
-
     llvm::SmallVector<mlir::Type, 4> argTypes;
     for (int i = 0; i < params->n; i++) {
       ada_node type_expr;
       ada_param_spec_f_type_expr(&params->items[i], &type_expr);
       mlir::Type paramType = getMLIRType(type_expr);
       ada_param_spec_f_ids(&params->items[i], &ids);
-
-      ada_node typeDecl{};
-      ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
 
       ada_node mode_node;
       ada_param_spec_f_mode(&params->items[i], &mode_node);
@@ -1449,13 +1464,8 @@ private:
       mlir::Type argType =
           writable ? mlir::MemRefType::get({}, paramType) : paramType;
 
-      for (unsigned j = 0; j < ada_node_children_count(&ids); j++) {
+      for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
         argTypes.push_back(argType);
-        ada_node child;
-        mlir::Location childLoc =
-            (ada_node_child(&ids, j, &child) != 0) ? loc(child) : loc(ids);
-        paramEntries.push_back({typeDecl, childLoc});
-      }
     }
     ada_node_array_dec_ref(params);
 
@@ -1475,21 +1485,6 @@ private:
     auto funcType = builder.getFunctionType(argTypes, retTypes);
     auto subpOp = builder.create<mlir::ada::SubpOp>(
         location, libadalang::getName(&name).data(), funcType);
-
-    mlir::MLIRContext *ctx = builder.getContext();
-    for (auto [argIdx, entry] : llvm::enumerate(paramEntries)) {
-      // Set ada.type attr for parameters with enum or numeric types.
-      if (ada_node_is_null(&entry.typeDecl))
-        continue;
-      if (!libadalang::isEnumTypeDecl(entry.typeDecl) &&
-          !libadalang::isNumericTypeDecl(entry.typeDecl))
-        continue;
-      auto typeOp = lookupOrEmitTypeOp(entry.typeDecl, entry.loc);
-      if (!typeOp)
-        return nullptr;
-      subpOp.setArgAttr(argIdx, "ada.type",
-                        mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName()));
-    }
 
     return subpOp;
   }

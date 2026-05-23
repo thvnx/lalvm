@@ -3,7 +3,7 @@
 
 -- `in` parameters (scalar) and `out` parameters (reference) both produce
 -- DW_TAG_formal_parameter entries in DWARF, with name and type from NameLoc
--- and "ada.type" arg_attr.
+-- and FusedLoc metadata.
 
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter

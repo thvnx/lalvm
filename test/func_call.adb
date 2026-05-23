@@ -4,7 +4,7 @@
 -- MLIR-LABEL: ada.subp @caller(
 -- MLIR:         ada.subp @callee(
 -- MLIR:           ada.return %{{.*}} : i32
--- MLIR:         %[[V:.*]] = ada.call @callee(%arg0, %arg1) {ada.type = @standard.integer} : (i32, i32) -> i32
+-- MLIR:         %[[V:.*]] = ada.call @callee(%arg0, %arg1) : (i32, i32) -> i32
 -- MLIR:         ada.return %[[V]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_caller(

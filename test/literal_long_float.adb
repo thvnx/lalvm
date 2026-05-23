@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_long_float_literal
 -- MLIR-SAME:    () -> f64
--- MLIR:         %{{.*}} = arith.constant {ada.type = @standard.long_float} 1.000000e+00 : f64
+-- MLIR:         %{{.*}} = arith.constant 1.000000e+00 : f64
 -- MLIR-NEXT:    ada.return %{{.*}} : f64
 
 -- LLVM-LABEL: define double @_ada_test_long_float_literal(

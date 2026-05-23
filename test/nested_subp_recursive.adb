@@ -8,9 +8,9 @@
 
 -- MLIR-LABEL: ada.subp @p() -> i32
 -- MLIR:         ada.subp @inner(
--- MLIR:           %[[R:.*]] = ada.call @inner(%{{.*}}) {ada.type = @standard.integer} : (i32) -> i32
+-- MLIR:           %[[R:.*]] = ada.call @inner(%{{.*}}) : (i32) -> i32
 -- MLIR:           ada.return %[[R]] : i32
--- MLIR:         ada.call @inner(%{{.*}}) {ada.type = @standard.integer} : (i32) -> i32
+-- MLIR:         ada.call @inner(%{{.*}}) : (i32) -> i32
 
 -- LLVM-LABEL: define i32 @_ada_p(
 -- LLVM:          call i32 @p__inner(

@@ -6,10 +6,10 @@
 -- are Ada operator notation, escaped as \22 in MLIR symbol names).
 
 -- MLIR-LABEL: ada.subp @test_operator
--- MLIR:         ada.subp @"\22*\22"(%{{.*}}: i32 {ada.type = @standard.integer}, %{{.*}}: i32 {ada.type = @standard.integer}) -> i32
--- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} {ada.type = @standard.integer} : i32
+-- MLIR:         ada.subp @"\22*\22"(%{{.*}}: i32, %{{.*}}: i32) -> i32
+-- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : i32
 -- MLIR-NEXT:      ada.return %[[SUM]] : i32
--- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} {ada.type = @standard.integer} : i32
+-- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} : i32
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 

@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_float_literal
 -- MLIR-SAME:    () -> f32
--- MLIR:         %{{.*}} = arith.constant {ada.type = @standard.float} 1.000000e+00 : f32
+-- MLIR:         %{{.*}} = arith.constant 1.000000e+00 : f32
 -- MLIR-NEXT:    ada.return %{{.*}} : f32
 
 -- LLVM-LABEL: define float @_ada_test_float_literal(
