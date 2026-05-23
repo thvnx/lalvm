@@ -201,47 +201,47 @@ private:
   // everything else is ignored at this level and its children are visited.
   // Returning early (without visiting children) stops descent into a subtree
   // (used when a handler already walked it, e.g. mlirGenSubpBody visits stmts).
-  mlir::LogicalResult visit(ada_node &moduleAST) {
+  mlir::LogicalResult visit(ada_node &node) {
     ada_bool isEntryPoint = 0;
-    if (ada_ada_node_p_xref_entry_point(&moduleAST, &isEntryPoint) &&
-        isEntryPoint && libadalang::emitSolverDiagnostics(&moduleAST))
+    if (ada_ada_node_p_xref_entry_point(&node, &isEntryPoint) && isEntryPoint &&
+        libadalang::emitSolverDiagnostics(&node))
       return mlir::failure();
 
-    switch (ada_node_kind(&moduleAST)) {
+    switch (ada_node_kind(&node)) {
     case ada_subp_body:
       // Top-level subprograms are emitted at module scope. The insertion point
       // is set here rather than inside mlirGenSubpBody so that nested
       // subprograms (processed via mlirGenDeclarativePart) are instead emitted
       // at the current insertion point inside the enclosing body region.
       builder.setInsertionPointToEnd(adaModule.getBody());
-      if (!mlirGenSubpBody(moduleAST))
+      if (!mlirGenSubpBody(node))
         return mlir::failure();
       return mlir::success();
     case ada_return_stmt:
-      return mlirGenReturn(moduleAST);
+      return mlirGenReturn(node);
     case ada_assign_stmt:
-      if (mlir::failed(mlirGenAssign(moduleAST)))
+      if (mlir::failed(mlirGenAssign(node)))
         return mlir::failure();
       return mlir::success();
     case ada_null_stmt:
-      builder.create<mlir::ada::NullOp>(loc(moduleAST));
+      builder.create<mlir::ada::NullOp>(loc(node));
       return mlir::success();
     case ada_call_stmt:
-      return mlirGenCallStmt(moduleAST);
+      return mlirGenCallStmt(node);
     case ada_named_stmt: {
       // Named block statement: "Name: [declare] begin ... end Name;"
       // The name lives on the wrapping named_stmt; the actual block is f_stmt.
       ada_node decl, nameNode, stmt;
-      ada_named_stmt_f_decl(&moduleAST, &decl);
+      ada_named_stmt_f_decl(&node, &decl);
       ada_named_stmt_decl_f_name(&decl, &nameNode);
-      ada_named_stmt_f_stmt(&moduleAST, &stmt);
+      ada_named_stmt_f_stmt(&node, &stmt);
       ada_text nameText;
       ada_node_text(&nameNode, &nameText);
       return mlirGenBlockStmt(stmt, libadalang::textToString(nameText));
     }
     case ada_begin_block:
     case ada_decl_block:
-      return mlirGenBlockStmt(moduleAST, {});
+      return mlirGenBlockStmt(node, {});
     case ada_compilation_unit:
     case ada_ada_node_list:
     case ada_library_item:
@@ -254,17 +254,17 @@ private:
       break;
     default: {
       // TODO: turn this into an Error when lalvm is mature enough.
-      mlir::emitWarning(loc(moduleAST), "visit: unhandled node '")
-          << libadalang::image(&moduleAST) << "'";
+      mlir::emitWarning(loc(node), "visit: unhandled node '")
+          << libadalang::image(&node) << "'";
       break;
     }
     }
 
-    unsigned i, count = ada_node_children_count(&moduleAST);
+    unsigned i, count = ada_node_children_count(&node);
     for (i = 0; i < count; ++i) {
       ada_node child;
-      if (ada_node_child(&moduleAST, i, &child) == 0) {
-        mlir::emitError(loc(moduleAST), "failed to get child node");
+      if (ada_node_child(&node, i, &child) == 0) {
+        mlir::emitError(loc(node), "failed to get child node");
         return mlir::failure();
       }
       if (!ada_node_is_null(&child) && mlir::failed(visit(child)))
