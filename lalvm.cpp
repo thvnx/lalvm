@@ -27,6 +27,7 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/InitLLVM.h"
@@ -111,11 +112,10 @@ static void setAdaDebugInfo(mlir::ModuleOp module) {
       mlir::LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
                                   llvm::sys::path::parent_path(filePath));
 
-  // DW_LANG_Ada2012 = 0x002f (DWARF5, §7.12 table 7.17)
-  constexpr unsigned kDW_LANG_Ada2012 = 0x002f;
   auto cuAttr = mlir::LLVM::DICompileUnitAttr::get(
-      mlir::DistinctAttr::create(mlir::UnitAttr::get(ctx)), kDW_LANG_Ada2012,
-      fileAttr, mlir::StringAttr::get(ctx, "lalvm"),
+      mlir::DistinctAttr::create(mlir::UnitAttr::get(ctx)),
+      llvm::dwarf::DW_LANG_Ada2012, fileAttr,
+      mlir::StringAttr::get(ctx, "lalvm"),
       /*isOptimized=*/false, mlir::LLVM::DIEmissionKind::Full);
 
   module->setLoc(mlir::FusedLoc::get(ctx, {module.getLoc()}, cuAttr));
