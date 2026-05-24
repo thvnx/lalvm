@@ -76,10 +76,10 @@ struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
   }
 };
 
-struct BlockStmtOpLowering : public OpRewritePattern<ada::BlockStmtOp> {
-  using OpRewritePattern<ada::BlockStmtOp>::OpRewritePattern;
+struct BlockOpLowering : public OpRewritePattern<ada::BlockOp> {
+  using OpRewritePattern<ada::BlockOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(ada::BlockStmtOp op,
+  LogicalResult matchAndRewrite(ada::BlockOp op,
                                 PatternRewriter &rewriter) const final {
     Block &body = op.getBody().front();
     // Move all ops into the parent block, just before this op.
@@ -257,7 +257,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
   populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<NullOpLowering, BlockStmtOpLowering, ReturnOpLowering,
+  patterns.add<NullOpLowering, BlockOpLowering, ReturnOpLowering,
                CallOpLowering, BinOpLowering, SubpOpLowering>(&getContext());
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This

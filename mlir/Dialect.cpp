@@ -321,7 +321,7 @@ void ReturnOp::print(mlir::OpAsmPrinter &p) {
 llvm::LogicalResult ReturnOp::verify() {
   // Walk up through any enclosing block statements to find the subprogram.
   mlir::Operation *parent = (*this)->getParentOp();
-  while (parent && mlir::isa<BlockStmtOp>(parent))
+  while (parent && mlir::isa<BlockOp>(parent))
     parent = parent->getParentOp();
   auto subp = mlir::dyn_cast<SubpOp>(parent);
   if (!subp)

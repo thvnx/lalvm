@@ -2,8 +2,8 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_block
--- MLIR:         ada.block_stmt "Outer" {
--- MLIR:         ada.block_stmt {
+-- MLIR:         ada.block "Outer" {
+-- MLIR:         ada.block {
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @_ada_test_block(

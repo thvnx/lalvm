@@ -11,7 +11,7 @@
 -- MLIR:         %[[INIT_V:.*]] = arith.constant 3 : i32
 -- MLIR:         %[[V_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR:         memref.store %[[INIT_V]], %[[V_PTR]][] : memref<i32>
--- MLIR:         ada.block_stmt "Swap" {
+-- MLIR:         ada.block "Swap" {
 -- MLIR:           %[[T_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR:           %[[V0:.*]] = memref.load %[[V_PTR]][] : memref<i32>
 -- MLIR:           memref.store %[[V0]], %[[T_PTR]][] : memref<i32>
@@ -23,7 +23,7 @@
 -- MLIR:         %[[U1:.*]] = memref.load %[[U_PTR]][] : memref<i32>
 -- MLIR:         ada.return %[[U1]] : i32
 
--- LLVM mem2reg cannot cross the ada.block_stmt region boundary, so the
+-- LLVM mem2reg cannot cross the ada.block region boundary, so the
 -- alloca for U survives lowering. The function still returns the correct
 -- runtime value (original V = 3) through a load of the swapped alloca.
 -- LLVM-LABEL: define i32 @_ada_test(

@@ -138,7 +138,7 @@ def NullOp : Ada_Op<"null", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// BlockStmtOp
+// BlockOp
 //===----------------------------------------------------------------------===//
 
 // Represents an Ada block statement (RM 5.6): an inline scope that may
@@ -147,7 +147,7 @@ def NullOp : Ada_Op<"null", [Pure]> {
 // enclosing function are directly accessible. NoTerminator+SingleBlock waive
 // the need for an explicit terminator op. During lowering the region contents
 // are inlined into the parent block and the op is erased.
-def BlockStmtOp : Ada_Op<"block_stmt", [NoTerminator, SingleBlock]> {
+def BlockOp : Ada_Op<"block", [NoTerminator, SingleBlock]> {
   let summary = "Ada block statement with its own declarative scope";
   let arguments = (ins OptionalAttr<StrAttr>:$name);
   let regions = (region AnyRegion:$body);

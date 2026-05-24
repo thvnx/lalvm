@@ -257,11 +257,11 @@ private:
       ada_named_stmt_f_stmt(&node, &stmt);
       ada_text nameText;
       ada_node_text(&nameNode, &nameText);
-      return mlirGenBlockStmt(stmt, libadalang::textToString(nameText));
+      return mlirGenBlock(stmt, libadalang::textToString(nameText));
     }
     case ada_begin_block:
     case ada_decl_block:
-      return mlirGenBlockStmt(node, {});
+      return mlirGenBlock(node, {});
     case ada_compilation_unit:
     case ada_ada_node_list:
     case ada_library_item:
@@ -1441,18 +1441,16 @@ private:
   }
 
   /// Lower an Ada block statement (ada_begin_block or ada_decl_block) to an
-  /// ada.block_stmt op. The block's declarative part (if any) and statements
+  /// ada.block op. The block's declarative part (if any) and statements
   /// are emitted into the op's region; a new symbol table scope is opened for
   /// the duration so that local declarations are invisible outside the block.
-  mlir::LogicalResult mlirGenBlockStmt(ada_node &blockNode,
-                                       llvm::StringRef name) {
+  mlir::LogicalResult mlirGenBlock(ada_node &blockNode, llvm::StringRef name) {
     bool isDecl = ada_node_kind(&blockNode) == ada_decl_block;
 
     mlir::StringAttr nameAttr =
         name.empty() ? mlir::StringAttr{}
                      : mlir::StringAttr::get(builder.getContext(), name);
-    auto blockOp =
-        builder.create<mlir::ada::BlockStmtOp>(loc(blockNode), nameAttr);
+    auto blockOp = builder.create<mlir::ada::BlockOp>(loc(blockNode), nameAttr);
 
     // Create the entry block of the region; the builder now inserts into it.
     builder.createBlock(&blockOp.getBody());
@@ -1475,7 +1473,7 @@ private:
     if (mlir::failed(visit(stmts)))
       return mlir::failure();
 
-    // Restore the insertion point to after the block_stmt in the parent block.
+    // Restore the insertion point to after the ada.block in the parent block.
     builder.setInsertionPointAfter(blockOp);
 
     return mlir::success();
