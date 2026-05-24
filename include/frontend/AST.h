@@ -77,6 +77,7 @@ inline const ada_node kNullOrigin{};
 constexpr llvm::StringLiteral kUniversalIntTypeName = "universal_int_type_";
 constexpr llvm::StringLiteral kUniversalRealTypeName = "universal_real_type_";
 
+bool isBaseTypeDecl(ada_node &node);
 bool isEnumTypeDecl(ada_node &typeDecl);
 bool isUniversalTypeDecl(ada_node &typeDecl);
 bool isNumericTypeDecl(ada_node &typeDecl);

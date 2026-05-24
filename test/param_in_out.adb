@@ -22,7 +22,7 @@
 -- LLVM:          add i32
 -- LLVM:          store i32
 -- LLVM:          ret void
--- LLVM:          DILocalVariable(name: "X", arg: 1,
+-- LLVM:          DILocalVariable(name: "x", arg: 1,
 
 function Test_Param_In_Out return Integer is
    procedure Increment (X : in out Integer);

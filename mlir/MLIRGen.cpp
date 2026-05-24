@@ -52,6 +52,27 @@ using llvm::SmallVector;
 
 namespace {
 
+/// DenseMapInfo for ada_node: identity is the raw node pointer; entity info
+/// (rebindings) is ignored for map purposes.
+struct AdaNodeDenseMapInfo {
+  static ada_node getEmptyKey() {
+    return {
+        static_cast<ada_base_node>(llvm::DenseMapInfo<void *>::getEmptyKey()),
+        {}};
+  }
+  static ada_node getTombstoneKey() {
+    return {static_cast<ada_base_node>(
+                llvm::DenseMapInfo<void *>::getTombstoneKey()),
+            {}};
+  }
+  static unsigned getHashValue(const ada_node &n) {
+    return llvm::DenseMapInfo<ada_base_node>::getHashValue(n.node);
+  }
+  static bool isEqual(const ada_node &a, const ada_node &b) {
+    return a.node == b.node;
+  }
+};
+
 /// Walks a Libadalang AST and emits Ada dialect MLIR operations into a module
 /// (i.e.: a compilation unit). The public entry point is mlirGen() at the
 /// bottom of this file.
@@ -94,8 +115,7 @@ private:
   /// container for operations; it maps to an Ada compilation unit.
   mlir::ModuleOp adaModule;
 
-  /// Helper for creating MLIR operations. Stateful: it tracks an "insertion
-  /// point" that determines where the next operation will be emitted.
+  /// Insertion-point cursor: tracks where the next MLIR operation is emitted.
   mlir::OpBuilder builder;
 
   mlir::StringAttr getNameAttr(ada_node *node) {
@@ -110,67 +130,51 @@ private:
     return mlir::FusedLoc::get(ctx, {loc}, typeRef);
   }
 
-  /// Wrap `op`'s location in a FusedLoc carrying `typeOp`'s symbol as
-  /// metadata. The info survives MLIR conversion since locations are preserved.
+  /// Wrap `op`'s location in a FusedLoc carrying `typeOp`'s symbol as metadata.
+  /// The info survives MLIR conversion since locations are preserved.
   void setAdaTypeLoc(mlir::Operation *op, mlir::ada::TypeOp typeOp) {
     op->setLoc(makeAdaTypeLoc(op->getLoc(), typeOp));
   }
 
-  /// Attach an Ada source name and type reference to `op`.
-  /// Encodes the type reference as FusedLoc metadata in the NameLoc inner
-  /// location so the info survives MLIR conversion patterns.
+  /// Attach an Ada source name and type reference to `op`. Encodes the type
+  /// reference as FusedLoc metadata in the NameLoc inner location so the info
+  /// survives MLIR conversion patterns.
   void setAdaNameLoc(mlir::Operation *op, mlir::StringAttr name,
                      mlir::ada::TypeOp typeOp) {
     op->setLoc(mlir::NameLoc::get(name, makeAdaTypeLoc(op->getLoc(), typeOp)));
   }
 
-  // Maps each DefiningName node to its current SSA Value. The key is the
-  // ada_base_node pointer, which is Libadalang's unique node identity.
-  // Using node identity instead of name strings means references always
-  // resolve to the correct declaration regardless of name shadowing —
-  // Libadalang's cross-references handle scoping for us.
+  // Maps each DefiningName node to its SSA Value, keyed by ada_base_node
+  // pointer (Libadalang's unique node identity). Node identity rather than name
+  // strings ensures correct resolution under name shadowing.
   //
-  // In the alloca model, nodeValues maps each ObjectDecl's defining name to
-  // its memref.alloca pointer (memref<T>), `in`/default-in parameters to
-  // their direct block-argument SSA value, and `in out`/`out` parameters to
-  // the caller's memref<T> alloca pointer passed by reference. Reads of
-  // ObjectDecl variables emit a memref.load; stores emit memref.store.
-  // `in`/default-in parameters are returned directly.
-  // No scope cleanup is needed: for valid Ada, Libadalang rejects references
-  // to out-of-scope declarations before MLIRGen runs.
-  llvm::DenseMap<ada_base_node, mlir::Value> nodeValues;
+  // In the alloca model: ObjectDecl names map to their memref.alloca pointer
+  // (memref<T>); `in` parameters map to their scalar block argument; `in
+  // out`/`out` parameters map to a pointer to the caller's storage. Reads emit
+  // memref.load, stores emit memref.store, and scalar parameters are returned
+  // directly. No scope cleanup is needed: Libadalang rejects out-of-scope
+  // references before MLIRGen runs.
+  llvm::DenseMap<ada_base_node, mlir::Value> declValues;
 
   // Tracks alloca pointers for ObjectDecl variables declared without an
   // initializer that have not yet been written to. Used to detect reads before
   // first assignment. Erased on the first memref.store to the alloca.
   llvm::DenseSet<mlir::Value> uninitAllocas;
 
-  // Named numbers (RM 3.3.2) have universal integer or real type with no
-  // concrete type annotation. `expr` is stashed at declaration time for
-  // lazy use-site evaluation; it is the fallback for real named numbers
-  // whose expression is not a simple literal, since libadalang exposes no
-  // eval_as_real for composite real static expressions.
-  // `value` holds the arith.constant SSA value when the number was successfully
-  // evaluated at declaration time; use-site resolution reuses it (with a cast
-  // to the concrete target type) instead of re-evaluating the expression.
-  struct NumberDeclInfo {
-    ada_node expr;
-    mlir::Value value; // null if not pre-evaluated
-  };
-  llvm::DenseMap<ada_base_node, NumberDeclInfo> numberDecls;
+  // Named numbers (RM 3.3.2): maps each DefiningName node to the pre-evaluated
+  // arith.constant (null when the expression could not be folded at declaration
+  // time, e.g. composite real expressions). Use-site resolution re-emits the
+  // constant in the concrete target type, or falls back to visit_static_expr
+  // via the NumberDecl recovered from the key.
+  llvm::DenseMap<ada_node, mlir::Value, AdaNodeDenseMapInfo> numberDecls;
 
-  // Maps each concrete type decl node to its emitted ada.type op.
-  // mlirGenEnumLit consults this to find the ada.type op by type_decl node,
-  // falling back to a lazy emit for types not declared in the current unit
-  // (e.g. Boolean).
+  // Cache from type decl node to its emitted ada.type op. Populated by
+  // mlirGenTypeDecl; queried via lookupOrEmitTypeOp (which also handles lazy
+  // emission for predefined types such as Boolean) and getMLIRTypeFromDecl.
   llvm::DenseMap<ada_base_node, mlir::ada::TypeOp> typeDecls;
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(const ada_node &node) {
-    // INFO: MLIR provides richer location kinds (NameLoc, FusedLoc,
-    // CallSiteLoc, etc.) that could be used to improve diagnostics and debug
-    // info.
-
     // const_cast: libadalang C API doesn't have const-qualified overloads;
     // the underlying objects are never actually const.
     ada_node *n = const_cast<ada_node *>(&node);
@@ -190,11 +194,11 @@ private:
     return result;
   }
 
-  /// Bind a DefiningName node to a Value in nodeValues.
+  /// Bind a DefiningName node to a Value in declValues.
   void declare(ada_node &def_name, mlir::Value value) {
     LLVM_DEBUG(llvm::dbgs()
                << "declare: " << libadalang::image(&def_name) << "\n");
-    nodeValues[def_name.node] = value;
+    declValues[def_name.node] = value;
   }
 
   // Recursive AST walker. Handles the node kinds we know how to codegen;
@@ -274,7 +278,7 @@ private:
   }
 
   /// Resolve a name expression to its bound Value via Libadalang
-  /// cross-reference + nodeValues lookup. Returns a null Value (without
+  /// cross-reference + declValues lookup. Returns a null Value (without
   /// emitting any diagnostic) if the name cannot be resolved or is not bound.
   mlir::Value findVarValue(ada_node &expr) {
     ada_node def_name;
@@ -282,8 +286,8 @@ private:
                                              &def_name) ||
         ada_node_is_null(&def_name))
       return {};
-    auto it = nodeValues.find(def_name.node);
-    return it != nodeValues.end() ? it->second : mlir::Value{};
+    auto it = declValues.find(def_name.node);
+    return it != declValues.end() ? it->second : mlir::Value{};
   }
 
   /// Return the alloca pointer (memref<T>) for a variable expression without
@@ -389,9 +393,8 @@ private:
     ada_bin_op_f_op(&binop, &op);
     auto val = emitBinOp(op, lhs, rhs);
     if (val) {
-      ada_node type_decl;
-      if (ada_expr_p_expression_type(&binop, &type_decl) &&
-          !ada_node_is_null(&type_decl))
+      ada_node type_decl{};
+      if (ada_expr_p_expression_type(&binop, &type_decl))
         if (auto typeOp = lookupOrEmitTypeOp(type_decl, loc(binop)))
           setAdaTypeLoc(val.getDefiningOp(), typeOp);
     }
@@ -557,12 +560,20 @@ private:
     return val;
   }
 
-  /// Return the `ada.type` op for `type_decl`, emitting it lazily at module
-  /// level if not yet present in `typeDecls` (used for predefined and external
-  /// types such as `Boolean`). Returns a null `TypeOp` and emits a diagnostic
-  /// on failure.
+  /// Return the `ada.type` op for a type declaration, emitting it lazily at
+  /// module level if not yet present in `typeDecls` (used for predefined and
+  /// external types such as `Boolean`).
+  ///
+  /// @param type_decl  A `BaseTypeDecl` LAL node. If null or not a type decl,
+  ///                   returns null without emitting a diagnostic.
+  /// @param location   MLIR location used for any diagnostic emitted during
+  ///                   lazy emission.
+  /// @return           The `ada.type` op, or null if the type is unsupported or
+  ///                   an error occurred during emission.
   mlir::ada::TypeOp lookupOrEmitTypeOp(ada_node &type_decl,
                                        mlir::Location location) {
+    if (ada_node_is_null(&type_decl) || !libadalang::isBaseTypeDecl(type_decl))
+      return {};
     auto it = typeDecls.find(type_decl.node);
     if (it == typeDecls.end()) {
       mlir::OpBuilder::InsertionGuard guard(builder);
@@ -817,15 +828,14 @@ private:
       if (ada_name_p_referenced_defining_name(&expr, /*imprecise_fallback=*/0,
                                               &def_name) &&
           !ada_node_is_null(&def_name)) {
-        auto it = numberDecls.find(def_name.node);
+        auto it = numberDecls.find(def_name);
         if (it != numberDecls.end()) {
-          const NumberDeclInfo &info = it->second;
-          if (info.value) {
+          if (mlir::Value value = it->second) {
             // Re-emit the pre-evaluated constant in the concrete type required
             // by the use-site context. The value is always a static constant so
             // we convert at compile time and range-check; no cast op is
             // emitted.
-            mlir::Type srcType = info.value.getType();
+            mlir::Type srcType = value.getType();
             bool isIntKind = mlir::isa<mlir::IntegerType>(srcType);
             ada_node typDecl = resolveLiteralType(expr, loc(expr));
             if (ada_node_is_null(&typDecl))
@@ -833,7 +843,7 @@ private:
             mlir::Type tgtType = getMLIRTypeFromDecl(typDecl, loc(expr));
             if (!tgtType)
               return nullptr;
-            auto defOp = info.value.getDefiningOp<mlir::arith::ConstantOp>();
+            auto defOp = value.getDefiningOp<mlir::arith::ConstantOp>();
             mlir::Value useVal;
             if (isIntKind) {
               int64_t val =
@@ -851,7 +861,9 @@ private:
                 setAdaTypeLoc(useVal.getDefiningOp(), typeOp);
             return useVal;
           }
-          ada_node fallbackExpr = info.expr;
+          ada_node keyNode = it->first, numberDecl, fallbackExpr;
+          ada_defining_name_p_basic_decl(&keyNode, &numberDecl);
+          ada_number_decl_f_expr(&numberDecl, &fallbackExpr);
           return visit_static_expr(fallbackExpr, expr);
         }
       }
@@ -910,13 +922,11 @@ private:
   ///       user-defined literals (Ada 2012).
   ///
   /// **Implementation Details**: Each `DefiningName` is entered in
-  /// `numberDecls` with the expression node and, when the value can be
-  /// evaluated at declaration time, an `arith.constant` SSA value carrying
-  /// the Ada name via `NameLoc`. Use-site resolution re-emits the pre-computed
-  /// value directly in the concrete type required by the surrounding context;
-  /// for unevaluated cases (composite real expressions, which libadalang cannot
-  /// fold) it falls back to `visit_static_expr` using the stashed expression
-  /// node.
+  /// `numberDecls` with an `arith.constant` SSA value when the expression can
+  /// be folded at declaration time (null otherwise). Use-site resolution
+  /// re-emits the pre-computed value in the concrete type required by context;
+  /// for unevaluated cases it falls back to `visit_static_expr`, recovering
+  /// the expression via `ada_defining_name_p_basic_decl` on the map key.
   llvm::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
@@ -994,7 +1004,7 @@ private:
         setAdaNameLoc(constOp, nameAttr, typeOp);
         constValue = constOp.getResult();
       }
-      numberDecls[id.node] = {expr, constValue};
+      numberDecls[id] = constValue;
     }
     return mlir::success();
   }
@@ -1218,25 +1228,18 @@ private:
 
     ada_node type_expr;
     ada_object_decl_f_type_expr(&object_decl, &type_expr);
-    mlir::Type elemType = getMLIRType(type_expr);
-    if (!elemType)
+    mlir::MemRefType memrefType = getMLIRMemRefType(type_expr);
+    if (!memrefType)
       return mlir::failure();
-    auto memrefType = mlir::MemRefType::get({}, elemType);
 
     ada_node typeDecl{};
     ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
-    mlir::ada::TypeOp typeOp{};
-    if (!ada_node_is_null(&typeDecl) &&
-        (libadalang::isEnumTypeDecl(typeDecl) ||
-         libadalang::isNumericTypeDecl(typeDecl))) {
-      typeOp = lookupOrEmitTypeOp(typeDecl, declLoc);
-      if (!typeOp)
-        return mlir::failure();
-    }
+    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(typeDecl, declLoc);
+    if (!typeOp)
+      return mlir::failure();
 
     ada_node default_expr;
     ada_object_decl_f_default_expr(&object_decl, &default_expr);
-    bool hasInit = !ada_node_is_null(&default_expr);
 
     ada_node ids;
     ada_object_decl_f_ids(&object_decl, &ids);
@@ -1250,7 +1253,7 @@ private:
       auto nameAttr = getNameAttr(&id);
 
       mlir::Value init;
-      if (hasInit) {
+      if (!ada_node_is_null(&default_expr)) {
         init = visit_expr(default_expr);
         if (!init)
           return mlir::failure();
@@ -1258,14 +1261,12 @@ private:
 
       auto allocaOp =
           builder.create<mlir::memref::AllocaOp>(loc(id), memrefType);
-      if (typeOp)
-        setAdaNameLoc(allocaOp, nameAttr, typeOp);
+      setAdaNameLoc(allocaOp, nameAttr, typeOp);
       mlir::Value ptr = allocaOp;
       if (init) {
         auto storeOp =
             builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
-        if (typeOp)
-          setAdaNameLoc(storeOp, nameAttr, typeOp);
+        setAdaNameLoc(storeOp, nameAttr, typeOp);
       } else
         uninitAllocas.insert(ptr);
       declare(id, ptr);
@@ -1382,14 +1383,9 @@ private:
     // alloca pointer; stores to them are immediately visible at the call site.
     // `out` parameters are additionally marked uninitialized.
     for (auto [entry, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
-      auto nameAttr =
-          builder.getStringAttr(libadalang::getName(&entry.id, false));
+      auto nameAttr = getNameAttr(&entry.id);
       mlir::Location srcLoc = loc(entry.id);
-      mlir::ada::TypeOp typeOp;
-      if (!ada_node_is_null(&entry.typeDecl) &&
-          (libadalang::isEnumTypeDecl(entry.typeDecl) ||
-           libadalang::isNumericTypeDecl(entry.typeDecl)))
-        typeOp = lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
+      mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
       if (typeOp)
         arg.setLoc(
             mlir::NameLoc::get(nameAttr, makeAdaTypeLoc(srcLoc, typeOp)));
@@ -1671,6 +1667,13 @@ private:
     }
 
     return getMLIRTypeFromDecl(type_decl, loc(type_expr));
+  }
+
+  mlir::MemRefType getMLIRMemRefType(ada_node &type_expr) {
+    mlir::Type type = getMLIRType(type_expr);
+    if (!type)
+      return {};
+    return mlir::MemRefType::get({}, type);
   }
 };
 

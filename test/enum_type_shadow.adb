@@ -45,8 +45,8 @@
 -- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE1]],
 -- LLVM-DAG: ![[BSCOPE2:[0-9]+]] = distinct !DISubprogram(name: "e__inner__inner",
 -- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE2]],
--- LLVM: DILocalVariable(name: "B", arg: 1,
--- LLVM: DILocalVariable(name: "B", arg: 1,
+-- LLVM: DILocalVariable(name: "b", arg: 1,
+-- LLVM: DILocalVariable(name: "b", arg: 1,
 
 function E return Boolean is
    function Inner (B : Boolean) return Boolean is

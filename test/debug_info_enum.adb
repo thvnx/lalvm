@@ -17,14 +17,14 @@
 -- CHECK: DW_AT_const_value (1)
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
--- CHECK: DW_AT_name ("A")
+-- CHECK: DW_AT_name ("a")
 -- CHECK: DW_AT_type ({{.*}} "standard.boolean")
 -- CHECK: DW_TAG_variable
 -- CHECK: DW_AT_name ("b")
 -- CHECK: DW_AT_type ({{.*}} "standard.boolean")
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
--- CHECK: DW_AT_name ("X")
+-- CHECK: DW_AT_name ("x")
 -- CHECK: DW_AT_type ({{.*}} "standard.boolean")
 
 function Test_Enum_Debug (A : Boolean) return Integer is

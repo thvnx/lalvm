@@ -201,6 +201,11 @@ bool libadalang::AdaAST::emitParserDiagnostics() const {
   return true;
 }
 
+bool libadalang::isBaseTypeDecl(ada_node &node) {
+  ada_node_kind_enum kind = ada_node_kind(&node);
+  return kind >= ada_discrete_base_subtype_decl && kind <= ada_formal_type_decl;
+}
+
 bool libadalang::isEnumTypeDecl(ada_node &typeDecl) {
   ada_bool result = false;
   return ada_base_type_decl_p_is_enum_type(&typeDecl, &kNullOrigin, &result) &&

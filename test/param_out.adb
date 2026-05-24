@@ -22,7 +22,7 @@
 -- LLVM-NOT:     load
 -- LLVM:          store i32 42, ptr
 -- LLVM:          ret void
--- LLVM:          DILocalVariable(name: "X", arg: 1,
+-- LLVM:          DILocalVariable(name: "x", arg: 1,
 
 function Test_Param_Out return Integer is
    procedure Get_Value (X : out Integer);
