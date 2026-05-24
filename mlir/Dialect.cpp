@@ -27,6 +27,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Casting.h"
 #include <string>
@@ -235,8 +236,42 @@ llvm::LogicalResult BinOp::verify() { return verifyNumericOp(*this); }
 // SubpOp
 //===----------------------------------------------------------------------===//
 
+/// Map a bare Ada operator symbol to the corresponding GNAT O-name.
+/// `numArgs` disambiguates `+`/`-` (1 = unary, 2 = binary).
+/// Returns an empty StringRef for non-operator symbols.
+static llvm::StringRef gnatOperatorName(llvm::StringRef sym, unsigned numArgs) {
+  if (sym == "+")
+    return numArgs == 1 ? "Oplus" : "Oadd";
+  if (sym == "-")
+    return numArgs == 1 ? "Ominus" : "Osubtract";
+  return llvm::StringSwitch<llvm::StringRef>(sym)
+      .Case("&", "Oconcat")
+      .Case("*", "Omultiply")
+      .Case("**", "Oexpon")
+      .Case("/", "Odivide")
+      .Case("/=", "One")
+      .Case("<", "Olt")
+      .Case("<=", "Ole")
+      .Case("=", "Oeq")
+      .Case(">", "Ogt")
+      .Case(">=", "Oge")
+      .Case("abs", "Oabs")
+      .Case("and", "Oand")
+      .Case("mod", "Omod")
+      .Case("not", "Onot")
+      .Case("or", "Oor")
+      .Case("rem", "Orem")
+      .Case("xor", "Oxor")
+      .Default("");
+}
+
 std::string SubpOp::getMangledName() {
   std::string name = getName().str();
+  if (name.size() <= 3)
+    if (llvm::StringRef gnat =
+            gnatOperatorName(name, getFunctionType().getNumInputs());
+        !gnat.empty())
+      name = gnat.str();
   if (mlir::isa<mlir::ModuleOp>((*this)->getParentOp()))
     return "_ada_" + name;
   for (mlir::Operation *p = (*this)->getParentOp(); mlir::isa<SubpOp>(p);

@@ -15,7 +15,7 @@
 
 -- LLVM-LABEL: define void @_ada_test_operator(
 -- LLVM:          ret void
--- LLVM-LABEL: define i32 @"test_operator__*"(
+-- LLVM-LABEL: define i32 @test_operator__Omultiply(
 -- LLVM:          add i32
 -- LLVM:          ret i32
 
