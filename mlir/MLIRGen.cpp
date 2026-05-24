@@ -144,6 +144,22 @@ private:
     op->setLoc(mlir::NameLoc::get(name, makeAdaTypeLoc(op->getLoc(), typeOp)));
   }
 
+  /// Return the location to use for a load/store on `ptr`, with `srcLoc` as the
+  /// inner source location. Propagates the variable name and type-reference
+  /// metadata from `ptr.getLoc()` if it is a NameLoc; otherwise returns
+  /// `srcLoc` unchanged.
+  mlir::Location propagateAdaNameLoc(mlir::Value ptr, mlir::Location srcLoc) {
+    auto nameLoc = mlir::dyn_cast<mlir::NameLoc>(ptr.getLoc());
+    if (!nameLoc)
+      return srcLoc;
+    auto fusedLoc = mlir::dyn_cast<mlir::FusedLoc>(nameLoc.getChildLoc());
+    return mlir::NameLoc::get(
+        nameLoc.getName(),
+        fusedLoc ? mlir::FusedLoc::get(srcLoc.getContext(), {srcLoc},
+                                       fusedLoc.getMetadata())
+                 : srcLoc);
+  }
+
   // Maps each DefiningName node to its SSA Value, keyed by ada_base_node
   // pointer (Libadalang's unique node identity). Node identity rather than name
   // strings ensures correct resolution under name shadowing.
@@ -317,7 +333,8 @@ private:
               << libadalang::getName(&expr, false)
               << "' is read before first assignment";
         return builder.create<mlir::memref::LoadOp>(
-            loc(expr), memrefTy.getElementType(), val);
+            propagateAdaNameLoc(val, loc(expr)), memrefTy.getElementType(),
+            val);
       }
       return val; // direct SSA value (in/default-in parameter)
     }
@@ -1550,7 +1567,8 @@ private:
       return mlir::failure();
     }
 
-    builder.create<mlir::memref::StoreOp>(loc(assign_stmt), rhs, ptr);
+    builder.create<mlir::memref::StoreOp>(
+        propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
     uninitAllocas.erase(ptr);
     return mlir::success();
   }
