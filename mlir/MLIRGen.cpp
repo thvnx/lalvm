@@ -732,6 +732,9 @@ private:
       }
     }
 
+    auto calleeRef =
+        mlir::FlatSymbolRefAttr::get(builder.getContext(), calleeName);
+
     // Function call: resolve the return type from LAL and pass it to CallOp.
     // Procedure call: no result, fall through to the no-result builder.
     if (funcTy.getNumResults() > 0) {
@@ -745,14 +748,14 @@ private:
       mlir::Type retType = getMLIRTypeFromDecl(type_decl, location);
       if (!retType)
         return nullptr;
-      auto callOp = builder.create<mlir::ada::CallOp>(
-          location, calleeName.data(), retType, args);
+      auto callOp =
+          builder.create<mlir::ada::CallOp>(location, calleeRef, retType, args);
       if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
         setAdaTypeLoc(callOp, typeOp);
       return callOp;
     }
 
-    return builder.create<mlir::ada::CallOp>(location, calleeName.data(), args);
+    return builder.create<mlir::ada::CallOp>(location, calleeRef, args);
   }
 
   /// Emit a static expression at its use site, with the concrete MLIR type

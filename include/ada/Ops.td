@@ -174,10 +174,11 @@ def CallOp : Ada_Op<"call", []> {
   let skipDefaultBuilders = 1;
   let builders = [
     // Procedure call (no result).
-    OpBuilder<(ins "::llvm::StringRef":$callee,
+    OpBuilder<(ins "::mlir::FlatSymbolRefAttr":$callee,
       CArg<"::mlir::ValueRange", "{}">:$operands)>,
     // Function call (one result type).
-    OpBuilder<(ins "::llvm::StringRef":$callee, "::mlir::Type":$resultType,
+    OpBuilder<(ins "::mlir::FlatSymbolRefAttr":$callee,
+      "::mlir::Type":$resultType,
       CArg<"::mlir::ValueRange", "{}">:$operands)>
   ];
 
