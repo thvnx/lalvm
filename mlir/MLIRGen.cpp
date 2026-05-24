@@ -380,18 +380,7 @@ private:
           << libadalang::image(&op) << "'";
       return nullptr;
     }
-    // Op nodes (ada_op_plus, etc.) derive from Name and support
-    // p_referenced_decl. For user-defined (overloaded) operators, the resolved
-    // declaration is the operator function and p_is_predefined_operator returns
-    // false. Predefined operators don't resolve to a declaration (not
-    // synthesized by Libadalang by default), so refDecl is null for them.
-    mlir::Location location = callerLoc;
-    ada_node refDecl;
-    if (ada_name_p_referenced_decl(&op, /*imprecise_fallback=*/0, &refDecl) &&
-        !ada_node_is_null(&refDecl)) {
-      location = mlir::CallSiteLoc::get(loc(refDecl), callerLoc);
-    }
-    return builder.create<mlir::ada::BinOp>(location, kind, lhs, rhs);
+    return builder.create<mlir::ada::BinOp>(callerLoc, kind, lhs, rhs);
   }
 
   /// Emit a binary operation.
@@ -713,7 +702,6 @@ private:
       return nullptr;
     }
 
-    auto callLoc = mlir::CallSiteLoc::get(calleeOp->getLoc(), location);
     auto calleeSubp = mlir::cast<mlir::ada::SubpOp>(calleeOp);
 
     // Evaluate arguments. Formals with a memref type (in out / out) receive the
@@ -758,13 +746,13 @@ private:
       if (!retType)
         return nullptr;
       auto callOp = builder.create<mlir::ada::CallOp>(
-          callLoc, calleeName.data(), retType, args);
+          location, calleeName.data(), retType, args);
       if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
         setAdaTypeLoc(callOp, typeOp);
       return callOp;
     }
 
-    return builder.create<mlir::ada::CallOp>(callLoc, calleeName.data(), args);
+    return builder.create<mlir::ada::CallOp>(location, calleeName.data(), args);
   }
 
   /// Emit a static expression at its use site, with the concrete MLIR type

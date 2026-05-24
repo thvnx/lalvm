@@ -358,7 +358,7 @@ struct AdaDebugInfoPass
 };
 } // namespace
 
-std::unique_ptr<mlir::Pass> mlir::ada::createAdaDebugInfoPass(
-    llvm::SmallVector<AdaEnumInfo> &enumInfos) {
+std::unique_ptr<mlir::Pass>
+mlir::ada::createAdaDebugInfoPass(llvm::SmallVector<AdaEnumInfo> &enumInfos) {
   return std::make_unique<AdaDebugInfoPass>(enumInfos);
 }
