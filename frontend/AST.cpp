@@ -134,7 +134,14 @@ std::string libadalang::getName(ada_node *node, bool canonical) {
       ada_symbol_text(&symbol, &text);
     } else
       ada_node_text(node, &text);
-    return textToString(text);
+    std::string name = textToString(text);
+    // Operator names use Ada double-quote syntax (e.g. `"*"`, `"and"`). Strip
+    // the surrounding quotes so MLIR displays them as @"*" / @and instead of
+    // @"\22*\22" / @"\22and\22".
+    ada_bool isOp = false;
+    if (ada_name_p_is_operator_name(node, &isOp) && isOp)
+      name = name.substr(1, name.size() - 2);
+    return name;
   }
   default:
     llvm::errs() << "Can't get name of node: " << libadalang::image(node)

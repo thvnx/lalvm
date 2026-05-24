@@ -2,11 +2,11 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- User-defined "*" operator nested inside a procedure.
--- @"\22*\22" is MLIR's encoding of the Ada name "*" (double-quote delimiters
--- are Ada operator notation, escaped as \22 in MLIR symbol names).
+-- Ada operator syntax quotes ("*") are stripped by getName so the MLIR symbol
+-- name is the bare operator symbol; MLIR then quotes it as @"*".
 
 -- MLIR-LABEL: ada.subp @test_operator
--- MLIR:         ada.subp @"\22*\22"(%{{.*}}: i32, %{{.*}}: i32) -> i32
+-- MLIR:         ada.subp @"*"(%{{.*}}: i32, %{{.*}}: i32) -> i32
 -- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : i32
 -- MLIR-NEXT:      ada.return %[[SUM]] : i32
 -- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} : i32
@@ -15,7 +15,7 @@
 
 -- LLVM-LABEL: define void @_ada_test_operator(
 -- LLVM:          ret void
--- LLVM-LABEL: define i32 @"test_operator__\22*\22"(
+-- LLVM-LABEL: define i32 @"test_operator__*"(
 -- LLVM:          add i32
 -- LLVM:          ret i32
 
