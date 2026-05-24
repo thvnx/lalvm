@@ -28,11 +28,11 @@ namespace ada {
 std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
 
 /// Metadata for one Ada enumeration type, collected from a surviving
-/// `ada.type` op in `FinalizeAdaObjectPass`. Consumed by `attachAdaDebugInfo`
+/// `ada.type` op in `AdaDebugInfoPass`. Consumed by `attachAdaDebugInfo`
 /// in lalvm.cpp to emit `DW_TAG_enumeration_type` via LLVM's DIBuilder.
 ///
 /// @todo Remove once MLIR gains `DIEnumeratorAttr` support; at that point
-/// enum composite types can be built directly inside `FinalizeAdaObjectPass`
+/// enum composite types can be built directly inside `AdaDebugInfoPass`
 /// and `attachAdaDebugInfo` can be retired.
 struct AdaEnumInfo {
   std::string typeName;
@@ -53,7 +53,7 @@ struct AdaEnumInfo {
 /// DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on each
 /// llvm.func.
 std::unique_ptr<mlir::Pass>
-createFinalizeAdaObjectPass(llvm::SmallVector<AdaEnumInfo> &enumInfos);
+createAdaDebugInfoPass(llvm::SmallVector<AdaEnumInfo> &enumInfos);
 
 } // namespace ada
 } // namespace mlir

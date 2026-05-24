@@ -1,4 +1,4 @@
-//===- FinalizeAdaObject.cpp - Emit LLVM debug intrinsics from NameLoc ----===//
+//===- AdaDebugInfo.cpp - Emit LLVM debug intrinsics from NameLoc ---------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -144,11 +144,11 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
   return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
 }
 
-struct FinalizeAdaObjectPass
-    : public PassWrapper<FinalizeAdaObjectPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FinalizeAdaObjectPass)
+struct AdaDebugInfoPass
+    : public PassWrapper<AdaDebugInfoPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AdaDebugInfoPass)
 
-  explicit FinalizeAdaObjectPass(llvm::SmallVector<ada::AdaEnumInfo> &infos)
+  explicit AdaDebugInfoPass(llvm::SmallVector<ada::AdaEnumInfo> &infos)
       : enumInfos(infos) {}
 
   void runOnOperation() final {
@@ -358,7 +358,7 @@ struct FinalizeAdaObjectPass
 };
 } // namespace
 
-std::unique_ptr<mlir::Pass> mlir::ada::createFinalizeAdaObjectPass(
+std::unique_ptr<mlir::Pass> mlir::ada::createAdaDebugInfoPass(
     llvm::SmallVector<AdaEnumInfo> &enumInfos) {
-  return std::make_unique<FinalizeAdaObjectPass>(enumInfos);
+  return std::make_unique<AdaDebugInfoPass>(enumInfos);
 }

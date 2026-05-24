@@ -181,7 +181,7 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
   }
 
   // Replace placeholder DIBasicType entries (named with the Ada type sym_name
-  // by FinalizeAdaObjectPass) with the full DICompositeType in all
+  // by AdaDebugInfoPass) with the full DICompositeType in all
   // DbgVariableRecords across the module.
   for (auto &F : llvmModule) {
     for (auto &BB : F) {
@@ -236,7 +236,7 @@ applyLoweringPasses(mlir::MLIRContext &context,
   pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
   // Emit debug intrinsics and collect Ada enum type metadata from surviving
   // ada.type ops.
-  pm.addPass(mlir::ada::createFinalizeAdaObjectPass(enumInfos));
+  pm.addPass(mlir::ada::createAdaDebugInfoPass(enumInfos));
 
   if (mlir::failed(pm.run(*module)))
     return 1;
