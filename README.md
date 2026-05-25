@@ -100,6 +100,8 @@ LALVM follows GNAT's symbol naming convention:
   `procedure Foo` -> `_ada_foo`
 - **Nested subprograms** get a `parent__child` mangled name without the prefix:
   `procedure Inner` inside `procedure Outer` -> `outer__inner`
+- **Operator subprograms** are mapped to GNAT O-names before mangling:
+  `function "*"` nested inside `procedure Outer` -> `outer__Omultiply`
 
 This allows lalvm-compiled code to be linked against GNAT-compiled code and
 called from C using the same name mangling convention.
@@ -110,14 +112,10 @@ LALVM emits DWARF 5 debug info with `DW_LANG_Ada2012`. Source locations are
 attached to every MLIR operation and carried through to LLVM IR.
 
 Each named Ada object (variable, constant, named number, parameter) carries a
-`NameLoc` in the Ada dialect, which `FinalizeAdaObjectPass` consumes to emit
+`NameLoc` in the Ada dialect, which `AdaDebugInfoPass` consumes to emit
 `dbg.declare` (for stack variables) or `dbg.value` (for constants and named
 numbers). Enum types produce `DICompositeType` entries with one `DIEnumerator`
 per literal.
-
-Function calls use `CallSiteLoc` to link the call site with the callee's
-declaration location. Binary operators that resolve to a declaration (e.g.
-user-defined overloaded operators) likewise use `CallSiteLoc`.
 
 To inspect source locations in the MLIR output:
 
@@ -128,8 +126,8 @@ lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope add.adb
 This prints each op's source location inline, for example:
 
 ```mlir
-%0 = ada.binop "+" %arg0, %arg1 {ada.type = @standard.integer} : i32
-    loc(callsite("add.adb":15:13 to :14 at "add.adb":10:4))
+%0 = ada.binop "+" %arg0, %arg1 : i32
+    loc(fused<@standard.integer>["add.adb":15:13])
 ```
 
 ## Status
@@ -153,8 +151,8 @@ are not yet implemented.
 - Subprograms: functions and procedures, library-level and nested
 - Local variables with and without initializers (multiple names per declaration)
 - Named numbers (`N : constant := 42`)
-- Type declarations: integer, float, enum (including `Boolean`)
-- User-defined operator functions (accepted; currently not dispatched as calls)
+- Type declarations: integer, float, modular integer, enum (including `Boolean`)
+- User-defined operator functions (definitions and calls; mangled to GNAT O-names)
 
 **Parameters:** `in` (by value), `in out` and `out` (by reference)
 
@@ -173,17 +171,18 @@ The compiler is organized in three layers:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`): custom MLIR dialect.
   Operations: `ada.type`, `ada.subp`, `ada.return`, `ada.binop`, `ada.call`,
-  `ada.block_stmt`, `ada.null`. Each op carries Ada-level type metadata via
+  `ada.block`, `ada.null`. Each op carries Ada-level type metadata via
   an `"ada.type"` attribute (a symbol reference to the relevant `ada.type` op)
   and source name via `NameLoc` where applicable.
 - **MLIRGen** (`mlir/MLIRGen.cpp`): lowers a Libadalang AST to the Ada
   dialect. Emits bare Ada names; no ABI mangling.
 - **LowerToLLVM** (`mlir/LowerToLLVM.cpp`): lowers the Ada dialect to LLVM
   IR. Owns all ABI concerns: `_ada_` prefix for library-level subprograms,
-  `parent__child` mangling for nested ones.
-- **FinalizeAdaObjectPass** (`mlir/FinalizeAdaObject.cpp`): post-lowering
-  pass that emits `dbg.declare`/`dbg.value` intrinsics from `NameLoc`
-  annotations on LLVM ops.
+  `parent__child` mangling for nested ones, GNAT O-name mangling for
+  operator subprograms.
+- **AdaDebugInfoPass** (`mlir/AdaDebugInfo.cpp`): post-lowering pass that
+  emits `dbg.declare`/`dbg.value` intrinsics from `NameLoc` annotations on
+  LLVM ops.
 
 Ada parsing is handled by [Libadalang](https://github.com/AdaCore/libadalang)
 through its C API (`include/frontend/AST.h`, `frontend/AST.cpp`).
