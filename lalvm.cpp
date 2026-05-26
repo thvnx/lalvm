@@ -213,6 +213,17 @@ attachAdaDebugInfo(llvm::Module &llvmModule,
   db.finalize();
 }
 
+static int applyMLIRPasses(mlir::OwningOpRef<mlir::ModuleOp> &module) {
+  // Separate PM so --mlir-print-ir-before=mem2reg captures pre-promotion IR.
+  mlir::PassManager pm(module.get()->getName());
+  pm.addPass(mlir::createMem2Reg());
+  if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
+    return 1;
+  if (mlir::failed(pm.run(*module)))
+    return 1;
+  return 0;
+}
+
 // Lower Ada dialect ops to LLVM dialect and attach debug info.
 // Pre-condition: context must have AdaDialect and ArithDialect loaded.
 static int
@@ -227,9 +238,10 @@ applyLoweringPasses(mlir::MLIRContext &context,
   // Pre-set Ada debug info so DIScopeForLLVMFuncOp uses our compile unit.
   setAdaDebugInfo(*module);
 
+  if (int error = applyMLIRPasses(module))
+    return error;
+
   mlir::PassManager pm(module.get()->getName());
-  // Promote alloca-backed variables to SSA values where possible.
-  pm.addPass(mlir::createMem2Reg());
   // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
   // Attach DI scope metadata so debuggers can map LLVM IR back to source lines.
@@ -238,6 +250,8 @@ applyLoweringPasses(mlir::MLIRContext &context,
   // ada.type ops.
   pm.addPass(mlir::ada::createAdaDebugInfoPass(enumInfos));
 
+  if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
+    return 1;
   if (mlir::failed(pm.run(*module)))
     return 1;
   return 0;
@@ -298,6 +312,8 @@ int main(int argc, char **argv) {
   llvm::InitLLVM x(argc, argv);
   mlir::registerAsmPrinterCLOptions();
   mlir::registerMLIRContextCLOptions();
+  mlir::registerTransformsPasses();
+  mlir::registerPassManagerCLOptions();
   cl::ParseCommandLineOptions(argc, argv, "ada compiler\n");
 
   if (emitAction == Action::None) {
@@ -343,10 +359,13 @@ int main(int argc, char **argv) {
   }
 
   switch (emitAction) {
-  case Action::DumpMLIR:
+  case Action::DumpMLIR: {
+    if (int error = applyMLIRPasses(module))
+      return error;
     module->print(llvm::outs());
     llvm::outs() << "\n";
     return 0;
+  }
   case Action::DumpLLVMIR:
     return dumpLLVMIR(context, module);
   default:

@@ -3,11 +3,8 @@
 
 -- MLIR-LABEL: ada.subp @test_local_var_init_from_expr
 -- MLIR-SAME:    (%arg0: i32, %arg1: i32) -> i32
--- MLIR:         %[[INIT:.*]] = ada.binop "+" %arg0, %arg1 : i32
--- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() : memref<i32>
--- MLIR-NEXT:    memref.store %[[INIT]], %[[PTR]][] : memref<i32>
--- MLIR:         %[[X:.*]] = memref.load %[[PTR]][] : memref<i32>
--- MLIR:         ada.return %[[X]] : i32
+-- MLIR:         %[[X:.*]] = ada.binop "+" %arg0, %arg1 : i32
+-- MLIR-NEXT:    ada.return %[[X]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_init_from_expr(
 -- LLVM:         add i32

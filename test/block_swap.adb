@@ -12,13 +12,10 @@
 -- MLIR:         %[[V_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR:         memref.store %[[INIT_V]], %[[V_PTR]][] : memref<i32>
 -- MLIR:         ada.block "Swap" {
--- MLIR:           %[[T_PTR:.*]] = memref.alloca() : memref<i32>
 -- MLIR:           %[[V0:.*]] = memref.load %[[V_PTR]][] : memref<i32>
--- MLIR:           memref.store %[[V0]], %[[T_PTR]][] : memref<i32>
 -- MLIR:           %[[U0:.*]] = memref.load %[[U_PTR]][] : memref<i32>
 -- MLIR:           memref.store %[[U0]], %[[V_PTR]][] : memref<i32>
--- MLIR:           %[[T0:.*]] = memref.load %[[T_PTR]][] : memref<i32>
--- MLIR:           memref.store %[[T0]], %[[U_PTR]][] : memref<i32>
+-- MLIR:           memref.store %[[V0]], %[[U_PTR]][] : memref<i32>
 -- MLIR:         }
 -- MLIR:         %[[U1:.*]] = memref.load %[[U_PTR]][] : memref<i32>
 -- MLIR:         ada.return %[[U1]] : i32

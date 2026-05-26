@@ -4,14 +4,9 @@
 -- MLIR-LABEL: ada.subp @test_local_var_assign
 -- MLIR-SAME:    () -> i32
 -- MLIR:         %[[INIT:.*]] = arith.constant 4 : i32
--- MLIR-NEXT:    %[[PTR:.*]] = memref.alloca() : memref<i32>
--- MLIR-NEXT:    memref.store %[[INIT]], %[[PTR]][] : memref<i32>
--- MLIR:         %[[X0:.*]] = memref.load %[[PTR]][] : memref<i32>
--- MLIR:         %[[ONE:.*]] = arith.constant 1 : i32
--- MLIR:         %[[X1:.*]] = ada.binop "+" %[[X0]], %[[ONE]] : i32
--- MLIR:         memref.store %[[X1]], %[[PTR]][] : memref<i32>
--- MLIR:         %[[X2:.*]] = memref.load %[[PTR]][] : memref<i32>
--- MLIR:         ada.return %[[X2]] : i32
+-- MLIR-NEXT:    %[[ONE:.*]] = arith.constant 1 : i32
+-- MLIR-NEXT:    %[[X:.*]] = ada.binop "+" %[[INIT]], %[[ONE]] : i32
+-- MLIR-NEXT:    ada.return %[[X]] : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_assign(
 -- LLVM:         ret i32 5

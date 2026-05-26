@@ -3,10 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @test_local_var_init_from_param
 -- MLIR-SAME:    (%arg0: i32) -> i32
--- MLIR:         %[[PTR:.*]] = memref.alloca() : memref<i32>
--- MLIR-NEXT:    memref.store %arg0, %[[PTR]][] : memref<i32>
--- MLIR:         %[[X:.*]] = memref.load %[[PTR]][] : memref<i32>
--- MLIR:         ada.return %[[X]] : i32
+-- MLIR:         ada.return %arg0 : i32
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_init_from_param(
 -- LLVM:         ret i32 %0
