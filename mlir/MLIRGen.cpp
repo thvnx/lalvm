@@ -1236,15 +1236,15 @@ private:
 
     ada_node type_expr;
     ada_object_decl_f_type_expr(&object_decl, &type_expr);
-    mlir::MemRefType memrefType = getMLIRMemRefType(type_expr);
-    if (!memrefType)
-      return mlir::failure();
 
     ada_node typeDecl{};
     ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(typeDecl, declLoc);
     if (!typeOp)
       return mlir::failure();
+
+    ada_bool isConstant = 0;
+    ada_basic_decl_p_is_constant_object(&object_decl, &isConstant);
 
     ada_node default_expr;
     ada_object_decl_f_default_expr(&object_decl, &default_expr);
@@ -1267,17 +1267,29 @@ private:
           return mlir::failure();
       }
 
-      auto allocaOp =
-          builder.create<mlir::memref::AllocaOp>(loc(id), memrefType);
-      setAdaNameLoc(allocaOp, nameAttr, typeOp);
-      mlir::Value ptr = allocaOp;
-      if (init) {
-        auto storeOp =
-            builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
-        setAdaNameLoc(storeOp, nameAttr, typeOp);
-      } else
-        uninitAllocas.insert(ptr);
-      declare(id, ptr);
+      if (isConstant) {
+        if (!init) {
+          mlir::emitError(loc(id),
+                          "deferred constant declarations are not supported");
+          return mlir::failure();
+        }
+        declare(id, init);
+      } else {
+        mlir::MemRefType memrefType = getMLIRMemRefType(type_expr);
+        if (!memrefType)
+          return mlir::failure();
+        auto allocaOp =
+            builder.create<mlir::memref::AllocaOp>(loc(id), memrefType);
+        setAdaNameLoc(allocaOp, nameAttr, typeOp);
+        mlir::Value ptr = allocaOp;
+        if (init) {
+          auto storeOp =
+              builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
+          setAdaNameLoc(storeOp, nameAttr, typeOp);
+        } else
+          uninitAllocas.insert(ptr);
+        declare(id, ptr);
+      }
     }
     return mlir::success();
   }
