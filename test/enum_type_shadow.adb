@@ -3,10 +3,10 @@
 
 -- Three Boolean types live at different nesting levels:
 --   - standard Boolean (False=0, True=1): predefined, emitted at module level.
---   - Inner's local "type Boolean is (True, False)": True=0, False=1 — shadows
---     standard Boolean inside Inner.
+--   - Inner's local "type Boolean is (True, False)": True=0, False=1;
+--     shadows standard Boolean inside Inner.
 --   - Inner.Inner's local "type Boolean is (Not_True, True)": Not_True=0,
---     True=1 — shadows both outer Booleans inside Inner.Inner.
+--     True=1; shadows both outer Booleans inside Inner.Inner.
 --
 -- Constants reflect the rep value of the literal in its resolved type:
 --   X := True in Inner       -> outer local True (rep=0) -> false in i1

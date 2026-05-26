@@ -39,15 +39,15 @@ using namespace mlir;
 
 // This file implements a single lowering pass that converts the Ada dialect
 // (plus the Arith and Func dialects it relies on) directly to the LLVM dialect.
-// The pass uses FullConversion, meaning every op must be lowered — no Ada ops
+// The pass uses FullConversion, meaning every op must be lowered; no Ada ops
 // are allowed to survive.
 //
 // Lowering chain overview:
-//   ada.subp     →  func.func
-//   ada.return   →  func.return
-//   ada.binop    →  arith.addi/subi/muli  (integers)
-//                   arith.addf/subf/mulf  (floats)
-//   func.func / arith.*  →  LLVM dialect  (via upstream conversion patterns)
+//   ada.subp     ->  func.func
+//   ada.return   ->  func.return
+//   ada.binop    ->  arith.addi/subi/muli  (integers)
+//                    arith.addf/subf/mulf  (floats)
+//   func.func / arith.*  ->  LLVM dialect  (via upstream conversion patterns)
 
 //===----------------------------------------------------------------------===//
 // AdaToLLVMLoweringPass
@@ -158,7 +158,7 @@ struct BinOpLowering : public OpRewritePattern<ada::BinOp> {
 
 // ada.subp is isomorphic to func.func at this level; we just swap the op type
 // and move the region over. The upstream FuncToLLVM pass then handles the
-// func.func → llvm.func conversion.
+// func.func -> llvm.func conversion.
 struct SubpOpLowering : public OpRewritePattern<ada::SubpOp> {
   using OpRewritePattern<ada::SubpOp>::OpRewritePattern;
 
@@ -180,13 +180,13 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   // Two-phase ABI renaming before lowering. Both sets of ops are collected in
   // a single walk before any mutations so the parent chain is still intact.
   //
-  // Phase 1 — hoist nested subprograms: LLVM does not support nested
+  // Phase 1: hoist nested subprograms: LLVM does not support nested
   // functions. Each nested op is renamed with GNAT-style __ separators built
   // from the full enclosing scope chain (e.g. @inner inside @outer becomes
   // @outer__inner). Parent names at this point are still bare Ada names, so
   // the mangling matches GNAT (outer__inner, not _ada_outer__inner).
   //
-  // Phase 2 — apply _ada_ prefix: library-level subprograms get the GNAT
+  // Phase 2: apply _ada_ prefix: library-level subprograms get the GNAT
   // _ada_ prefix. Done after hoisting so nested mangling uses bare names.
   ModuleOp module = getOperation();
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedSubps;
@@ -240,10 +240,11 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   target.addLegalOp<ModuleOp>();
   target.addLegalOp<ada::TypeOp>();
 
-  // LLVMTypeConverter maps MLIR types (i32, f64, …) to their LLVM equivalents.
-  // It is threaded through the upstream conversion patterns that need it.
-  // Use bare pointer calling convention so memref<T> function arguments lower
-  // to a single ptr instead of the full { ptr, ptr, i64 } descriptor struct.
+  // LLVMTypeConverter maps MLIR types (i32, f64, ...) to their LLVM
+  // equivalents. It is threaded through the upstream conversion patterns that
+  // need it. Use bare pointer calling convention so memref<T> function
+  // arguments lower to a single ptr instead of the full { ptr, ptr, i64 }
+  // descriptor struct.
   mlir::LowerToLLVMOptions opts(&getContext());
   opts.useBarePtrCallConv = true;
   LLVMTypeConverter typeConverter(&getContext(), opts);

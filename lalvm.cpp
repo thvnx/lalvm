@@ -219,7 +219,7 @@ static int
 applyLoweringPasses(mlir::MLIRContext &context,
                     mlir::OwningOpRef<mlir::ModuleOp> &module,
                     llvm::SmallVector<mlir::ada::AdaEnumInfo> &enumInfos) {
-  // DI attribute types (DIFileAttr, DICompileUnitAttr, …) belong to the LLVM
+  // DI attribute types (DIFileAttr, DICompileUnitAttr, ...) belong to the LLVM
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
   context.getOrLoadDialect<mlir::memref::MemRefDialect>();

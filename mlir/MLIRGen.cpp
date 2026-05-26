@@ -270,7 +270,7 @@ private:
     case ada_pragma_node_list:
     case ada_handled_stmts:
     case ada_stmt_list:
-      // Transparent nodes — visit children without warning.
+      // Transparent nodes: visit children without warning.
       break;
     default: {
       // TODO: turn this into an Error when lalvm is mature enough.
@@ -1286,7 +1286,7 @@ private:
   /// Supported: ObjectDecl (initialized only), SubpBody (nested subprograms),
   ///            NumberDecl (expression stashed for lazy use-site emission).
   /// Silently skipped: SubpDecl (forward declarations), and everything else.
-  /// The AST structure is: DeclarativePart → AdaNodeList → decl...
+  /// The AST structure is: DeclarativePart -> AdaNodeList -> decl...
   llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
     unsigned listCount = ada_node_children_count(&decls);
     for (unsigned i = 0; i < listCount; ++i) {
