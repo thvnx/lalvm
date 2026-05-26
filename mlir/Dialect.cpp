@@ -29,6 +29,7 @@
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
@@ -46,6 +47,9 @@ using namespace mlir::ada;
 #define GET_ATTRDEF_CLASSES
 #include "ada/Attrs.cpp.inc"
 
+#define GET_TYPEDEF_CLASSES
+#include "ada/Types.cpp.inc"
+
 #include "ada/Dialect.cpp.inc"
 
 //===----------------------------------------------------------------------===//
@@ -62,6 +66,10 @@ void AdaDialect::initialize() {
   addAttributes<
 #define GET_ATTRDEF_LIST
 #include "ada/Attrs.cpp.inc"
+      >();
+  addTypes<
+#define GET_TYPEDEF_LIST
+#include "ada/Types.cpp.inc"
       >();
 }
 
@@ -170,6 +178,121 @@ llvm::LogicalResult TypeOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// AllocaOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult AllocaOp::verify() {
+  auto memrefType = mlir::cast<mlir::MemRefType>(getResult().getType());
+  if (!mlir::isa<QualType>(memrefType.getElementType()))
+    return emitOpError("result element type must be ada.qual");
+  return mlir::success();
+}
+
+// PromotableAllocationOpInterface: declare the single memory slot owned by
+// this alloca. Only entry-block allocas are eligible for mem2reg promotion.
+llvm::SmallVector<mlir::MemorySlot> AllocaOp::getPromotableSlots() {
+  if (!getOperation()->getBlock()->isEntryBlock())
+    return {};
+  auto elemType =
+      mlir::cast<mlir::MemRefType>(getResult().getType()).getElementType();
+  return {mlir::MemorySlot{getResult(), elemType}};
+}
+
+// PromotableAllocationOpInterface: provide a zero value of the slot type for
+// uses that are reached before any write (uninitialized variable reads).
+mlir::Value AllocaOp::getDefaultValue(const mlir::MemorySlot &slot,
+                                      mlir::OpBuilder &builder) {
+  auto typedType = mlir::cast<QualType>(slot.elemType);
+  return builder.create<ConstantOp>(
+      getLoc(), typedType, builder.getZeroAttr(typedType.getMlirType()));
+}
+
+// PromotableAllocationOpInterface: called when mem2reg introduces a block
+// argument at a join point. The argument already has the right type and
+// directly replaces slot uses, so no extra insertion is needed.
+void AllocaOp::handleBlockArgument(const mlir::MemorySlot &slot,
+                                   mlir::BlockArgument argument,
+                                   mlir::OpBuilder &builder) {}
+
+// PromotableAllocationOpInterface: called after promotion is complete. Erases
+// the alloca and the default zero value if it was never used.
+std::optional<mlir::PromotableAllocationOpInterface>
+AllocaOp::handlePromotionComplete(const mlir::MemorySlot &slot,
+                                  mlir::Value defaultValue,
+                                  mlir::OpBuilder &builder) {
+  if (defaultValue && defaultValue.use_empty())
+    defaultValue.getDefiningOp()->erase();
+  erase();
+  return std::nullopt;
+}
+
+//===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+
+// Assembly format: `:` <ada.qual type> `=` <value>
+//   ada.constant : !ada.qual<i32, @standard.integer> = 42
+//   ada.constant : !ada.qual<f32, @standard.float> = 1.000000e+00
+//   ada.constant : !ada.qual<f64, @standard.long_float> = 0x400921FB54442D18
+mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser,
+                                    mlir::OperationState &result) {
+  if (parser.parseColon())
+    return mlir::failure();
+  mlir::SMLoc typeLoc = parser.getCurrentLocation();
+  mlir::Type resultType;
+  if (parser.parseType(resultType))
+    return mlir::failure();
+  auto typedType = mlir::dyn_cast<mlir::ada::QualType>(resultType);
+  if (!typedType)
+    return parser.emitError(typeLoc, "expected !ada.qual result type");
+  result.addTypes(resultType);
+  if (parser.parseEqual())
+    return mlir::failure();
+  mlir::Attribute valueAttr;
+  if (parser.parseAttribute(valueAttr, typedType.getMlirType()))
+    return mlir::failure();
+  result.addAttribute(getValueAttrName(result.name), valueAttr);
+  return mlir::success();
+}
+
+void ConstantOp::print(mlir::OpAsmPrinter &p) {
+  p << " : " << getResult().getType() << " = ";
+  p.printAttributeWithoutType(getValue());
+}
+
+llvm::LogicalResult ConstantOp::verify() {
+  auto typedResult = mlir::cast<ada::QualType>(getResult().getType());
+  auto typedAttr = mlir::dyn_cast<mlir::TypedAttr>(getValue());
+  if (!typedAttr)
+    return emitOpError() << "value attribute must be a typed attribute";
+  if (typedAttr.getType() != typedResult.getMlirType())
+    return emitOpError() << "value type (" << typedAttr.getType()
+                         << ") does not match result mlir type ("
+                         << typedResult.getMlirType() << ")";
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// CoerceOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult CoerceOp::verify() {
+  auto inTyped = mlir::cast<ada::QualType>(getInput().getType());
+  auto outTyped = mlir::cast<ada::QualType>(getResult().getType());
+  if (inTyped == outTyped)
+    return emitOpError() << "input and result types are identical; "
+                            "use the value directly";
+  bool intToInt = mlir::isa<mlir::IntegerType>(inTyped.getMlirType()) &&
+                  mlir::isa<mlir::IntegerType>(outTyped.getMlirType());
+  bool floatToFloat = mlir::isa<mlir::FloatType>(inTyped.getMlirType()) &&
+                      mlir::isa<mlir::FloatType>(outTyped.getMlirType());
+  if (!intToInt && !floatToFloat)
+    return emitOpError() << "unsupported conversion: " << inTyped.getMlirType()
+                         << " to " << outTyped.getMlirType();
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
 
@@ -225,6 +348,8 @@ void BinOp::print(mlir::OpAsmPrinter &p) {
 llvm::LogicalResult BinOp::verify() {
   // SameOperandsAndResultType guarantees all operands share this type.
   mlir::Type type = getLhs().getType();
+  if (auto typedType = mlir::dyn_cast<ada::QualType>(type))
+    type = typedType.getMlirType();
   if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
     return emitOpError() << "unsupported operand type " << type
                          << "; expected integer or float";

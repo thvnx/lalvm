@@ -5,7 +5,7 @@
 -- Predefined types are lazily emitted at module level on first use.
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @test_boolean
--- MLIR:         %[[C:.*]] = arith.constant true
+-- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i1, @standard.boolean> = true
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 

@@ -1,13 +1,8 @@
--- XFAIL: *
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s
 
 -- Three i8 enum types at the same scope. DILocalVariable for "green_color"
 -- must reference the color DICompositeType, not direction or flag (which
 -- share the same i8 machine type and would be picked by a type-keyed cache).
---
--- Known bug: the enum literal name ("green") leaks into the DILocalVariable
--- instead of the declared variable name ("green_color"). The initializer
--- expression's NameLoc overwrites the ObjectDecl variable's NameLoc.
 
 -- CHECK-DAG: ![[COLOR:[0-9]+]] = !DICompositeType(tag: DW_TAG_enumeration_type, name: "color"
 -- CHECK-DAG: !DILocalVariable(name: "green_color", scope: {{.*}}, file: {{.*}}, line: 14, type: ![[COLOR]])

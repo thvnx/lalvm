@@ -4,8 +4,8 @@
 -- MLIR-LABEL: ada.subp @test_nested_subp_args
 -- MLIR:         ada.subp @inner
 -- MLIR:           ada.return
--- MLIR:         [[V:%.*]] = arith.constant 42
--- MLIR:         ada.call @inner([[V]]) : (i32) -> ()
+-- MLIR:         [[V:%.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
+-- MLIR:         ada.call @inner([[V]]) : (!ada.qual<i32, @standard.integer>) -> ()
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @_ada_test_nested_subp_args(

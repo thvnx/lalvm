@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_constant_decl
--- MLIR-SAME:    () -> i32
--- MLIR:         %[[X:.*]] = arith.constant 5 : i32
--- MLIR-NEXT:    ada.return %[[X]] : i32
+-- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[X:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 5
+-- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_constant_decl(
 -- LLVM:         ret i32 5

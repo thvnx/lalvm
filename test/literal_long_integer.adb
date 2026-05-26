@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_long_literal
--- MLIR-SAME:    () -> i64
--- MLIR:         %{{.*}} = arith.constant 42 : i64
--- MLIR-NEXT:    ada.return %{{.*}} : i64
+-- MLIR-SAME:    () -> !ada.qual<i64, @standard.long_integer>
+-- MLIR:         %{{.*}} = ada.constant : !ada.qual<i64, @standard.long_integer> = 42
+-- MLIR-NEXT:    ada.return %{{.*}} : !ada.qual<i64, @standard.long_integer>
 
 -- LLVM-LABEL: define i64 @_ada_test_long_literal(
 -- LLVM:         ret i64 42

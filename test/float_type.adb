@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_float
--- MLIR-SAME:    (%arg0: f32, %arg1: f32) -> f32
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : f32
--- MLIR-NEXT:    ada.return %[[R]] : f32
+-- MLIR-SAME:    (%arg0: !ada.qual<f32, @standard.float>, %arg1: !ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<f32, @standard.float>
+-- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define float @_ada_test_float(
 -- LLVM:         %{{.*}} = fadd float %0, %1

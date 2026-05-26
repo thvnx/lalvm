@@ -20,16 +20,16 @@
 -- "return True" resolves to standard Boolean.
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @e
--- MLIR:         ada.subp @inner(%arg0: i1
+-- MLIR:         ada.subp @inner(%arg0: !ada.qual<i1, @standard.boolean>
 -- MLIR:           ada.type @boolean : i1 = #ada.enum_info<"true" = 0, "false" = 1>
--- MLIR:           arith.constant false
--- MLIR:           ada.subp @inner(%arg1: i1
+-- MLIR:           ada.constant : !ada.qual<i1, @boolean> = false
+-- MLIR:           ada.subp @inner(%arg1: !ada.qual<i1, @boolean>
 -- MLIR:             ada.type @boolean : i1 = #ada.enum_info<"not_true" = 0, "true" = 1>
--- MLIR:             arith.constant true
+-- MLIR:             ada.constant : !ada.qual<i1, @boolean> = true
 -- MLIR:             ada.return
--- MLIR:           arith.constant true
+-- MLIR:           ada.constant : !ada.qual<i1, @standard.boolean> = true
 -- MLIR:           ada.return
--- MLIR:         arith.constant true
+-- MLIR:         ada.constant : !ada.qual<i1, @standard.boolean> = true
 -- MLIR:         ada.call @inner(
 -- MLIR:         ada.return
 

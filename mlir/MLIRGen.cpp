@@ -16,7 +16,6 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include "llvm/Support/Debug.h"
@@ -125,42 +124,42 @@ private:
     return builder.getStringAttr(libadalang::getName(node));
   }
 
-  /// Return `loc` wrapped in a FusedLoc carrying `typeOp`'s symbol as metadata.
-  /// The info survives MLIR conversion since locations are preserved verbatim.
-  mlir::Location makeAdaTypeLoc(mlir::Location loc, mlir::ada::TypeOp typeOp) {
-    auto *ctx = loc.getContext();
-    auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
-    return mlir::FusedLoc::get(ctx, {loc}, typeRef);
+  /// Attach an Ada source name to `op`. The Ada type symbol is carried in the
+  /// op's ada.qual result type and will be re-encoded into the loc by
+  /// LowerToLLVM patterns so AdaDebugInfoPass can recover it post-conversion.
+  void setAdaNameLoc(mlir::Operation *op, mlir::StringAttr name) {
+    op->setLoc(mlir::NameLoc::get(name, op->getLoc()));
   }
 
-  /// Wrap `op`'s location in a FusedLoc carrying `typeOp`'s symbol as metadata.
-  /// The info survives MLIR conversion since locations are preserved.
-  void setAdaTypeLoc(mlir::Operation *op, mlir::ada::TypeOp typeOp) {
-    op->setLoc(makeAdaTypeLoc(op->getLoc(), typeOp));
+  /// Overload for values: handles block arguments (which have no defining op)
+  /// as well as op results.
+  void setAdaNameLoc(mlir::Value val, mlir::StringAttr name) {
+    auto newLoc = mlir::NameLoc::get(name, val.getLoc());
+    if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(val))
+      arg.setLoc(newLoc);
+    else
+      val.getDefiningOp()->setLoc(newLoc);
   }
 
-  /// Attach an Ada source name and type reference to `op`. Encodes the type
-  /// reference as FusedLoc metadata in the NameLoc inner location so the info
-  /// survives MLIR conversion patterns.
-  void setAdaNameLoc(mlir::Operation *op, mlir::StringAttr name,
-                     mlir::ada::TypeOp typeOp) {
-    op->setLoc(mlir::NameLoc::get(name, makeAdaTypeLoc(op->getLoc(), typeOp)));
+  /// Overload with explicit source location: replaces the value's existing
+  /// location entirely rather than wrapping it.
+  void setAdaNameLoc(mlir::Value val, mlir::StringAttr name,
+                     mlir::Location srcLoc) {
+    auto newLoc = mlir::NameLoc::get(name, srcLoc);
+    if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(val))
+      arg.setLoc(newLoc);
+    else
+      val.getDefiningOp()->setLoc(newLoc);
   }
 
-  /// Return the location to use for a load/store on `ptr`, with `srcLoc` as the
-  /// inner source location. Propagates the variable name and type-reference
-  /// metadata from `ptr.getLoc()` if it is a NameLoc; otherwise returns
-  /// `srcLoc` unchanged.
+  /// Return the location to use for a load on `ptr`, with `srcLoc` as the
+  /// inner source location. Propagates the variable name from `ptr.getLoc()`
+  /// if it is a NameLoc; otherwise returns `srcLoc` unchanged.
   mlir::Location propagateAdaNameLoc(mlir::Value ptr, mlir::Location srcLoc) {
     auto nameLoc = mlir::dyn_cast<mlir::NameLoc>(ptr.getLoc());
     if (!nameLoc)
       return srcLoc;
-    auto fusedLoc = mlir::dyn_cast<mlir::FusedLoc>(nameLoc.getChildLoc());
-    return mlir::NameLoc::get(
-        nameLoc.getName(),
-        fusedLoc ? mlir::FusedLoc::get(srcLoc.getContext(), {srcLoc},
-                                       fusedLoc.getMetadata())
-                 : srcLoc);
+    return mlir::NameLoc::get(nameLoc.getName(), srcLoc);
   }
 
   // Maps each DefiningName node to its SSA Value, keyed by ada_base_node
@@ -398,16 +397,22 @@ private:
     mlir::Value rhs = visit_expr(right);
     if (!rhs)
       return nullptr;
+
+    // Coerce both operands to the result type so SameOperandsAndResultType
+    // is satisfied when the two sides have different Ada types.
+    ada_node type_decl{};
+    if (ada_expr_p_expression_type(&binop, &type_decl) &&
+        !ada_node_is_null(&type_decl)) {
+      mlir::ada::QualType resultType = getAdaQualType(type_decl, loc(binop));
+      if (resultType) {
+        lhs = coerce(lhs, resultType, loc(binop));
+        rhs = coerce(rhs, resultType, loc(binop));
+      }
+    }
+
     ada_node op;
     ada_bin_op_f_op(&binop, &op);
-    auto val = emitBinOp(op, lhs, rhs);
-    if (val) {
-      ada_node type_decl{};
-      if (ada_expr_p_expression_type(&binop, &type_decl))
-        if (auto typeOp = lookupOrEmitTypeOp(type_decl, loc(binop)))
-          setAdaTypeLoc(val.getDefiningOp(), typeOp);
-    }
-    return val;
+    return emitBinOp(op, lhs, rhs);
   }
 
   /// Resolve the type of a literal expression. For universal types
@@ -430,11 +435,13 @@ private:
     return type_decl;
   }
 
-  /// Emit an arith.ConstantIntOp. Range-checks the value against the target
-  /// integer width; emits a diagnostic and returns nullptr if it doesn't fit.
-  mlir::Value emitIntConstant(int64_t value, mlir::IntegerType type,
+  /// Emit an ada.constant for an integer value. Range-checks the value against
+  /// the target integer width; emits a diagnostic and returns nullptr on
+  /// failure.
+  mlir::Value emitIntConstant(int64_t value, mlir::ada::QualType type,
                               mlir::Location location) {
-    unsigned width = type.getWidth();
+    auto intType = mlir::cast<mlir::IntegerType>(type.getMlirType());
+    unsigned width = intType.getWidth();
     if (width == 1) {
       if (value < 0 || value > 1) {
         mlir::emitError(location, "integer constant ")
@@ -450,20 +457,22 @@ private:
         return nullptr;
       }
     }
-    return builder.create<mlir::arith::ConstantIntOp>(location, value, width);
+    return builder.create<mlir::ada::ConstantOp>(
+        location, type, mlir::IntegerAttr::get(intType, value));
   }
 
-  /// Emit an arith.ConstantOp for a floating-point value. Checks for f32
-  /// overflow; emits a diagnostic and returns nullptr on failure.
-  mlir::Value emitRealConstant(double value, mlir::FloatType type,
+  /// Emit an ada.constant for a floating-point value. Checks for f32 overflow;
+  /// emits a diagnostic and returns nullptr on failure.
+  mlir::Value emitRealConstant(double value, mlir::ada::QualType type,
                                mlir::Location location) {
-    if (type.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
+    auto floatType = mlir::cast<mlir::FloatType>(type.getMlirType());
+    if (floatType.getWidth() == 32 && std::isinf(static_cast<float>(value))) {
       mlir::emitError(location, "real constant ")
           << value << " out of range for f32";
       return nullptr;
     }
-    return builder.create<mlir::arith::ConstantOp>(
-        location, builder.getFloatAttr(type, value));
+    return builder.create<mlir::ada::ConstantOp>(
+        location, type, mlir::FloatAttr::get(floatType, value));
   }
 
   /// Extract the integer value of an ada_int_literal node via
@@ -507,15 +516,10 @@ private:
     ada_node type_decl = resolveLiteralType(node, location);
     if (ada_node_is_null(&type_decl))
       return nullptr;
-    mlir::Type type = getMLIRTypeFromDecl(type_decl, location);
+    mlir::ada::QualType type = getAdaQualType(type_decl, location);
     if (!type)
       return nullptr;
-    auto val =
-        emitIntConstant(*value, mlir::cast<mlir::IntegerType>(type), location);
-    if (val)
-      if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
-        setAdaTypeLoc(val.getDefiningOp(), typeOp);
-    return val;
+    return emitIntConstant(*value, type, location);
   }
 
   /// Extract the floating-point value of an ada_real_literal node via its
@@ -558,15 +562,47 @@ private:
     ada_node type_decl = resolveLiteralType(node, location);
     if (ada_node_is_null(&type_decl))
       return nullptr;
-    mlir::Type type = getMLIRTypeFromDecl(type_decl, location);
+    mlir::ada::QualType type = getAdaQualType(type_decl, location);
     if (!type)
       return nullptr;
-    auto val =
-        emitRealConstant(*value, mlir::cast<mlir::FloatType>(type), location);
-    if (val)
-      if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
-        setAdaTypeLoc(val.getDefiningOp(), typeOp);
-    return val;
+    return emitRealConstant(*value, type, location);
+  }
+
+  /// Build the `ada.qual<mlirType, @adaSym>` type for a type declaration.
+  /// Returns a null type if the declaration is not supported.
+  mlir::ada::QualType getAdaQualType(ada_node &type_decl,
+                                     mlir::Location location) {
+    mlir::Type mlirType = getMLIRTypeFromDecl(type_decl, location);
+    if (!mlirType)
+      return {};
+    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
+    if (!typeOp) {
+      mlir::emitWarning(location, "ada.type not emitted for this type; "
+                                  "Ada type identity will be lost");
+      return {};
+    }
+    auto *ctx = builder.getContext();
+    auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
+    return mlir::ada::QualType::get(ctx, mlirType, typeRef);
+  }
+
+  /// Build the `ada.qual` type from a type expression (SubtypeIndication).
+  mlir::ada::QualType getAdaQualType(ada_node &type_expr) {
+    ada_node type_decl;
+    if (!ada_type_expr_p_designated_type_decl(&type_expr, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
+      mlir::emitError(loc(type_expr), "failed to resolve type expression");
+      return {};
+    }
+    return getAdaQualType(type_decl, loc(type_expr));
+  }
+
+  /// Insert `ada.coerce` if `val` does not already have type `expected`.
+  mlir::Value coerce(mlir::Value val, mlir::ada::QualType expected,
+                     mlir::Location location) {
+    if (val.getType() == expected)
+      return val;
+    return builder.create<mlir::ada::CoerceOp>(location, expected, val);
   }
 
   /// Return the `ada.type` op for a type declaration, emitting it lazily at
@@ -648,12 +684,16 @@ private:
           << "'";
       return nullptr;
     }
-    mlir::Type type = typeOp.getMlirType();
+    mlir::Type mlirType = typeOp.getMlirType();
 
     auto attr =
-        mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(type), *value);
-    auto constOp = builder.create<mlir::arith::ConstantOp>(location, attr);
-    setAdaNameLoc(constOp, builder.getStringAttr(litName), typeOp);
+        mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(mlirType), *value);
+    auto *ctx = builder.getContext();
+    auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
+    auto typedType = mlir::ada::QualType::get(ctx, mlirType, typeRef);
+    auto constOp =
+        builder.create<mlir::ada::ConstantOp>(location, typedType, attr);
+    setAdaNameLoc(mlir::Value(constOp), builder.getStringAttr(litName));
     return constOp.getResult();
   }
 
@@ -716,6 +756,11 @@ private:
           mlir::Value val = visit_expr(r_expr);
           if (!val)
             return nullptr;
+          // Coerce to the formal Ada type when they differ (implicit
+          // conversion).
+          if (auto formalTyped =
+                  mlir::dyn_cast<mlir::ada::QualType>(formalTypes[i]))
+            val = coerce(val, formalTyped, location);
           args.push_back(val);
         }
       }
@@ -732,14 +777,11 @@ private:
                         "failed to resolve return type of function call");
         return nullptr;
       }
-      mlir::Type retType = getMLIRTypeFromDecl(type_decl, location);
+      mlir::ada::QualType retType = getAdaQualType(type_decl, location);
       if (!retType)
         return nullptr;
-      auto callOp =
-          builder.create<mlir::ada::CallOp>(location, calleeRef, retType, args);
-      if (auto typeOp = lookupOrEmitTypeOp(type_decl, location))
-        setAdaTypeLoc(callOp, typeOp);
-      return callOp;
+      return builder.create<mlir::ada::CallOp>(location, calleeRef, retType,
+                                               args);
     }
 
     return builder.create<mlir::ada::CallOp>(location, calleeRef, mlir::Type{},
@@ -778,15 +820,10 @@ private:
         ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext));
         if (ada_node_is_null(&typDecl))
           return nullptr;
-        mlir::Type type = getMLIRTypeFromDecl(typDecl, loc(typeContext));
+        mlir::ada::QualType type = getAdaQualType(typDecl, loc(typeContext));
         if (!type)
           return nullptr;
-        auto val = emitRealConstant(*value, mlir::cast<mlir::FloatType>(type),
-                                    loc(typeContext));
-        if (val)
-          if (auto typeOp = lookupOrEmitTypeOp(typDecl, loc(typeContext)))
-            setAdaTypeLoc(val.getDefiningOp(), typeOp);
-        return val;
+        return emitRealConstant(*value, type, loc(typeContext));
       }
       case ada_bin_op: {
         mlir::emitWarning(loc(staticExpr),
@@ -827,35 +864,14 @@ private:
         auto it = numberDecls.find(def_name);
         if (it != numberDecls.end()) {
           if (mlir::Value value = it->second) {
-            // Re-emit the pre-evaluated constant in the concrete type required
-            // by the use-site context. The value is always a static constant so
-            // we convert at compile time and range-check; no cast op is
-            // emitted.
-            mlir::Type srcType = value.getType();
-            bool isIntKind = mlir::isa<mlir::IntegerType>(srcType);
-            ada_node typDecl = resolveLiteralType(expr, loc(expr));
+            mlir::Location exprLoc = loc(expr);
+            ada_node typDecl = resolveLiteralType(expr, exprLoc);
             if (ada_node_is_null(&typDecl))
               return nullptr;
-            mlir::Type tgtType = getMLIRTypeFromDecl(typDecl, loc(expr));
+            mlir::ada::QualType tgtType = getAdaQualType(typDecl, exprLoc);
             if (!tgtType)
               return nullptr;
-            auto defOp = value.getDefiningOp<mlir::arith::ConstantOp>();
-            mlir::Value useVal;
-            if (isIntKind) {
-              int64_t val =
-                  mlir::cast<mlir::IntegerAttr>(defOp.getValue()).getInt();
-              useVal = emitIntConstant(
-                  val, mlir::cast<mlir::IntegerType>(tgtType), loc(expr));
-            } else {
-              double val = mlir::cast<mlir::FloatAttr>(defOp.getValue())
-                               .getValueAsDouble();
-              useVal = emitRealConstant(
-                  val, mlir::cast<mlir::FloatType>(tgtType), loc(expr));
-            }
-            if (useVal)
-              if (auto typeOp = lookupOrEmitTypeOp(typDecl, loc(expr)))
-                setAdaTypeLoc(useVal.getDefiningOp(), typeOp);
-            return useVal;
+            return coerce(value, tgtType, exprLoc);
           }
           ada_node keyNode = it->first, numberDecl, fallbackExpr;
           ada_defining_name_p_basic_decl(&keyNode, &numberDecl);
@@ -918,11 +934,12 @@ private:
   ///       user-defined literals (Ada 2012).
   ///
   /// **Implementation Details**: Each `DefiningName` is entered in
-  /// `numberDecls` with an `arith.constant` SSA value when the expression can
-  /// be folded at declaration time (null otherwise). Use-site resolution
-  /// re-emits the pre-computed value in the concrete type required by context;
-  /// for unevaluated cases it falls back to `visit_static_expr`, recovering
-  /// the expression via `ada_defining_name_p_basic_decl` on the map key.
+  /// `numberDecls` with an `ada.constant` SSA value at universal type when the
+  /// expression can be folded at declaration time (null otherwise). Use-site
+  /// resolution emits `ada.coerce` from the universal constant to the concrete
+  /// type required by context; for unevaluated cases it falls back to
+  /// `visit_static_expr`, recovering the expression via
+  /// `ada_defining_name_p_basic_decl` on the map key.
   llvm::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
@@ -1003,9 +1020,13 @@ private:
       mlir::Value constValue;
       if (constAttr && typeOp) {
         auto nameAttr = getNameAttr(&id);
-        auto constOp =
-            builder.create<mlir::arith::ConstantOp>(loc(id), constAttr);
-        setAdaNameLoc(constOp, nameAttr, typeOp);
+        auto *ctx = builder.getContext();
+        auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
+        auto typedType =
+            mlir::ada::QualType::get(ctx, constAttr.getType(), typeRef);
+        auto constOp = builder.create<mlir::ada::ConstantOp>(loc(id), typedType,
+                                                             constAttr);
+        setAdaNameLoc(mlir::Value(constOp), nameAttr);
         constValue = constOp.getResult();
       }
       numberDecls[id] = constValue;
@@ -1233,11 +1254,13 @@ private:
 
     ada_node type_expr;
     ada_object_decl_f_type_expr(&object_decl, &type_expr);
+    mlir::MemRefType memrefType = getMLIRMemRefType(type_expr);
+    if (!memrefType)
+      return mlir::failure();
 
     ada_node typeDecl{};
     ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
-    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(typeDecl, declLoc);
-    if (!typeOp)
+    if (!lookupOrEmitTypeOp(typeDecl, declLoc))
       return mlir::failure();
 
     ada_bool isConstant = 0;
@@ -1257,6 +1280,9 @@ private:
       }
       auto nameAttr = getNameAttr(&id);
 
+      auto elemType =
+          mlir::cast<mlir::ada::QualType>(memrefType.getElementType());
+
       mlir::Value init;
       if (!ada_node_is_null(&default_expr)) {
         init = visit_expr(default_expr);
@@ -1270,19 +1296,19 @@ private:
                           "deferred constant declarations are not supported");
           return mlir::failure();
         }
+        init = coerce(init, elemType, loc(id));
+        setAdaNameLoc(init, nameAttr, loc(id));
         declare(id, init);
       } else {
-        mlir::MemRefType memrefType = getMLIRMemRefType(type_expr);
-        if (!memrefType)
-          return mlir::failure();
         auto allocaOp =
-            builder.create<mlir::memref::AllocaOp>(loc(id), memrefType);
-        setAdaNameLoc(allocaOp, nameAttr, typeOp);
+            builder.create<mlir::ada::AllocaOp>(loc(id), memrefType);
+        setAdaNameLoc(mlir::Value(allocaOp), nameAttr);
         mlir::Value ptr = allocaOp;
         if (init) {
+          init = coerce(init, elemType, loc(id));
           auto storeOp =
               builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
-          setAdaNameLoc(storeOp, nameAttr, typeOp);
+          setAdaNameLoc(storeOp, nameAttr);
         } else
           uninitAllocas.insert(ptr);
         declare(id, ptr);
@@ -1402,12 +1428,9 @@ private:
     for (auto [entry, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
       auto nameAttr = getNameAttr(&entry.id);
       mlir::Location srcLoc = loc(entry.id);
-      mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
-      if (typeOp)
-        arg.setLoc(
-            mlir::NameLoc::get(nameAttr, makeAdaTypeLoc(srcLoc, typeOp)));
-      else
-        arg.setLoc(mlir::NameLoc::get(nameAttr, srcLoc));
+      // Ensure the ada.type op is emitted so AdaDebugInfoPass can look it up.
+      lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
+      arg.setLoc(mlir::NameLoc::get(nameAttr, srcLoc));
       if (entry.mode == ada_mode_out)
         uninitAllocas.insert(arg);
       declare(entry.id, arg);
@@ -1495,7 +1518,11 @@ private:
     for (int i = 0; i < params->n; i++) {
       ada_node type_expr;
       ada_param_spec_f_type_expr(&params->items[i], &type_expr);
-      mlir::Type paramType = getMLIRType(type_expr);
+      mlir::ada::QualType paramType = getAdaQualType(type_expr);
+      if (!paramType) {
+        ada_node_array_dec_ref(params);
+        return nullptr;
+      }
       ada_param_spec_f_ids(&params->items[i], &ids);
 
       ada_node mode_node;
@@ -1503,7 +1530,8 @@ private:
       ada_node_kind_enum mode = ada_node_kind(&mode_node);
       bool writable = (mode == ada_mode_in_out || mode == ada_mode_out);
       mlir::Type argType =
-          writable ? mlir::MemRefType::get({}, paramType) : paramType;
+          writable ? mlir::Type(mlir::MemRefType::get({}, paramType))
+                   : mlir::Type(paramType);
 
       for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
         argTypes.push_back(argType);
@@ -1518,7 +1546,7 @@ private:
         mlir::emitError(location, "function has no return type");
         return nullptr;
       }
-      mlir::Type retType = getMLIRType(ret_type_expr);
+      mlir::ada::QualType retType = getAdaQualType(ret_type_expr);
       if (!retType)
         return nullptr;
       retTypes.push_back(retType);
@@ -1565,6 +1593,13 @@ private:
       return mlir::failure();
     }
 
+    // Coerce to the declared type of the variable (handles subtypes and
+    // implicit conversions).
+    auto memrefTy = mlir::cast<mlir::MemRefType>(ptr.getType());
+    if (auto elemType =
+            mlir::dyn_cast<mlir::ada::QualType>(memrefTy.getElementType()))
+      rhs = coerce(rhs, elemType, loc(assign_stmt));
+
     builder.create<mlir::memref::StoreOp>(
         propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
     uninitAllocas.erase(ptr);
@@ -1584,6 +1619,19 @@ private:
       expr = visit_expr(return_expr);
       if (!expr)
         return mlir::failure();
+      // Coerce to the subprogram's declared return type (handles subtypes and
+      // implicit conversions).
+      mlir::Operation *enclosing =
+          builder.getInsertionBlock()->getParent()->getParentOp();
+      while (enclosing && mlir::isa<mlir::ada::BlockOp>(enclosing))
+        enclosing = enclosing->getParentOp();
+      if (auto subp = mlir::dyn_cast<mlir::ada::SubpOp>(enclosing)) {
+        auto results = subp.getFunctionType().getResults();
+        if (!results.empty())
+          if (auto retType =
+                  mlir::dyn_cast<mlir::ada::QualType>(results.front()))
+            expr = coerce(expr, retType, location);
+      }
     }
 
     builder.create<mlir::ada::ReturnOp>(location, expr);
@@ -1667,28 +1715,11 @@ private:
     return {};
   }
 
-  /// Resolve an Ada type expression (e.g. a SubtypeIndication node like
-  /// "Long_Integer") to the corresponding MLIR type. Returns a null type
-  /// and emits an error on failure.
-  mlir::Type getMLIRType(ada_node &type_expr) {
-    // p_designated_type_decl resolves a type expression to its declaration.
-    // This works on SubtypeIndication nodes (parameter / return types), unlike
-    // p_expression_type which only works on value expressions.
-    ada_node type_decl;
-    if (!ada_type_expr_p_designated_type_decl(&type_expr, &type_decl) ||
-        ada_node_is_null(&type_decl)) {
-      mlir::emitError(loc(type_expr), "failed to resolve type expression");
-      return {};
-    }
-
-    return getMLIRTypeFromDecl(type_decl, loc(type_expr));
-  }
-
   mlir::MemRefType getMLIRMemRefType(ada_node &type_expr) {
-    mlir::Type type = getMLIRType(type_expr);
-    if (!type)
+    mlir::ada::QualType elementType = getAdaQualType(type_expr);
+    if (!elementType)
       return {};
-    return mlir::MemRefType::get({}, type);
+    return mlir::MemRefType::get({}, elementType);
   }
 };
 

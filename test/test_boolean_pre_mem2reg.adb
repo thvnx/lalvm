@@ -4,9 +4,9 @@
 -- captures the module before SSA promotion; B's alloca and store are visible here
 -- but absent from the normal --emit=mlir output (which is post-mem2reg).
 -- CHECK-LABEL: ada.subp @test_boolean
--- CHECK:         %[[C:.*]] = arith.constant true
--- CHECK-NEXT:    %[[PTR:.*]] = memref.alloca() : memref<i1>
--- CHECK-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<i1>
+-- CHECK:         %[[C:.*]] = ada.constant : !ada.qual<i1, @standard.boolean> = true
+-- CHECK-NEXT:    %[[PTR:.*]] = ada.alloca : memref<!ada.qual<i1, @standard.boolean>>
+-- CHECK-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<!ada.qual<i1, @standard.boolean>>
 -- CHECK-NEXT:    ada.null
 -- CHECK-NEXT:    ada.return
 

@@ -6,15 +6,15 @@
 -- on the parameter must be a store, not a load.
 
 -- MLIR-LABEL: ada.subp @test_param_out
--- MLIR:         ada.subp @get_value(%arg0: memref<i32>)
+-- MLIR:         ada.subp @get_value(%arg0: memref<!ada.qual<i32, @standard.integer>>)
 -- MLIR-NOT:       memref.load %arg0
--- MLIR:           memref.store {{.*}}, %arg0[] : memref<i32>
+-- MLIR:           memref.store {{.*}}, %arg0[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:           ada.return
--- MLIR:         %[[N_PTR:.*]] = memref.alloca() : memref<i32>
+-- MLIR:         %[[N_PTR:.*]] = ada.alloca : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR-NOT:     memref.store {{.*}}, %[[N_PTR]]
--- MLIR:         ada.call @get_value(%[[N_PTR]]) : (memref<i32>) -> ()
--- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<i32>
--- MLIR:         ada.return %[[N]] : i32
+-- MLIR:         ada.call @get_value(%[[N_PTR]]) : (memref<!ada.qual<i32, @standard.integer>>) -> ()
+-- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         ada.return %[[N]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_param_out(
 -- LLVM-LABEL: define void @test_param_out__get_value(ptr

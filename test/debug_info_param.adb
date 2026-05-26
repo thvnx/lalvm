@@ -2,8 +2,7 @@
 -- RUN: %llvm-dwarfdump --debug-info %t.o | %FileCheck %s
 
 -- `in` parameters (scalar) and `out` parameters (reference) both produce
--- DW_TAG_formal_parameter entries in DWARF, with name and type from NameLoc
--- and FusedLoc metadata.
+-- DW_TAG_formal_parameter entries in DWARF, with name and type from NameLoc.
 
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter

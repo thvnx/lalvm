@@ -1,12 +1,12 @@
 -- RUN: %lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope %s | %FileCheck %s
 
 -- CHECK-LABEL: ada.subp @test(
--- CHECK-SAME:    %arg0: i32 loc("i"(fused<@standard.integer>["{{.*}}debug_info_loc.adb":13:16 to :17]))
--- CHECK-SAME:    %arg1: i32 loc("j"(fused<@standard.integer>["{{.*}}debug_info_loc.adb":13:19 to :20]))
--- CHECK-SAME:    %arg2: i32 loc("k"(fused<@standard.integer>["{{.*}}debug_info_loc.adb":13:22 to :23]))
--- CHECK:         %{{.*}} = ada.binop "+" %arg0, %arg1 : i32 loc(fused<@standard.integer>["{{.*}}debug_info_loc.adb":15:13 to :14])
--- CHECK:         %{{.*}} = ada.binop "+" %{{.*}}, %arg2 : i32 loc(fused<@standard.integer>["{{.*}}debug_info_loc.adb":15:17 to :18])
--- CHECK:         ada.return %{{.*}} : i32 loc("{{.*}}debug_info_loc.adb":15:4 to :21)
+-- CHECK-SAME:    %arg0: !ada.qual<i32, @standard.integer> loc("i"("{{.*}}debug_info_loc.adb":13:16 to :17))
+-- CHECK-SAME:    %arg1: !ada.qual<i32, @standard.integer> loc("j"("{{.*}}debug_info_loc.adb":13:19 to :20))
+-- CHECK-SAME:    %arg2: !ada.qual<i32, @standard.integer> loc("k"("{{.*}}debug_info_loc.adb":13:22 to :23))
+-- CHECK:         %{{.*}} = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @standard.integer> loc("{{.*}}debug_info_loc.adb":15:13 to :14)
+-- CHECK:         %{{.*}} = ada.binop "+" %{{.*}}, %arg2 : !ada.qual<i32, @standard.integer> loc("{{.*}}debug_info_loc.adb":15:17 to :18)
+-- CHECK:         ada.return %{{.*}} : !ada.qual<i32, @standard.integer> loc("{{.*}}debug_info_loc.adb":15:4 to :21)
 -- CHECK:       } loc("{{.*}}debug_info_loc.adb":13:1 to 16:10)
 -- CHECK:     } loc("{{.*}}debug_info_loc.adb":13:1 to 16:10)
 

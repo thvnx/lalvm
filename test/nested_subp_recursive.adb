@@ -6,11 +6,11 @@
 -- walk into the symbol's own definition body, leaving the recursive
 -- ada.call unrenamed and producing an invalid llvm.call reference.
 
--- MLIR-LABEL: ada.subp @p() -> i32
+-- MLIR-LABEL: ada.subp @p() -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.subp @inner(
--- MLIR:           %[[R:.*]] = ada.call @inner(%{{.*}}) : (i32) -> i32
--- MLIR:           ada.return %[[R]] : i32
--- MLIR:         ada.call @inner(%{{.*}}) : (i32) -> i32
+-- MLIR:           %[[R:.*]] = ada.call @inner(%{{.*}}) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.call @inner(%{{.*}}) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_p(
 -- LLVM:          call i32 @p__inner(

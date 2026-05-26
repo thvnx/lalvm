@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_local_var_init_from_expr
--- MLIR-SAME:    (%arg0: i32, %arg1: i32) -> i32
--- MLIR:         %[[X:.*]] = ada.binop "+" %arg0, %arg1 : i32
--- MLIR-NEXT:    ada.return %[[X]] : i32
+-- MLIR-SAME:    (%arg0: !ada.qual<i32, @standard.integer>, %arg1: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[X:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_init_from_expr(
 -- LLVM:         add i32

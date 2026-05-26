@@ -2,11 +2,11 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_local_var_assign
--- MLIR-SAME:    () -> i32
--- MLIR:         %[[INIT:.*]] = arith.constant 4 : i32
--- MLIR-NEXT:    %[[ONE:.*]] = arith.constant 1 : i32
--- MLIR-NEXT:    %[[X:.*]] = ada.binop "+" %[[INIT]], %[[ONE]] : i32
--- MLIR-NEXT:    ada.return %[[X]] : i32
+-- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[INIT:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 4
+-- MLIR-NEXT:    %[[ONE:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
+-- MLIR-NEXT:    %[[X:.*]] = ada.binop "+" %[[INIT]], %[[ONE]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_assign(
 -- LLVM:         ret i32 5

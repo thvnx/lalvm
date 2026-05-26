@@ -6,10 +6,10 @@
 -- name is the bare operator symbol; MLIR then quotes it as @"*".
 
 -- MLIR-LABEL: ada.subp @test_operator
--- MLIR:         ada.subp @"*"(%{{.*}}: i32, %{{.*}}: i32) -> i32
--- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : i32
--- MLIR-NEXT:      ada.return %[[SUM]] : i32
--- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} : i32
+-- MLIR:         ada.subp @"*"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:      ada.return %[[SUM]] : !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 

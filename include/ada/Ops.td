@@ -15,9 +15,11 @@
 
 include "Dialect.td"
 include "Attrs.td"
+include "Types.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/MemorySlotInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
@@ -111,6 +113,109 @@ def TypeOp : Ada_Op<"type", []> {
   ];
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// AllocaOp
+//===----------------------------------------------------------------------===//
+
+// Allocates stack storage for a single Ada typed variable.
+//
+// We cannot use memref.alloca for this purpose because
+// memref::AllocaOp::getPromotableSlots() gates on isSupportedElementType(),
+// which is hardcoded in mlir/lib/IR/Builders.cpp to a fixed set of built-in
+// types (FloatType, IndexType, IntegerType, RankedTensorType, VectorType).
+// ada.qual matches none of them, so every memref<!ada.qual<T>> alloca is
+// silently skipped by mem2reg with no error or warning. An external interface
+// model cannot be attached because memref::AllocaOp already owns the
+// interface, and attachInterface fails on a duplicate.
+//
+// This op reimplements the interface without the isSupportedElementType gate,
+// letting mem2reg promote ada.qual allocas. Other memref operations
+// (memref.load, memref.store) work with !ada.qual<T> element types without
+// modification and are still used alongside this op.
+def AllocaOp : Ada_Op<"alloca", [
+    DeclareOpInterfaceMethods<PromotableAllocationOpInterface>
+  ]> {
+  let summary = "Ada typed local variable stack allocation";
+  let description = [{
+    Allocates stack storage for a single Ada typed scalar variable. The result
+    is a `memref` whose element type is `!ada.qual<T, @sym>`, preserving Ada
+    type identity through the alloca/load/store sequence until mem2reg promotes
+    the slot to an SSA value.
+
+    ```mlir
+    ada.alloca : memref<!ada.qual<i32, @integer>>
+    ```
+  }];
+  let results = (outs AnyMemRef:$result);
+  let assemblyFormat = "attr-dict `:` type($result)";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+
+// `arith.constant` cannot be used directly because its verifier requires
+// value.getType() == result.getType(). Standard IntegerAttr/FloatAttr carry
+// the inner MLIR type (e.g. i32), not !ada.qual<i32, @sym>, so the verifier
+// would reject an ada.qual result. This op relaxes the rule: only the inner
+// mlirType component of the result must match the attribute type.
+def ConstantOp : Ada_Op<"constant", [Pure, ConstantLike]> {
+  let summary = "Ada typed constant value";
+  let description = [{
+    A constant scalar value annotated with its Ada type identity. The value
+    attribute carries a standard `IntegerAttr` or `FloatAttr` whose type
+    matches the `mlirType` component of the `!ada.qual` result; the Ada type
+    symbol lives on the result type rather than in the attribute. Lowered to
+    `arith.constant` by LowerToLLVM, which strips the Ada type wrapper.
+
+    ```mlir
+    ada.constant : !ada.qual<i32, @standard.integer> = 42
+    ada.constant : !ada.qual<f32, @standard.float> = 1.000000e+00
+    ```
+  }];
+  let arguments = (ins AnyAttr:$value);
+  let results = (outs Ada_QualType:$result);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// CoerceOp
+//===----------------------------------------------------------------------===//
+
+// Emitted by MLIRGen at every point where a value flows into a typed location:
+// parameter passing, assignment, return, object initialization, and explicit
+// type conversions (RM 4.6). Lowered to an arith cast when the underlying MLIR
+// types differ; a no-op otherwise. Future: will also emit a range check against
+// the target type's bounds before the cast, raising Constraint_Error on
+// violation.
+def CoerceOp : Ada_Op<"coerce", [Pure]> {
+  let summary = "Ada value coercion between types";
+  let description = [{
+    Represents the coercion of a value to a target Ada type (RM 4.6). Emitted
+    at every point where a value flows into a typed location: explicit type
+    conversions, assignments, parameter passing, and return statements.
+
+    When the underlying MLIR types differ, lowers to the appropriate arith
+    cast (`arith.trunci`, `arith.extsi`, `arith.extui`, `arith.truncf`,
+    `arith.extf`). When the types match (same machine representation, different
+    Ada type), lowers to a value forward.
+
+    Example:
+
+    ```mlir
+    %1 = ada.coerce %0
+        : !ada.qual<f64, @standard.universal_real_type_>
+          to !ada.qual<f32, @standard.float>
+    ```
+  }];
+  let arguments = (ins Ada_QualType:$input);
+  let results = (outs Ada_QualType:$result);
+  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($result)";
   let hasVerifier = 1;
 }
 

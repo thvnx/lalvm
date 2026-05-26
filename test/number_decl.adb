@@ -8,14 +8,14 @@
 -- MLIR: ada.type @standard.universal_real_type_ : f64 = #ada.numeric_info
 -- MLIR: ada.type @standard.universal_int_type_ : i64 = #ada.numeric_info
 -- MLIR-LABEL: ada.subp @test_number_decl()
--- MLIR:         ada.subp @f() -> i32
--- MLIR:           arith.constant 200 : i64
--- MLIR:           %[[MAX:.*]] = arith.constant 200 : i32
--- MLIR:           ada.return %[[MAX]] : i32
--- MLIR:         ada.subp @g() -> f32
--- MLIR:           arith.constant 3.141590e+00 : f64
--- MLIR:           %[[PI:.*]] = arith.constant 3.141590e+00 : f32
--- MLIR:           ada.return %[[PI]] : f32
+-- MLIR:         ada.subp @f() -> !ada.qual<i32, @standard.integer>
+-- MLIR:           %[[UMAX:.*]] = ada.constant : !ada.qual<i64, @standard.universal_int_type_> = 200
+-- MLIR-NEXT:      %[[MAX:.*]] = ada.coerce %[[UMAX]] : <i64, @standard.universal_int_type_> to <i32, @standard.integer>
+-- MLIR-NEXT:      ada.return %[[MAX]] : !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.subp @g() -> !ada.qual<f32, @standard.float>
+-- MLIR:           %[[UPI:.*]] = ada.constant : !ada.qual<f64, @standard.universal_real_type_> = {{.*}}
+-- MLIR-NEXT:      %[[PI:.*]] = ada.coerce %[[UPI]] : <f64, @standard.universal_real_type_> to <f32, @standard.float>
+-- MLIR-NEXT:      ada.return %[[PI]] : !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define void @_ada_test_number_decl(
 -- LLVM-LABEL: define i32 @test_number_decl__f(

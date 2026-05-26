@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_local_var_uninit_assign
--- MLIR-SAME:    () -> i32
--- MLIR:         %[[X:.*]] = arith.constant 42 : i32
--- MLIR-NEXT:    ada.return %[[X]] : i32
+-- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[X:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
+-- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_uninit_assign(
 -- LLVM:          ret i32 42

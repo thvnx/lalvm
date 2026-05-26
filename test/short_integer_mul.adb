@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_short_mul
--- MLIR-SAME:    (%arg0: i16, %arg1: i16) -> i16
--- MLIR:         %[[R:.*]] = ada.binop "*" %arg0, %arg1 : i16
--- MLIR-NEXT:    ada.return %[[R]] : i16
+-- MLIR-SAME:    (%arg0: !ada.qual<i16, @standard.short_integer>, %arg1: !ada.qual<i16, @standard.short_integer>) -> !ada.qual<i16, @standard.short_integer>
+-- MLIR:         %[[R:.*]] = ada.binop "*" %arg0, %arg1 : !ada.qual<i16, @standard.short_integer>
+-- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i16, @standard.short_integer>
 
 -- LLVM-LABEL: define i16 @_ada_test_short_mul(
 -- LLVM:         %{{.*}} = mul i16 %0, %1

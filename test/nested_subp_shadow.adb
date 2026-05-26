@@ -5,14 +5,14 @@
 -- with the same name. Previously failed silently due to the string-based
 -- symbol table rejecting the parameter declaration as a duplicate.
 
--- MLIR-LABEL: ada.subp @p() -> i32
--- MLIR:         %[[I:.*]] = arith.constant 12 : i32
+-- MLIR-LABEL: ada.subp @p() -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[I:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 12
 -- MLIR:         ada.subp @inner(
--- MLIR:           %[[ONE:.*]] = arith.constant 1 : i32
--- MLIR:           %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] : i32
--- MLIR:           ada.return %[[R]] : i32
--- MLIR:         %[[RES:.*]] = ada.call @inner(%[[I]]) : (i32) -> i32
--- MLIR-NEXT:    ada.return %[[RES]] : i32
+-- MLIR:           %[[ONE:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
+-- MLIR:           %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] : !ada.qual<i32, @standard.integer>
+-- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[RES:.*]] = ada.call @inner(%[[I]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    ada.return %[[RES]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_p(
 -- LLVM:          call i32 @p__inner(i32 12)

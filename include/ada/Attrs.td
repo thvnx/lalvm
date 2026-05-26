@@ -61,4 +61,16 @@ def NumericTypeInfoAttr : AttrDef<Ada_Dialect, "NumericTypeInfo"> {
   let assemblyFormat = "(`<` `mod` `=` $modulus^ `>`)?";
 }
 
+// Reference to an ada.type op by sym_name, for use as FusedLoc metadata in
+// value locations. Embedded by LowerToLLVM's attachAdaTypeRef so that
+// AdaDebugInfoPass can resolve the correct DIType for each value.
+def DITypeRefAttr : AttrDef<Ada_Dialect, "DITypeRef"> {
+  let mnemonic = "typeref";
+  let summary = "Ada type cross-reference for FusedLoc metadata";
+  let parameters = (ins
+    AttrParameter<"::mlir::FlatSymbolRefAttr", "ada.type sym_name">:$sym
+  );
+  let assemblyFormat = "`<` $sym `>`";
+}
+
 #endif // ADA_ATTRS

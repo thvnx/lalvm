@@ -22,6 +22,7 @@ def Ada_Dialect : Dialect {
   let name = "ada";
   let cppNamespace = "::mlir::ada";
   let useDefaultAttributePrinterParser = 1;
+  let useDefaultTypePrinterParser = 1;
 }
 
 // Base class for all Ada dialect operations. Binds each op to the Ada dialect

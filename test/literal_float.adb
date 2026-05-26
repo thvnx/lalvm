@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_float_literal
--- MLIR-SAME:    () -> f32
--- MLIR:         %{{.*}} = arith.constant 1.000000e+00 : f32
--- MLIR-NEXT:    ada.return %{{.*}} : f32
+-- MLIR-SAME:    () -> !ada.qual<f32, @standard.float>
+-- MLIR:         %{{.*}} = ada.constant : !ada.qual<f32, @standard.float> = 1.000000e+00
+-- MLIR-NEXT:    ada.return %{{.*}} : !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define float @_ada_test_float_literal(
 -- LLVM:         ret float

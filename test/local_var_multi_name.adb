@@ -3,13 +3,13 @@
 
 -- Each identifier gets its own evaluation of the init expression (RM 3.3.1).
 -- MLIR-LABEL: ada.subp @test_local_var_multi_name
--- MLIR-SAME:    () -> i32
--- MLIR:         %[[X:.*]] = arith.constant 3 : i32
--- MLIR-NEXT:    %[[Y:.*]] = arith.constant 3 : i32
--- MLIR-NEXT:    %[[Z:.*]] = arith.constant 3 : i32
--- MLIR-NEXT:    %[[R1:.*]] = ada.binop "+" %[[X]], %[[Y]] : i32
--- MLIR-NEXT:    %[[R2:.*]] = ada.binop "+" %[[R1]], %[[Z]] : i32
--- MLIR-NEXT:    ada.return %[[R2]] : i32
+-- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[X:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
+-- MLIR-NEXT:    %[[Y:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
+-- MLIR-NEXT:    %[[Z:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
+-- MLIR-NEXT:    %[[R1:.*]] = ada.binop "+" %[[X]], %[[Y]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[R2:.*]] = ada.binop "+" %[[R1]], %[[Z]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    ada.return %[[R2]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_local_var_multi_name(
 -- LLVM:         ret i32 9

@@ -2,27 +2,27 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_literal_arithmetic
--- MLIR-SAME:    () -> i32
--- MLIR:         %[[C1:.*]] = arith.constant 1 : i32
--- MLIR-NEXT:    %[[C2:.*]] = arith.constant 2 : i32
--- MLIR-NEXT:    %[[V0:.*]] = ada.binop "+" %[[C1]], %[[C2]] : i32
--- MLIR-NEXT:    %[[C3:.*]] = arith.constant 3 : i32
--- MLIR-NEXT:    %[[V1:.*]] = ada.binop "+" %[[V0]], %[[C3]] : i32
--- MLIR-NEXT:    %[[C4:.*]] = arith.constant 4 : i32
--- MLIR-NEXT:    %[[V2:.*]] = ada.binop "+" %[[V1]], %[[C4]] : i32
--- MLIR-NEXT:    %[[C5:.*]] = arith.constant 5 : i32
--- MLIR-NEXT:    %[[V3:.*]] = ada.binop "+" %[[V2]], %[[C5]] : i32
--- MLIR-NEXT:    %[[C6:.*]] = arith.constant 6 : i32
--- MLIR-NEXT:    %[[V4:.*]] = ada.binop "-" %[[V3]], %[[C6]] : i32
--- MLIR-NEXT:    %[[C7:.*]] = arith.constant 7 : i32
--- MLIR-NEXT:    %[[C8:.*]] = arith.constant 8 : i32
--- MLIR-NEXT:    %[[V5:.*]] = ada.binop "*" %[[C7]], %[[C8]] : i32
--- MLIR-NEXT:    %[[V6:.*]] = ada.binop "+" %[[V4]], %[[V5]] : i32
--- MLIR-NEXT:    %[[C9:.*]] = arith.constant 9 : i32
--- MLIR-NEXT:    %[[V7:.*]] = ada.binop "-" %[[V6]], %[[C9]] : i32
--- MLIR-NEXT:    %[[C10:.*]] = arith.constant 10 : i32
--- MLIR-NEXT:    %[[V8:.*]] = ada.binop "+" %[[V7]], %[[C10]] : i32
--- MLIR-NEXT:    ada.return %[[V8]] : i32
+-- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[C1:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
+-- MLIR-NEXT:    %[[C2:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 2
+-- MLIR-NEXT:    %[[V0:.*]] = ada.binop "+" %[[C1]], %[[C2]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[C3:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
+-- MLIR-NEXT:    %[[V1:.*]] = ada.binop "+" %[[V0]], %[[C3]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[C4:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 4
+-- MLIR-NEXT:    %[[V2:.*]] = ada.binop "+" %[[V1]], %[[C4]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[C5:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 5
+-- MLIR-NEXT:    %[[V3:.*]] = ada.binop "+" %[[V2]], %[[C5]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[C6:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 6
+-- MLIR-NEXT:    %[[V4:.*]] = ada.binop "-" %[[V3]], %[[C6]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[C7:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 7
+-- MLIR-NEXT:    %[[C8:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 8
+-- MLIR-NEXT:    %[[V5:.*]] = ada.binop "*" %[[C7]], %[[C8]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[V6:.*]] = ada.binop "+" %[[V4]], %[[V5]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[C9:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 9
+-- MLIR-NEXT:    %[[V7:.*]] = ada.binop "-" %[[V6]], %[[C9]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[C10:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 10
+-- MLIR-NEXT:    %[[V8:.*]] = ada.binop "+" %[[V7]], %[[C10]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    ada.return %[[V8]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_literal_arithmetic(
 -- LLVM:         ret i32 66

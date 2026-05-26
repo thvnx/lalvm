@@ -6,9 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This pass emits LLVM debug intrinsics for Ada objects and parameters, and
-// collects Ada enum type metadata from surviving `ada.type` ops into the
-// `enumInfos` out-parameter for use by `attachAdaDebugInfo` in lalvm.cpp.
+// This pass emits LLVM debug intrinsics for Ada objects and parameters.
 // It runs after DIScopeForLLVMFuncOpPass so that DISubprogramAttr is
 // available on each llvm.func.
 //
@@ -18,6 +16,12 @@
 //     llvm.mlir.constant (if mem2reg promotes the alloca)
 //   - arith.constant (NumberDecl): lowered to llvm.mlir.constant
 //   - llvm.func entry block args (parameters): NameLoc set by mlirGenSubpBody
+//
+// Ada types are resolved by looking up the op's MLIR type against surviving
+// `ada.type` ops (keyed by getMlirType()). For llvm.alloca the type is
+// getElemType(); for scalar ops it is the result type; for scalar block args
+// it is the arg type; for ptr block args it is inferred from the first
+// llvm.load or llvm.store use of the argument.
 //
 // Dispatch strategy:
 //   llvm.alloca with NameLoc             -> DW_TAG_variable + dbg.declare
@@ -29,9 +33,8 @@
 // When an llvm.alloca with NameLoc("x") exists in a function, scalar ops with
 // the same NameLoc("x") are suppressed to avoid duplicate debug entries.
 //
-// ada.type ops survive LowerToLLVM (marked legal) so that ptr parameters can
-// recover the element type via the "ada.type" arg_attr. They are dropped
-// silently by AdaToLLVMIRTranslation after this pass.
+// ada.type ops survive LowerToLLVM (marked legal) to provide Ada type names
+// for debug info. They are dropped by AdaToLLVMIRTranslation after this pass.
 //
 //===----------------------------------------------------------------------===//
 
@@ -94,37 +97,75 @@ static LLVM::DIBasicTypeAttr makeDINamedType(MLIRContext *ctx,
   return makeDIBasicType(ctx, typeOp.getSymName(), typeOp.getMlirType());
 }
 
-/// Look up a named DI type for `typeRef` in `typeOpCache`.
-/// Returns null if typeRef is null, not in the cache, or has no recognized
-/// Ada type info (NumericTypeInfoAttr or EnumTypeInfoAttr).
-static LLVM::DIBasicTypeAttr
-lookupNamedDIType(MLIRContext *ctx, FlatSymbolRefAttr typeRef,
-                  llvm::DenseMap<StringAttr, ada::TypeOp> &typeOpCache) {
-  if (!typeRef)
+/// Build an empty DICompositeTypeAttr stub for an enum ada.type op.
+/// The empty elements array acts as a sentinel: buildEnumDITypes replaces it
+/// with the full DICompositeType after MLIR-to-LLVM translation.
+static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
+                                                ada::TypeOp typeOp) {
+  auto intType = dyn_cast<IntegerType>(typeOp.getMlirType());
+  if (!intType)
     return {};
-  auto it = typeOpCache.find(typeRef.getRootReference());
-  if (it == typeOpCache.end() ||
-      !isa<ada::NumericTypeInfoAttr, ada::EnumTypeInfoAttr>(
-          it->second.getTypeInfo()))
-    return {};
-  return makeDINamedType(ctx, it->second);
+  return LLVM::DICompositeTypeAttr::get(
+      ctx, llvm::dwarf::DW_TAG_enumeration_type,
+      StringAttr::get(ctx, typeOp.getSymName()),
+      /*file=*/LLVM::DIFileAttr{}, /*line=*/0, /*scope=*/LLVM::DIScopeAttr{},
+      /*baseType=*/LLVM::DITypeAttr{}, LLVM::DIFlags::Zero,
+      llvm::alignTo(intType.getWidth(), 8), /*alignInBits=*/0,
+      /*elements=*/{}, /*dataLocation=*/LLVM::DIExpressionAttr{},
+      /*rank=*/LLVM::DIExpressionAttr{},
+      /*allocated=*/LLVM::DIExpressionAttr{},
+      /*associated=*/LLVM::DIExpressionAttr{});
 }
 
-/// Extract the ada.type symbol reference encoded as FusedLoc metadata.
-/// Returns a null attr if `loc` is not a FusedLoc with FlatSymbolRefAttr
-/// metadata (i.e. no ada type info was encoded for this object).
-static FlatSymbolRefAttr getAdaTypeRef(Location loc) {
-  if (auto fl = dyn_cast<FusedLoc>(loc))
-    return dyn_cast_or_null<FlatSymbolRefAttr>(fl.getMetadata());
-  return {};
+/// Dispatch to the appropriate DI type for a given ada.type op.
+/// Returns a DICompositeTypeAttr stub for enum types, a DIBasicTypeAttr for
+/// numeric types, and null for unsupported type info kinds.
+static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
+  if (isa<ada::EnumTypeInfoAttr>(typeOp.getTypeInfo()))
+    return makeDIEnumStub(ctx, typeOp);
+  if (!isa<ada::NumericTypeInfoAttr>(typeOp.getTypeInfo()))
+    return {};
+  return makeDINamedType(ctx, typeOp);
+}
+
+/// Look up a named DI type for `mlirType` in `typeOpCache`.
+/// Returns null if mlirType has no matching ada.type op or no recognized type
+/// info. Returns a DICompositeTypeAttr stub for enum types (replaced later by
+/// buildEnumDITypes) and a DIBasicTypeAttr for numeric types.
+static LLVM::DITypeAttr
+lookupNamedDIType(MLIRContext *ctx, mlir::Type mlirType,
+                  llvm::DenseMap<mlir::Type, ada::TypeOp> &typeOpCache) {
+  auto it = typeOpCache.find(mlirType);
+  if (it == typeOpCache.end())
+    return {};
+  return makeDITypeAttr(ctx, it->second);
+}
+
+/// Extract the Ada-type-specific DI type from a FusedLoc carrying a
+/// FlatSymbolRefAttr, using `typeOpByName` to resolve the sym_name.
+/// Returns null if the loc has no such metadata or the sym_name is not found.
+static LLVM::DITypeAttr extractDITypeFromLoc(
+    MLIRContext *ctx, Location loc,
+    llvm::DenseMap<mlir::StringAttr, ada::TypeOp> &typeOpByName) {
+  auto fl = dyn_cast<FusedLoc>(loc);
+  if (!fl)
+    return {};
+  auto typeRef = dyn_cast_or_null<ada::DITypeRefAttr>(fl.getMetadata());
+  if (!typeRef)
+    return {};
+  auto it = typeOpByName.find(typeRef.getSym().getAttr());
+  if (it == typeOpByName.end())
+    return {};
+  return makeDITypeAttr(ctx, it->second);
 }
 
 static std::pair<LLVM::DIFileAttr, unsigned>
 getFileAndLine(MLIRContext *ctx, Location loc,
                LLVM::DISubprogramAttr subprogram) {
-  // Unwrap FusedLoc that may carry ada.type metadata.
+  // Unwrap FusedLoc carrying Ada type metadata (from attachAdaTypeRef).
   if (auto fl = dyn_cast<FusedLoc>(loc))
-    loc = fl.getLocations().front();
+    if (!fl.getLocations().empty())
+      return getFileAndLine(ctx, fl.getLocations()[0], subprogram);
   if (auto flc = dyn_cast<FileLineColRange>(loc)) {
     StringRef filePath = flc.getFilename().getValue();
     return {LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
@@ -147,9 +188,6 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
 struct AdaDebugInfoPass
     : public PassWrapper<AdaDebugInfoPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AdaDebugInfoPass)
-
-  explicit AdaDebugInfoPass(llvm::SmallVector<ada::AdaEnumInfo> &infos)
-      : enumInfos(infos) {}
 
   void runOnOperation() final {
     MLIRContext *ctx = &getContext();
@@ -206,34 +244,15 @@ struct AdaDebugInfoPass
           {op, subprogram, nl.getName(), nl.getChildLoc(), isAlloca});
     });
 
-    // Build ada.type op cache: avoids O(M) symbol-table scans in Passes 3-4,
-    // and collects enum type metadata into enumInfos for attachAdaDebugInfo.
-    llvm::DenseMap<StringAttr, ada::TypeOp> typeOpCache;
+    // Build ada.type op caches for Passes 3-4.
+    // typeOpCache (keyed by MLIR type) is a fallback when no Ada type ref is
+    // encoded in the value's location. typeOpByName (keyed by sym_name) is the
+    // primary lookup when attachAdaTypeRef embedded a FlatSymbolRefAttr.
+    llvm::DenseMap<mlir::Type, ada::TypeOp> typeOpCache;
+    llvm::DenseMap<mlir::StringAttr, ada::TypeOp> typeOpByName;
     module.walk([&](ada::TypeOp typeOp) {
-      StringAttr symName = typeOp.getSymNameAttr();
-      typeOpCache[symName] = typeOp;
-
-      auto enumInfo = dyn_cast<ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
-      if (!enumInfo)
-        return;
-      auto intType = dyn_cast<IntegerType>(typeOp.getMlirType());
-      if (!intType)
-        return;
-
-      llvm::SmallVector<std::string> names;
-      llvm::SmallVector<int64_t> values;
-      for (auto [name, val] : enumInfo.literals()) {
-        names.push_back(name.str());
-        values.push_back(val);
-      }
-
-      std::optional<std::string> subpScope;
-      if (auto func = typeOp->getParentOfType<LLVM::LLVMFuncOp>())
-        subpScope = func.getName().str();
-
-      enumInfos.push_back({symName.getValue().str(), intType.getWidth(),
-                           typeOp.getLoc(), std::move(names), std::move(values),
-                           std::move(subpScope)});
+      typeOpCache.try_emplace(typeOp.getMlirType(), typeOp);
+      typeOpByName.try_emplace(typeOp.getSymNameAttr(), typeOp);
     });
 
     // Pass 3: emit debug intrinsics.
@@ -245,17 +264,14 @@ struct AdaDebugInfoPass
                                 ? cast<LLVM::AllocaOp>(entry.op).getElemType()
                                 : entry.op->getResult(0).getType();
 
-      auto typeRef = getAdaTypeRef(entry.innerLoc);
-      LLVM::DIBasicTypeAttr diType =
-          lookupNamedDIType(ctx, typeRef, typeOpCache);
+      LLVM::DITypeAttr diType =
+          extractDITypeFromLoc(ctx, entry.innerLoc, typeOpByName);
+      if (!diType)
+        diType = lookupNamedDIType(ctx, elemType, typeOpCache);
       if (!diType) {
         auto intType = dyn_cast<IntegerType>(elemType);
         if (!intType)
           continue; // silently skip floats without type info
-        if (!typeRef)
-          entry.op->emitWarning("'")
-              << entry.name.getValue()
-              << "': no Ada type info; using generic debug type";
         diType = makeDIIntType(ctx, intType);
       }
       auto varInfo = LLVM::DILocalVariableAttr::get(
@@ -297,45 +313,47 @@ struct AdaDebugInfoPass
             getFileAndLine(ctx, nl.getChildLoc(), subprogram);
 
         // Resolve the DI type and declare-vs-value mode for this parameter.
-        LLVM::DIBasicTypeAttr diType;
+        LLVM::DITypeAttr diType;
         bool isDeclare = false;
         Type argType = arg.getType();
         if (isa<IntegerType, FloatType>(argType)) {
           // Scalar `in` parameter: dbg.value at function entry.
-          auto typeRef = getAdaTypeRef(nl.getChildLoc());
-          diType = lookupNamedDIType(ctx, typeRef, typeOpCache);
+          diType = extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName);
+          if (!diType)
+            diType = lookupNamedDIType(ctx, argType, typeOpCache);
           if (!diType) {
             auto intType = dyn_cast<IntegerType>(argType);
             if (!intType)
               continue; // float without type info: skip silently
-            if (!typeRef)
-              func.emitWarning("scalar parameter '")
-                  << nl.getName().getValue()
-                  << "' has no Ada type info; using generic debug type";
             diType = makeDIIntType(ctx, intType);
           }
         } else if (isa<LLVM::LLVMPointerType>(argType)) {
           // Reference `in out`/`out` parameter: dbg.declare.
-          // Recover the element type from the FusedLoc metadata in the NameLoc
-          // child (encoded by MLIRGen; survives lowering because locs are
-          // preserved verbatim by standard conversion patterns).
+          // The ptr is opaque; recover the element type from the first
+          // llvm.load or llvm.store that uses this argument.
           isDeclare = true;
-          auto typeRef = getAdaTypeRef(nl.getChildLoc());
-          if (!typeRef) {
+          mlir::Type elemType;
+          for (Operation *userOp : arg.getUsers()) {
+            if (auto load = dyn_cast<LLVM::LoadOp>(userOp)) {
+              elemType = load->getResult(0).getType();
+              break;
+            }
+            if (auto store = dyn_cast<LLVM::StoreOp>(userOp)) {
+              elemType = store.getValue().getType();
+              break;
+            }
+          }
+          if (!elemType) {
             func.emitWarning("reference parameter '")
                 << nl.getName().getValue()
-                << "' has no type info; skipping debug info";
+                << "' has no load/store uses; skipping debug info";
             continue;
           }
-          auto it = typeOpCache.find(typeRef.getRootReference());
-          if (it == typeOpCache.end())
-            continue;
-          ada::TypeOp typeOp = it->second;
-          if (isa<ada::NumericTypeInfoAttr, ada::EnumTypeInfoAttr>(
-                  typeOp.getTypeInfo()))
-            diType = makeDINamedType(ctx, typeOp);
+          diType = extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName);
+          if (!diType)
+            diType = lookupNamedDIType(ctx, elemType, typeOpCache);
           if (!diType) {
-            auto intElemType = dyn_cast<IntegerType>(typeOp.getMlirType());
+            auto intElemType = dyn_cast<IntegerType>(elemType);
             if (!intElemType)
               continue; // silently skip floats and other unsupported types
             diType = makeDIIntType(ctx, intElemType);
@@ -354,12 +372,40 @@ struct AdaDebugInfoPass
       }
     });
   }
+};
 
-  llvm::SmallVector<ada::AdaEnumInfo> &enumInfos;
+struct DICompileUnitAdaPass
+    : public PassWrapper<DICompileUnitAdaPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DICompileUnitAdaPass)
+
+  void getDependentDialects(DialectRegistry &registry) const override {
+    registry.insert<LLVM::LLVMDialect>();
+  }
+
+  void runOnOperation() final {
+    ModuleOp module = getOperation();
+    MLIRContext *ctx = &getContext();
+
+    StringRef filePath;
+    if (auto loc = dyn_cast<FileLineColRange>(module.getLoc()))
+      filePath = loc.getFilename().getValue();
+
+    auto fileAttr =
+        LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
+                              llvm::sys::path::parent_path(filePath));
+    auto cuAttr = LLVM::DICompileUnitAttr::get(
+        DistinctAttr::create(UnitAttr::get(ctx)), llvm::dwarf::DW_LANG_Ada2012,
+        fileAttr, StringAttr::get(ctx, "lalvm"),
+        /*isOptimized=*/false, LLVM::DIEmissionKind::Full);
+    module->setLoc(FusedLoc::get(ctx, {module.getLoc()}, cuAttr));
+  }
 };
 } // namespace
 
-std::unique_ptr<mlir::Pass>
-mlir::ada::createAdaDebugInfoPass(llvm::SmallVector<AdaEnumInfo> &enumInfos) {
-  return std::make_unique<AdaDebugInfoPass>(enumInfos);
+std::unique_ptr<mlir::Pass> mlir::ada::createAdaDebugInfoPass() {
+  return std::make_unique<AdaDebugInfoPass>();
+}
+
+std::unique_ptr<mlir::Pass> mlir::ada::createDICompileUnitAdaPass() {
+  return std::make_unique<DICompileUnitAdaPass>();
 }

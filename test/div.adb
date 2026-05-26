@@ -2,8 +2,8 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @test_div
--- MLIR:         %[[R:.*]] = ada.binop "/" %arg0, %arg1 : i32
--- MLIR-NEXT:    ada.return %[[R]] : i32
+-- MLIR:         %[[R:.*]] = ada.binop "/" %arg0, %arg1 : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_test_div(
 -- LLVM:         %{{.*}} = sdiv i32 %0, %1
