@@ -20,6 +20,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Path.h"
 
 namespace libadalang = frontend::libadalang;
 
@@ -93,7 +94,10 @@ public:
 
     // We create an empty MLIR module and walk the entire compilation unit to
     // codegen its contents into it.
-    adaModule = mlir::ModuleOp::create(loc(compilationUnit));
+    char *filename = ada_unit_filename(ada_node_unit(&compilationUnit));
+    llvm::StringRef stem = llvm::sys::path::stem(filename);
+    adaModule = mlir::ModuleOp::create(loc(compilationUnit), stem);
+    free(filename);
 
     // Use a simple Libadalang AST traversal approach based on the C API.
     if (mlir::failed(visit(compilationUnit)))
