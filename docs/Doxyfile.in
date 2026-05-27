@@ -4,6 +4,7 @@
 PROJECT_NAME     = "@PROJECT_NAME@"
 PROJECT_BRIEF    = "Ada to LLVM IR compiler via MLIR"
 OUTPUT_DIRECTORY = @PROJECT_BINARY_DIR@/docs
+STRIP_FROM_PATH  = @PROJECT_SOURCE_DIR@ @PROJECT_BINARY_DIR@
 
 # Sources: public headers, implementation files, driver.
 # AdaOps.md is the generated op-reference produced by mlir-tblgen.
@@ -16,7 +17,6 @@ RECURSIVE     = YES
 FILE_PATTERNS = *.cpp *.h *.md *.inc
 
 EXTENSION_MAPPING = .inc=C++
-EXCLUDE_PATTERNS = *.cpp.inc
 
 PREDEFINED = GET_ATTRDEF_CLASSES GET_OP_CLASSES
 
@@ -40,5 +40,4 @@ SOURCE_BROWSER = YES
 JAVADOC_AUTOBRIEF = YES
 
 # Reduce noise.
-QUIET                = YES
-WARN_IF_UNDOCUMENTED = NO
+QUIET = YES
