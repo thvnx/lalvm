@@ -173,15 +173,13 @@ def CallOp : Ada_Op<"call", []> {
 
   let skipDefaultBuilders = 1;
   let builders = [
-    // Procedure call (no result).
-    OpBuilder<(ins "::mlir::FlatSymbolRefAttr":$callee,
-      CArg<"::mlir::ValueRange", "{}">:$operands)>,
-    // Function call (one result type).
+    // Procedure call: resultType is null. Function call: resultType is non-null.
     OpBuilder<(ins "::mlir::FlatSymbolRefAttr":$callee,
       "::mlir::Type":$resultType,
       CArg<"::mlir::ValueRange", "{}">:$operands)>
   ];
 
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -232,6 +230,8 @@ def SubpOp : Ada_Op<"subp", [
     ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
     ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
     Region *getCallableRegion() { return &getBody(); }
+    bool isProcedure() { return getFunctionType().getNumResults() == 0; }
+    bool isFunction() { return getFunctionType().getNumResults() == 1; }
     /// ABI renaming contract (matches LowerToLLVM):
     ///   - library-level: "_ada_" + bare name
     ///   - nested: "outer__inner" (no _ada_ prefix)

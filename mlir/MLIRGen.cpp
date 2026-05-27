@@ -739,9 +739,7 @@ private:
     auto calleeRef =
         mlir::FlatSymbolRefAttr::get(builder.getContext(), calleeName);
 
-    // Function call: resolve the return type from LAL and pass it to CallOp.
-    // Procedure call: no result, fall through to the no-result builder.
-    if (funcTy.getNumResults() > 0) {
+    if (calleeSubp.isFunction()) {
       ada_node type_decl;
       if (!ada_expr_p_expression_type(&call, &type_decl) ||
           ada_node_is_null(&type_decl)) {
@@ -759,7 +757,8 @@ private:
       return callOp;
     }
 
-    return builder.create<mlir::ada::CallOp>(location, calleeRef, args);
+    return builder.create<mlir::ada::CallOp>(location, calleeRef, mlir::Type{},
+                                             args);
   }
 
   /// Emit a static expression at its use site, with the concrete MLIR type

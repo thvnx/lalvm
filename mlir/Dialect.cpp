@@ -9,6 +9,12 @@
 // This file implements the Ada dialect: custom assembly format and
 // operation verification.
 //
+// NOTE: doxygen 1.15.0 limitation. Ops with more than one builder defined in
+// this file trigger "no uniquely matching class member found" warnings. Doxygen
+// scans Ops.h.inc globally and, when two overloads share the same parameter
+// prefix, it cannot uniquely match each implementation to its declaration.
+// Prefer a single builder per op to keep the generated docs warning-free.
+//
 //===----------------------------------------------------------------------===//
 
 #include "ada/Dialect.h"
@@ -309,18 +315,41 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
-                   mlir::FlatSymbolRefAttr callee, mlir::ValueRange operands) {
-  assert(state.types.empty() && "procedure call must have no result type");
-  state.addAttribute(getCalleeAttrName(state.name), callee);
-  state.addOperands(operands);
+/// Look up a symbol named `name` by walking up through enclosing SymbolTable
+/// scopes (SubpOp, then ModuleOp). `lookupNearestSymbolFrom` cannot be used
+/// here because SubpOp carries the SymbolTable trait, making it an opaque
+/// scope boundary that hides sibling nested subprograms.
+static mlir::Operation *lookupCallee(mlir::Operation *from,
+                                     mlir::StringAttr name) {
+  for (mlir::Operation *scope = from->getParentOp(); scope;
+       scope = scope->getParentOp()) {
+    if (mlir::isa<SubpOp, mlir::ModuleOp>(scope))
+      if (auto *sym = mlir::SymbolTable::lookupSymbolIn(scope, name))
+        return sym;
+  }
+  return nullptr;
+}
+
+llvm::LogicalResult CallOp::verify() {
+  auto subp = mlir::dyn_cast_or_null<SubpOp>(
+      lookupCallee(*this, getCalleeAttr().getRootReference()));
+  if (!subp)
+    return mlir::success();
+
+  if (subp.isProcedure() && getResult())
+    return emitOpError() << "callee '" << getCallee()
+                         << "' is a procedure but call carries a result";
+  if (subp.isFunction() && !getResult())
+    return emitOpError() << "callee '" << getCallee()
+                         << "' is a function but call carries no result";
+  return mlir::success();
 }
 
 void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    mlir::FlatSymbolRefAttr callee, mlir::Type resultType,
                    mlir::ValueRange operands) {
-  assert(resultType && "function call must have a valid result type");
-  state.addTypes(resultType);
+  if (resultType)
+    state.addTypes(resultType);
   state.addAttribute(getCalleeAttrName(state.name), callee);
   state.addOperands(operands);
 }

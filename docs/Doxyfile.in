@@ -11,9 +11,14 @@ INPUT         = @PROJECT_SOURCE_DIR@/include \
                 @PROJECT_SOURCE_DIR@/frontend \
                 @PROJECT_SOURCE_DIR@/mlir \
                 @PROJECT_SOURCE_DIR@/lalvm.cpp \
-                @PROJECT_BINARY_DIR@/include/ada/AdaOps.md
+                @PROJECT_BINARY_DIR@/include/ada
 RECURSIVE     = YES
-FILE_PATTERNS = *.cpp *.h *.md
+FILE_PATTERNS = *.cpp *.h *.md *.inc
+
+EXTENSION_MAPPING = .inc=C++
+EXCLUDE_PATTERNS = *.cpp.inc
+
+PREDEFINED = GET_ATTRDEF_CLASSES GET_OP_CLASSES
 
 # Document all declarations, including private members and anonymous namespaces.
 EXTRACT_ALL          = YES
