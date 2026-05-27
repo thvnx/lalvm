@@ -145,10 +145,9 @@ def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
 }
 
 //===----------------------------------------------------------------------===//
-// NopOp
+// NullOp
 //===----------------------------------------------------------------------===//
 
-// Ada null statement (RM 5.1): a no-operation statement. Lowered to nothing.
 def NullOp : Ada_Op<"null", [Pure]> {
   let summary = "null statement: no operation";
   let description = [{
