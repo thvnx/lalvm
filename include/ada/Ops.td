@@ -74,22 +74,32 @@ def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
 // TypeOp
 //===----------------------------------------------------------------------===//
 
-// Represents an Ada type declaration. Metadata-only op with no runtime value:
-// its sole purpose is to carry type information (name, MLIR type, kind-specific
-// data) through the pipeline for DWARF debug info generation. Currently erased
-// during lowering; full DWARF emission is not yet implemented.
-//
-// type_info holds an EnumTypeInfoAttr for enumeration types. Future kinds
-// (integer, float, record, array, ...) will use additional AttrDef subclasses.
-//
-// Local types live inside the enclosing region; external types are emitted at
-// module level.
+// Ada type declaration: carries type metadata through the pipeline.
+// NOTE: `Symbol` trait cannot be used here. `ada.type` ops are marked legal
+// in `LowerToLLVM` and survive into `llvm.func` bodies, whose parent op
+// (`LLVM::LLVMFuncOp`) does not carry `SymbolTable`. The MLIR verifier checks
+// this invariant after every pass, so `Symbol` would always fail post-lowering.
 def TypeOp : Ada_Op<"type", []> {
-  let summary = "Ada type declaration (metadata only, for DWARF debug info)";
+  let summary = "Ada type declaration (metadata only)";
+  let description = [{
+    Metadata-only op with no runtime value: carries type information (name,
+    MLIR type, and kind-specific data) through the pipeline for downstream
+    consumers (e.g. DWARF debug info generation). Not erased during lowering;
+    survives the full pipeline.
+
+    `type_info` is one of the Ada dialect type info attributes.
+
+    Syntax example:
+
+    ```mlir
+    ada.type @Color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
+    ada.type @Integer : i32 = #ada.numeric_info
+    ```
+  }];
   let arguments = (ins
-    SymbolNameAttr:$sym_name,
-    TypeAttr:$mlir_type,
-    AnyAttr:$type_info
+    SymbolNameAttr:$sym_name,  // Ada type declaration name
+    TypeAttr:$mlir_type,       // Corresponding MLIR type
+    AnyAttr:$type_info         // Kind-specific metadata
   );
 
   let skipDefaultBuilders = 1;
@@ -147,7 +157,7 @@ def NullOp : Ada_Op<"null", [Pure]> {
 // enclosing function are directly accessible. NoTerminator+SingleBlock waive
 // the need for an explicit terminator op. During lowering the region contents
 // are inlined into the parent block and the op is erased.
-def BlockOp : Ada_Op<"block", [NoTerminator, SingleBlock]> {
+def BlockOp : Ada_Op<"block", [NoTerminator, SingleBlock, SymbolTable]> {
   let summary = "Ada block statement with its own declarative scope";
   let arguments = (ins OptionalAttr<StrAttr>:$name);
   let regions = (region AnyRegion:$body);

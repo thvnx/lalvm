@@ -113,6 +113,13 @@ void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
 // TypeOp
 //===----------------------------------------------------------------------===//
 
+/// Builds a `TypeOp` with the given Ada type name, MLIR type, and metadata.
+/// @param odsBuilder MLIR op builder; used to intern `name` as a `StringAttr`.
+/// @param odsState   Operation construction state accumulating attributes.
+/// @param name       Ada type declaration name.
+/// @param mlirType   Corresponding MLIR type; wrapped in a `TypeAttr`.
+/// @param typeInfo   Kind-specific metadata; one of the Ada dialect type info
+///                   attributes.
 void TypeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::Type mlirType,
                    mlir::Attribute typeInfo) {
@@ -123,6 +130,7 @@ void TypeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
   state.addAttribute(getTypeInfoAttrName(state.name), typeInfo);
 }
 
+/// Assembly format: `@sym_name : mlir_type = type_info_attr`
 mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
                                 mlir::OperationState &result) {
   mlir::StringAttr symName;
@@ -149,7 +157,9 @@ mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
 void TypeOp::print(mlir::OpAsmPrinter &p) {
   p << ' ';
   p.printSymbolName(getSymName());
-  p << " : " << getMlirType() << " = ";
+  p << " : ";
+  p.printType(getMlirType());
+  p << " = ";
   p.printAttribute(getTypeInfo());
 }
 
