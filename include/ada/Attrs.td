@@ -21,31 +21,33 @@ include "Dialect.td"
 // Ada Type Info Attributes
 //===----------------------------------------------------------------------===//
 
-// Like ArrayRefParameter<"llvm::StringRef">, but also deep-copies the string
-// bytes into the attribute storage allocator. Plain ArrayRefParameter copies
-// only the StringRef objects (pointer+length pairs); the bytes must be
-// separately owned or the StringRefs dangle after construction.
-def StringRefArrayParameter :
-    AttrOrTypeParameter<"::llvm::ArrayRef<::llvm::StringRef>", "array of strings"> {
-  let allocator = [{
-    ::llvm::SmallVector<::llvm::StringRef> strs;
-    strs.reserve($_self.size());
-    for (::llvm::StringRef s : $_self)
-      strs.push_back($_allocator.copyInto(s));
-    $_dst = $_allocator.copyInto(::llvm::ArrayRef<::llvm::StringRef>(strs));
-  }];
-  let comparator = [{$_lhs == $_rhs}];
-}
-
-// Carries enumerator names (lowercased) and their integer representation
-// values for an enumeration type. Used as the type_info payload of TypeOp.
+// Carries enumerator names and representation values for an enumeration type.
 def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
   let mnemonic = "enum_info";
-  let summary = "Enumeration type metadata (enumerator names and rep values)";
+  let summary = "Enumeration type metadata";
   let parameters = (ins
-    StringRefArrayParameter:$names,
-    ArrayRefParameter<"int64_t">:$values
+    AttrOrTypeParameter<"::mlir::ArrayAttr", "enumerator names, lowercased">:$names,
+    ArrayRefParameter<"int64_t", "integer representation values">:$values
   );
+  let extraClassDeclaration = [{
+    /// Returns the integer representation value for the given enumerator name,
+    /// or std::nullopt if not found.
+    std::optional<int64_t> enumRep(::llvm::StringRef name) const;
+    /// Returns a zip range of (StringRef name, int64_t value) pairs.
+    auto literals() const {
+      return llvm::zip_equal(getNames().getAsValueRange<::mlir::StringAttr>(),
+                             getValues());
+    }
+  }];
+  let description = [{
+    Carries the enumerator names and their integer representation values for
+    an Ada enumeration type. Names are stored lowercased to match Ada's
+    case-insensitivity rules.
+
+    Syntax:
+
+        <"name1" = val1, "name2" = val2, ...>
+  }];
   let hasCustomAssemblyFormat = 1;
 }
 

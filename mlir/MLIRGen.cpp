@@ -642,19 +642,17 @@ private:
     // for enum type information within the pipeline.
     auto typeInfo =
         mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
-    auto names = typeInfo.getNames();
-    auto nameIt = llvm::find(names, litName);
-    if (nameIt == names.end()) {
+    auto value = typeInfo.enumRep(litName);
+    if (!value) {
       mlir::emitError(location, "enum literal '")
           << litName << "' not found in ada.type '" << typeOp.getSymName()
           << "'";
       return nullptr;
     }
-    int64_t value = typeInfo.getValues()[nameIt - names.begin()];
     mlir::Type type = typeOp.getMlirType();
 
     auto attr =
-        mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(type), value);
+        mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(type), *value);
     auto constOp = builder.create<mlir::arith::ConstantOp>(location, attr);
     setAdaNameLoc(constOp, builder.getStringAttr(litName), typeOp);
     return constOp.getResult();
@@ -1136,9 +1134,9 @@ private:
     ada_enum_type_def_f_enum_literals(&type_def, &literals);
     unsigned litCount = ada_node_children_count(&literals);
 
-    llvm::SmallVector<std::string> nameStorage;
+    llvm::SmallVector<mlir::Attribute> nameAttrs;
     llvm::SmallVector<int64_t> values;
-    nameStorage.reserve(litCount);
+    nameAttrs.reserve(litCount);
     values.reserve(litCount);
 
     for (unsigned i = 0; i < litCount; ++i) {
@@ -1154,7 +1152,9 @@ private:
         mlir::emitError(location, "failed to get enum literal name");
         return mlir::failure();
       }
-      nameStorage.push_back(libadalang::getName(&lit_name, /*canonical=*/true));
+      nameAttrs.push_back(mlir::StringAttr::get(
+          builder.getContext(),
+          libadalang::getName(&lit_name, /*canonical=*/true)));
 
       ada_big_integer bigint;
       if (!ada_enum_literal_decl_p_enum_rep(&lit, &bigint)) {
@@ -1172,10 +1172,9 @@ private:
       values.push_back(val);
     }
 
-    llvm::SmallVector<llvm::StringRef> names(nameStorage.begin(),
-                                             nameStorage.end());
-    auto typeInfo =
-        mlir::ada::EnumTypeInfoAttr::get(builder.getContext(), names, values);
+    auto typeInfo = mlir::ada::EnumTypeInfoAttr::get(
+        builder.getContext(),
+        mlir::ArrayAttr::get(builder.getContext(), nameAttrs), values);
     auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
                                                     mlirType, typeInfo);
     typeDecls[type_decl.node] = typeOp;

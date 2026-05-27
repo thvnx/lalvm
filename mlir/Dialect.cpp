@@ -69,41 +69,43 @@ void AdaDialect::initialize() {
 // EnumTypeInfoAttr
 //===----------------------------------------------------------------------===//
 
+std::optional<int64_t> EnumTypeInfoAttr::enumRep(llvm::StringRef name) const {
+  for (auto [n, v] : literals())
+    if (n == name)
+      return v;
+  return std::nullopt;
+}
+
 /// Assembly format: <"name1" = val1, "name2" = val2>
 mlir::Attribute EnumTypeInfoAttr::parse(mlir::AsmParser &parser, mlir::Type) {
-  if (parser.parseLess())
-    return {};
-
-  llvm::SmallVector<std::string> nameStorage;
+  llvm::SmallVector<mlir::Attribute> names;
   llvm::SmallVector<int64_t> values;
 
-  if (parser.parseCommaSeparatedList([&]() -> mlir::ParseResult {
-        std::string s;
-        int64_t val;
-        if (parser.parseString(&s) || parser.parseEqual() ||
-            parser.parseInteger(val))
-          return mlir::failure();
-        nameStorage.push_back(std::move(s));
-        values.push_back(val);
-        return mlir::success();
-      }))
+  if (parser.parseCommaSeparatedList(
+          mlir::AsmParser::Delimiter::LessGreater, [&]() -> mlir::ParseResult {
+            std::string s;
+            int64_t val;
+            if (parser.parseString(&s) || parser.parseEqual() ||
+                parser.parseInteger(val))
+              return mlir::failure();
+            names.push_back(mlir::StringAttr::get(parser.getContext(), s));
+            values.push_back(val);
+            return mlir::success();
+          }))
     return {};
 
-  if (parser.parseGreater())
-    return {};
-
-  llvm::SmallVector<llvm::StringRef> names(nameStorage.begin(),
-                                           nameStorage.end());
-  return EnumTypeInfoAttr::get(parser.getContext(), names, values);
+  return EnumTypeInfoAttr::get(parser.getContext(),
+                               mlir::ArrayAttr::get(parser.getContext(), names),
+                               values);
 }
 
 void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
   p << '<';
-  llvm::interleaveComma(llvm::zip(getNames(), getValues()), p.getStream(),
-                        [&](auto pair) {
-                          auto [name, val] = pair;
-                          p << '"' << name << "\" = " << val;
-                        });
+  llvm::interleaveComma(literals(), p.getStream(), [&](auto pair) {
+    auto [name, val] = pair;
+    p.printString(name);
+    p << " = " << val;
+  });
   p << '>';
 }
 

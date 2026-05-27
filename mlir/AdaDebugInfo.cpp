@@ -221,10 +221,11 @@ struct AdaDebugInfoPass
         return;
 
       llvm::SmallVector<std::string> names;
-      for (StringRef name : enumInfo.getNames())
+      llvm::SmallVector<int64_t> values;
+      for (auto [name, val] : enumInfo.literals()) {
         names.push_back(name.str());
-      llvm::SmallVector<int64_t> values(enumInfo.getValues().begin(),
-                                        enumInfo.getValues().end());
+        values.push_back(val);
+      }
 
       std::optional<std::string> subpScope;
       if (auto func = typeOp->getParentOfType<LLVM::LLVMFuncOp>())
