@@ -19,9 +19,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-
-// C++ implementation in mlir/IR/OpDefinition.h.
-def SameOperandsAndResultType : NativeOpTrait<"SameOperandsAndResultType">;
+include "mlir/Interfaces/InferTypeOpInterface.td"
 
 //===----------------------------------------------------------------------===//
 // Ada Operations
@@ -46,7 +44,7 @@ def AdaOp_Gt      : I32EnumAttrCase<"Gt",      9,  ">">;
 def AdaOp_Gte     : I32EnumAttrCase<"Gte",     10, ">=">;
 def AdaOp_In      : I32EnumAttrCase<"In",      11, "in">;
 def AdaOp_NotIn   : I32EnumAttrCase<"NotIn",   12, "not in">;
-// Binary adding operators (RM 4.5.3)
+// Binary and unary adding operators (RM 4.5.3/RM 4.5.4)
 def AdaOp_Plus    : I32EnumAttrCase<"Plus",    13, "+">;
 def AdaOp_Minus   : I32EnumAttrCase<"Minus",   14, "-">;
 def AdaOp_Concat  : I32EnumAttrCase<"Concat",  15, "&">;
@@ -61,7 +59,7 @@ def AdaOp_Abs     : I32EnumAttrCase<"Abs",     21, "abs">;
 def AdaOp_Not     : I32EnumAttrCase<"Not",     22, "not">;
 
 //===----------------------------------------------------------------------===//
-// BinOp
+// AdaBinaryOp
 //===----------------------------------------------------------------------===//
 
 def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
@@ -123,6 +121,21 @@ def TypeOp : Ada_Op<"type", []> {
 // that infers the result type from the operands, so no custom builder is needed.
 def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
   let summary = "Ada predefined binary arithmetic operation";
+  let description = [{
+    Represents an Ada predefined binary arithmetic operation (RM 4.5.3-4.5.5).
+    The operator is encoded as an `AdaBinaryOp` enum attribute.
+
+    `SameOperandsAndResultType` constrains the op so that both operands and the
+    result share one type (integer or float). The constraint also auto-generates
+    a builder that infers the result type from the operands.
+
+    Two assembly formats are accepted:
+
+    ```mlir
+    %0 = ada.binop "+" %a, %b : i32              // all types identical
+    %0 = ada.binop "+" %a, %b : (i32, i32) -> i32  // functional form
+    ```
+  }];
 
   let arguments = (ins AdaBinaryOp:$kind, AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType);

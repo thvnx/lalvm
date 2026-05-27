@@ -170,56 +170,14 @@ llvm::LogicalResult TypeOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// Ada Operations
-//===----------------------------------------------------------------------===//
-
-/// Shared verifier for add/sub/mul: rejects types that have no corresponding
-/// arith lowering (the lowering dispatches on IntegerType vs FloatType).
-static llvm::LogicalResult verifyNumericOp(mlir::Operation *op) {
-  mlir::Type type = op->getOperand(0).getType();
-  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
-    return op->emitOpError() << "unsupported operand type " << type
-                             << "; expected integer or float";
-  return mlir::success();
-}
-
-/// Shared operand+type parser for BinOp. Accepts two equivalent text formats:
-///   %0 = ada.binop "+" %a, %b : i32              (all types identical)
-///   %0 = ada.binop "+" %a, %b : (i32, i32) -> i32  (functional form)
-static mlir::ParseResult parseBinaryOp(mlir::OpAsmParser &parser,
-                                       mlir::OperationState &result) {
-  SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
-  SMLoc operandsLoc = parser.getCurrentLocation();
-  Type type;
-  if (parser.parseOperandList(operands, /*requiredOperandCount=*/2) ||
-      parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseColonType(type))
-    return mlir::failure();
-
-  // If the type is a function type, it contains the input and result types of
-  // this operation.
-  if (FunctionType funcType = llvm::dyn_cast<FunctionType>(type)) {
-    if (parser.resolveOperands(operands, funcType.getInputs(), operandsLoc,
-                               result.operands))
-      return mlir::failure();
-    result.addTypes(funcType.getResults());
-    return mlir::success();
-  }
-
-  // Otherwise, the parsed type is the type of both operands and results.
-  if (parser.resolveOperands(operands, type, result.operands))
-    return mlir::failure();
-  result.addTypes(type);
-  return mlir::success();
-}
-
-//===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
 
+/// Accepts two equivalent text formats:
+///   %0 = ada.binop "+" %a, %b : i32              (all types identical)
+///   %0 = ada.binop "+" %a, %b : (i32, i32) -> i32  (functional form)
 mlir::ParseResult BinOp::parse(mlir::OpAsmParser &parser,
                                mlir::OperationState &result) {
-  // Parse the quoted Ada operator symbol: "+", "-", or "*".
   std::string sym;
   SMLoc symLoc = parser.getCurrentLocation();
   if (parser.parseString(&sym))
@@ -232,23 +190,46 @@ mlir::ParseResult BinOp::parse(mlir::OpAsmParser &parser,
   result.addAttribute("kind",
                       ada::AdaBinaryOpAttr::get(parser.getContext(), *kind));
 
-  return parseBinaryOp(parser, result);
+  SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
+  SMLoc operandsLoc = parser.getCurrentLocation();
+  Type type;
+  if (parser.parseOperandList(operands, /*requiredOperandCount=*/2) ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType(type))
+    return mlir::failure();
+
+  // Functional form: `(i32, i32) -> i32` — resolve operands and result
+  // separately.
+  if (FunctionType funcType = llvm::dyn_cast<FunctionType>(type)) {
+    if (parser.resolveOperands(operands, funcType.getInputs(), operandsLoc,
+                               result.operands))
+      return mlir::failure();
+    result.addTypes(funcType.getResults());
+    return mlir::success();
+  }
+
+  if (parser.resolveOperands(operands, type, result.operands))
+    return mlir::failure();
+  result.addTypes(type);
+  return mlir::success();
 }
 
 void BinOp::print(mlir::OpAsmPrinter &p) {
-  p << " \"" << ada::stringifyAdaBinaryOp(getKind()) << "\"";
+  p << " ";
+  p.printString(ada::stringifyAdaBinaryOp(getKind()));
   p << " " << getOperands();
   p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"kind"});
-  p << " : ";
-  mlir::Type resultType = getResult().getType();
-  if (llvm::all_of(getOperandTypes(),
-                   [=](mlir::Type t) { return t == resultType; }))
-    p << resultType;
-  else
-    p.printFunctionalType(getOperandTypes(), (*this)->getResultTypes());
+  p << " : " << getResult().getType();
 }
 
-llvm::LogicalResult BinOp::verify() { return verifyNumericOp(*this); }
+llvm::LogicalResult BinOp::verify() {
+  // SameOperandsAndResultType guarantees all operands share this type.
+  mlir::Type type = getLhs().getType();
+  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
+    return emitOpError() << "unsupported operand type " << type
+                         << "; expected integer or float";
+  return mlir::success();
+}
 
 //===----------------------------------------------------------------------===//
 // SubpOp
