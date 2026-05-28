@@ -20,6 +20,7 @@ include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 
 //===----------------------------------------------------------------------===//
@@ -315,36 +316,23 @@ def SubpOp : Ada_Op<"subp", [
 //===----------------------------------------------------------------------===//
 
 // Terminator marks this op as the mandatory last op in a basic block.
-// Pure is intentionally absent: terminators transfer control flow and must
-// not be eliminated by dead-code elimination.
-def ReturnOp : Ada_Op<"return", [Terminator]> {
+def ReturnOp : Ada_Op<"return", [Terminator, ReturnLike]> {
   let summary = "return operation";
   let description = [{
-    The "return" operation represents a return operation within a function.
-    The operation takes an operand and produces no results.
-    The operand type must match the signature of the function that contains
-    the operation. For example:
+    Represents an Ada return statement (RM 5.8). Functions carry one return
+    operand whose type must match the subprogram result type; procedures carry
+    none.
 
     ```mlir
-      ada.subp @foo() -> i32 {
-        ...
-        ada.return %0 : i32
-      }
+    ada.return %0 : i32  // function return
+    ada.return           // procedure return
     ```
   }];
 
-  // The return operation takes an input operand to return. This value must
-  // match the return type of the enclosing function.
-  let arguments = (ins Variadic<AnyType>:$input);
+  let arguments = (ins Optional<AnyType>:$input);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = "($input^ `:` type($input))? attr-dict";
 
-  // Provide extra utility definitions on the c++ operation class definition.
-  let extraClassDeclaration = [{
-    bool hasOperand() { return getNumOperands() != 0; }
-  }];
-
-  // Invoke a static verify method to verify this return operation.
   let hasVerifier = 1;
 }
 

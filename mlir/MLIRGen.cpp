@@ -37,7 +37,6 @@ namespace libadalang = frontend::libadalang;
 #include <cstdint>
 #include <optional>
 
-using llvm::ArrayRef;
 using llvm::cast;
 using llvm::isa;
 using llvm::SmallVector;
@@ -1423,7 +1422,7 @@ private:
     // Procedures have no explicit return statement; add an implicit one.
     if (isProc)
       builder.create<mlir::ada::ReturnOp>(
-          mlir::UnknownLoc::get(builder.getContext()), ArrayRef<mlir::Value>{});
+          mlir::UnknownLoc::get(builder.getContext()), mlir::Value{});
 
     // Block arguments are subprogram-local; erase any that were marked
     // uninitialized so entries don't accumulate across nested subprograms.
@@ -1579,8 +1578,7 @@ private:
         return mlir::failure();
     }
 
-    builder.create<mlir::ada::ReturnOp>(
-        location, expr ? ArrayRef(expr) : ArrayRef<mlir::Value>());
+    builder.create<mlir::ada::ReturnOp>(location, expr);
     return mlir::success();
   }
 

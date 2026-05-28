@@ -374,28 +374,6 @@ void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-// ada.return operand is optional: ada.subp functions carry one, procedures
-// none.
-mlir::ParseResult ReturnOp::parse(mlir::OpAsmParser &parser,
-                                  mlir::OperationState &result) {
-  mlir::OpAsmParser::UnresolvedOperand operand;
-  mlir::Type type;
-  if (parser.parseOptionalAttrDict(result.attributes))
-    return mlir::failure();
-  auto optOperand = parser.parseOptionalOperand(operand);
-  if (optOperand.has_value()) {
-    if (*optOperand || parser.parseColonType(type) ||
-        parser.resolveOperand(operand, type, result.operands))
-      return mlir::failure();
-  }
-  return mlir::success();
-}
-
-void ReturnOp::print(mlir::OpAsmPrinter &p) {
-  if (getNumOperands() > 0)
-    p << " " << getOperand(0) << " : " << getOperand(0).getType();
-}
-
 llvm::LogicalResult ReturnOp::verify() {
   // Walk up through any enclosing block statements to find the subprogram.
   mlir::Operation *parent = (*this)->getParentOp();
@@ -405,25 +383,16 @@ llvm::LogicalResult ReturnOp::verify() {
   if (!subp)
     return emitOpError() << "expects parent to be ada.subp";
   mlir::FunctionType funcType = subp.getFunctionType();
-
-  /// ReturnOps can only have a single optional operand.
-  if (getNumOperands() > 1)
-    return emitOpError() << "expects at most 1 return operand";
-
-  // The operand number and types must match the function signature.
   const auto &results = funcType.getResults();
   if (getNumOperands() != results.size())
     return emitOpError() << "does not return the same number of values ("
                          << getNumOperands() << ") as the enclosing function ("
                          << results.size() << ")";
-
-  // If the operation does not have an input, we are done.
-  if (!hasOperand())
+  if (!getInput())
     return mlir::success();
 
-  auto inputType = *operand_type_begin();
+  auto inputType = getInput().getType();
   auto resultType = results.front();
-
   if (inputType != resultType)
     return emitOpError() << "type of return operand (" << inputType
                          << ") doesn't match function result type ("
