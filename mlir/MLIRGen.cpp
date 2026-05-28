@@ -682,22 +682,10 @@ private:
 
     auto calleeName = libadalang::getName(&name_node);
 
-    // Walk the chain of enclosing ada.subp ops looking for the callee, then
-    // fall back to the module.  ada.subp carries SymbolTable, so
-    // lookupNearestSymbolFrom would stop at the immediately enclosing
-    // subprogram and never see a sibling nested subprogram.  Walking the parent
-    // chain manually gives us Ada's "visible from any enclosing scope" rule
-    // while still respecting SymbolTable opacity toward the outside.
-    mlir::Operation *op =
+    mlir::Operation *from =
         builder.getInsertionBlock()->getParent()->getParentOp();
-    mlir::Operation *calleeOp = nullptr;
-    while (isa<mlir::ada::SubpOp>(op) && !calleeOp) {
-      calleeOp = mlir::SymbolTable::lookupSymbolIn(op, calleeName.data());
-      op = op->getParentOp();
-    }
-    if (!calleeOp)
-      calleeOp =
-          mlir::SymbolTable::lookupSymbolIn(adaModule, calleeName.data());
+    mlir::Operation *calleeOp =
+        mlir::ada::CallOp::lookupCallee(from, calleeName);
 
     if (!calleeOp || !isa<mlir::ada::SubpOp>(calleeOp)) {
       mlir::emitError(location, "unknown subprogram '") << calleeName << "'";

@@ -278,9 +278,15 @@ std::string SubpOp::getMangledName() {
       name = gnat.str();
   if (mlir::isa<mlir::ModuleOp>((*this)->getParentOp()))
     return "_ada_" + name;
-  for (mlir::Operation *p = (*this)->getParentOp(); mlir::isa<SubpOp>(p);
-       p = p->getParentOp())
-    name = mlir::SymbolTable::getSymbolName(p).str() + "__" + name;
+  // @todo BlockOp is skipped here and does not contribute to the mangled name.
+  // Named blocks (RM 5.6) could use their name as a qualifier; unnamed ones
+  // need a synthetic index (GNAT uses `B_N`, e.g. `outer__B_1__inner`) so
+  // that sibling blocks declaring subprograms with the same name produce
+  // distinct symbols.
+  for (mlir::Operation *p = (*this)->getParentOp();
+       mlir::isa<SubpOp, BlockOp>(p); p = p->getParentOp())
+    if (mlir::isa<SubpOp>(p))
+      name = mlir::SymbolTable::getSymbolName(p).str() + "__" + name;
   return name;
 }
 
@@ -323,24 +329,24 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-/// Look up a symbol named `name` by walking up through enclosing SymbolTable
-/// scopes (SubpOp, then ModuleOp). `lookupNearestSymbolFrom` cannot be used
-/// here because SubpOp carries the SymbolTable trait, making it an opaque
-/// scope boundary that hides sibling nested subprograms.
-static mlir::Operation *lookupCallee(mlir::Operation *from,
-                                     mlir::StringAttr name) {
-  for (mlir::Operation *scope = from->getParentOp(); scope;
-       scope = scope->getParentOp()) {
-    if (mlir::isa<SubpOp, mlir::ModuleOp>(scope))
+/// `lookupNearestSymbolFrom` cannot be used here because SubpOp carries the
+/// SymbolTable trait, making it an opaque scope boundary that hides sibling
+/// nested subprograms. Walk up manually instead.
+mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
+                                      llvm::StringRef name) {
+  for (mlir::Operation *scope = from; scope; scope = scope->getParentOp()) {
+    if (mlir::isa<BlockOp, SubpOp, mlir::ModuleOp>(scope))
       if (auto *sym = mlir::SymbolTable::lookupSymbolIn(scope, name))
         return sym;
   }
   return nullptr;
 }
 
-llvm::LogicalResult CallOp::verify() {
-  auto subp = mlir::dyn_cast_or_null<SubpOp>(
-      lookupCallee(*this, getCalleeAttr().getRootReference()));
+llvm::LogicalResult CallOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  // External callees (defined in other Ada units) are not in this module and
+  // will not be found; their signature is validated by Libadalang before
+  // MLIRGen runs. Link-time resolution handles the rest.
+  auto subp = mlir::dyn_cast_or_null<SubpOp>(lookupCallee(*this, getCallee()));
   if (!subp)
     return mlir::success();
 
@@ -353,6 +359,8 @@ llvm::LogicalResult CallOp::verify() {
   return mlir::success();
 }
 
+/// Builds a `CallOp`. Pass a null `resultType` for procedure calls (no
+/// result) and a non-null type for function calls (one result).
 void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    mlir::FlatSymbolRefAttr callee, mlir::Type resultType,
                    mlir::ValueRange operands) {

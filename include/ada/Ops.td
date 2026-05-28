@@ -19,6 +19,7 @@ include "mlir/IR/EnumAttr.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 
 //===----------------------------------------------------------------------===//
@@ -180,15 +181,36 @@ def BlockOp : Ada_Op<"block", [NoTerminator, SingleBlock, SymbolTable]> {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-// Subprogram call. Procedure calls carry no result; function calls carry
-// exactly one. The callee is referenced by a flat symbol (resolved via the
-// nearest enclosing SymbolTable, which may be an ada.subp for nested calls).
-// The LowerToLLVM pass hoists nested subprograms to module level and
-// updates all call references accordingly before converting ada.call to
-// func.call.
-def CallOp : Ada_Op<"call", []> {
+// Subprogram call. The callee is a flat symbol resolved by walking all
+// enclosing SymbolTable scopes (e.g. BlockOp, SubpOp, ModuleOp) rather than
+// stopping at the nearest one.
+def CallOp : Ada_Op<"call",
+                    [CallOpInterface,
+                     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "subprogram call";
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let description = [{
+    Represents an Ada subprogram call. Procedure calls carry no result;
+    function calls carry exactly one.
+
+    Before lowering, `LowerToLLVM` hoists nested subprograms to module level,
+    renames them with GNAT-style `__`-separated qualifiers, and rewrites all
+    call references accordingly. Each `ada.call` is then converted to a
+    `func.call`.
+
+    Syntax example:
+
+    ```mlir
+    ada.call @add(%a, %b) : (i32, i32) -> i32  // function call
+    ada.call @print(%x) : (i32) -> ()          // procedure call
+    ```
+  }];
+  let arguments = (ins
+    FlatSymbolRefAttr:$callee,              // callee Ada subprogram name
+    Variadic<AnyType>:$operands,            // actual call arguments
+    OptionalAttr<DictArrayAttr>:$arg_attrs, // per-argument call-site attributes
+    OptionalAttr<DictArrayAttr>:$res_attrs  // per-result call-site attributes
+  );
+  // absent for procedures, present for functions
   let results = (outs Optional<AnyType>:$result);
   let assemblyFormat = "$callee `(` $operands `)` attr-dict"
                        " `:` functional-type($operands, results)";
@@ -201,7 +223,25 @@ def CallOp : Ada_Op<"call", []> {
       CArg<"::mlir::ValueRange", "{}">:$operands)>
   ];
 
-  let hasVerifier = 1;
+  let extraClassDeclaration = [{
+    // CallOpInterface
+    mlir::CallInterfaceCallable getCallableForCallee() {
+      return getCalleeAttr();
+    }
+    void setCalleeFromCallable(mlir::CallInterfaceCallable callee) {
+      setCalleeAttr(mlir::cast<mlir::FlatSymbolRefAttr>(
+          mlir::cast<mlir::SymbolRefAttr>(callee)));
+    }
+    operand_range getArgOperands() { return getOperands(); }
+    mlir::MutableOperandRange getArgOperandsMutable() {
+      return getOperandsMutable();
+    }
+
+    /// Walk enclosing SymbolTable scopes from `from` upward and return the
+    /// first symbol named `name`, or null.
+    static mlir::Operation *lookupCallee(mlir::Operation *from,
+                                         llvm::StringRef name);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
