@@ -209,10 +209,14 @@ def CallOp : Ada_Op<"call", []> {
 //===----------------------------------------------------------------------===//
 
 // A single op for both Ada functions and procedures. Functions have one result
-// type; procedures have an empty result list. IsolatedFromAbove prevents the
-// region from capturing SSA values defined outside the subprogram, matching
-// Ada's scoping rules. SymbolTable scopes nested subprogram bodies to the
-// enclosing subprogram rather than to the module.
+// type; procedures have an empty result list. IsolatedFromAbove forces all
+// data flow into nested subprograms to be explicit; upward references to
+// outer variables must be threaded via a static link rather than captured
+// as SSA values. This makes hoisting to module level in LowerToLLVM
+// straightforward (LLVM does not support nested functions). SymbolTable
+// scopes nested subprogram bodies to the enclosing subprogram rather than
+// to the module. AutomaticAllocationScope marks the op as the alloca scope
+// boundary for mem2reg.
 def SubpOp : Ada_Op<"subp", [
     FunctionOpInterface, IsolatedFromAbove, SymbolTable,
     AutomaticAllocationScope

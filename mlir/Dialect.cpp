@@ -264,6 +264,11 @@ static llvm::StringRef gnatOperatorName(llvm::StringRef sym, unsigned numArgs) {
       .Default("");
 }
 
+/// Return the GNAT ABI name for this subprogram.
+/// Operator symbols (e.g. `+`, `*`) are mapped to their GNAT O-names
+/// (e.g. `Oadd`, `Omultiply`) via `gnatOperatorName`. Library-level
+/// subprograms get the `_ada_` prefix; nested ones are qualified with
+/// `__`-separated enclosing scope names (e.g. `outer__inner`).
 std::string SubpOp::getMangledName() {
   std::string name = getName().str();
   if (name.size() <= 3)
@@ -279,12 +284,22 @@ std::string SubpOp::getMangledName() {
   return name;
 }
 
+/// Builds a `SubpOp` and creates its entry block with arguments matching the
+/// function type inputs.
+/// @param odsBuilder MLIR op builder.
+/// @param odsState   Operation construction state accumulating attributes.
+/// @param name       Ada subprogram name (bare, no ABI mangling).
+/// @param type       Function type; empty result list for procedures, one
+///                   result type for functions.
+/// @param attrs      Additional named attributes (e.g. arg/res attrs).
 void SubpOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::FunctionType type,
                    llvm::ArrayRef<mlir::NamedAttribute> attrs) {
   buildWithEntryBlock(builder, state, name, type, attrs, type.getInputs());
 }
 
+/// Assembly format: standard MLIR function syntax (name, argument list,
+/// optional `->` result type, attribute dictionary, region).
 mlir::ParseResult SubpOp::parse(mlir::OpAsmParser &parser,
                                 mlir::OperationState &result) {
   auto buildFuncType =
