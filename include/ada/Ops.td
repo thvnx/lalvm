@@ -315,6 +315,10 @@ def SubpOp : Ada_Op<"subp", [
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
+// @todo Once LLVM 23.1 is used, add HasAncestor<"ada.subp"> to ReturnOp to get
+// free ancestry verification. ReturnOp::verify() can then drop its parent-walk
+// and null check.
+
 // Terminator marks this op as the mandatory last op in a basic block.
 def ReturnOp : Ada_Op<"return", [Terminator, ReturnLike]> {
   let summary = "return operation";
