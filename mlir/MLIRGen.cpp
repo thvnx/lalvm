@@ -934,16 +934,20 @@ private:
 
     enum class UniversalKind { Unknown, Int, Real };
     UniversalKind kind = UniversalKind::Unknown;
+    std::string unknownTypeName;
     if (hasConstantValue) {
       ada_node typeNameNode;
       ada_base_type_decl_f_name(&exprType, &typeNameNode);
-      if (!ada_node_is_null(&typeNameNode))
+      if (!ada_node_is_null(&typeNameNode)) {
+        std::string typeName = libadalang::getName(&typeNameNode);
         kind =
-            llvm::StringSwitch<UniversalKind>(
-                libadalang::getName(&typeNameNode))
+            llvm::StringSwitch<UniversalKind>(typeName)
                 .Case(libadalang::kUniversalIntTypeName, UniversalKind::Int)
                 .Case(libadalang::kUniversalRealTypeName, UniversalKind::Real)
                 .Default(UniversalKind::Unknown);
+        if (kind == UniversalKind::Unknown)
+          unknownTypeName = std::move(typeName);
+      }
     }
 
     // Eager evaluation for DWARF metadata; the expression node is also stashed
@@ -978,9 +982,13 @@ private:
       }
       break;
     }
-    case UniversalKind::Unknown:
-      mlir::emitError(loc(number_decl), "named number has unsupported type");
+    case UniversalKind::Unknown: {
+      auto diag = mlir::emitError(loc(number_decl),
+                                  "named number has unsupported type");
+      if (!unknownTypeName.empty())
+        diag << " '" << unknownTypeName << "'";
       return mlir::failure();
+    }
     }
 
     ada_node ids;
