@@ -401,59 +401,7 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
 };
 
 void AdaToLLVMLoweringPass::runOnOperation() {
-  // Two-phase ABI renaming before lowering. Both sets of ops are collected in
-  // a single walk before any mutations so the parent chain is still intact.
-  //
-  // Phase 1: hoist nested subprograms: LLVM does not support nested
-  // functions. Each nested op is renamed with GNAT-style __ separators built
-  // from the full enclosing scope chain (e.g. @inner inside @outer becomes
-  // @outer__inner). Parent names at this point are still bare Ada names, so
-  // the mangling matches GNAT (outer__inner, not _ada_outer__inner).
-  //
-  // Phase 2: apply _ada_ prefix: library-level subprograms get the GNAT
-  // _ada_ prefix. Done after hoisting so nested mangling uses bare names.
   ModuleOp module = getOperation();
-  llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedSubps;
-  llvm::SmallVector<Operation *, 4> librarySubps;
-  // Collect all subprograms in one walk before any mutations. The walk
-  // completes fully before the loops below mutate the IR (moveBefore,
-  // setSymbolName), so there is no iterator invalidation.
-  module.walk([&](Operation *op) {
-    if (!isa<ada::SubpOp>(op))
-      return;
-    if (isa<ModuleOp>(op->getParentOp())) {
-      librarySubps.push_back(op);
-      return;
-    }
-    nestedSubps.emplace_back(op, cast<ada::SubpOp>(op).getMangledName());
-  });
-  for (auto &[op, mangledName] : nestedSubps) {
-    auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
-    // Save the old name before any mutation.
-    std::string oldName = mlir::SymbolTable::getSymbolName(op).str();
-    if (mlir::failed(
-            mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
-      return signalPassFailure();
-    // replaceAllSymbolUses stops at the symbol's own definition body, so
-    // self-recursive calls inside 'op' are left unrenamed.  Fix that with a
-    // targeted walk that crosses SymbolTable boundaries.
-    auto mangledSymRef =
-        mlir::FlatSymbolRefAttr::get(module.getContext(), mangledName);
-    op->walk([&](ada::CallOp callOp) {
-      if (callOp.getCallee() == oldName)
-        callOp.setCalleeAttr(mangledSymRef);
-    });
-    mlir::SymbolTable::setSymbolName(op, mangledName);
-    op->moveBefore(module.getBody(), module.getBody()->end());
-  }
-  for (Operation *op : librarySubps) {
-    std::string mangledName = cast<ada::SubpOp>(op).getMangledName();
-    auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
-    if (mlir::failed(
-            mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
-      return signalPassFailure();
-    mlir::SymbolTable::setSymbolName(op, mangledName);
-  }
 
   // The first thing to define is the conversion target. This will define the
   // final target for this lowering. For this lowering, we are only targeting

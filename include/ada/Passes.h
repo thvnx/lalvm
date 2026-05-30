@@ -20,6 +20,10 @@ class Pass;
 
 namespace ada {
 
+/// Create a pass that hoists nested Ada subprograms to module level and
+/// applies GNAT ABI name mangling. Must run before LowerToLLVM.
+std::unique_ptr<mlir::Pass> createHoistNestedSubprogramsPass();
+
 /// Create a pass for lowering Ada dialect operations to the LLVM dialect.
 std::unique_ptr<mlir::Pass> createLowerToLLVMPass();
 
