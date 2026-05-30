@@ -62,17 +62,13 @@ lalvm --emit=llvm compute.adb   # LLVM IR
 MLIR output:
 ```mlir
 ada.type @standard.integer : i32 = #ada.numeric_info
-ada.subp @compute(%arg0: i32 {ada.type = @standard.integer}) -> i32 {
-  ada.subp @double(%arg0: i32 {ada.type = @standard.integer}) -> i32 {
-    %0 = ada.binop "+" %arg0, %arg0 {ada.type = @standard.integer} : i32
-    ada.return %0 : i32
+ada.subp @compute(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
+  ada.subp @double(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
+    %0 = ada.binop "+" %arg0, %arg0 : !ada.qual<i32, @standard.integer>
+    ada.return %0 : !ada.qual<i32, @standard.integer>
   }
-  %c0_i32 = arith.constant {ada.type = @standard.integer} 0 : i32
-  %alloca = memref.alloca() {ada.type = @standard.integer} : memref<i32>
-  %1 = ada.call @double(%arg0) {ada.type = @standard.integer} : (i32) -> i32
-  memref.store %1, %alloca[] {ada.type = @standard.integer} : memref<i32>
-  %2 = memref.load %alloca[] : memref<i32>
-  ada.return %2 : i32
+  %0 = ada.call @double(%arg0) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+  ada.return %0 : !ada.qual<i32, @standard.integer>
 }
 ```
 
@@ -126,8 +122,7 @@ lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope add.adb
 This prints each op's source location inline, for example:
 
 ```mlir
-%0 = ada.binop "+" %arg0, %arg1 : i32
-    loc(fused<@standard.integer>["add.adb":15:13])
+%0 = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @standard.integer> loc("add.adb":15:13 to :14)
 ```
 
 ## Status
@@ -170,10 +165,13 @@ for enum types
 The compiler is organized in three layers:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`): custom MLIR dialect.
-  Operations: `ada.type`, `ada.subp`, `ada.return`, `ada.binop`, `ada.call`,
-  `ada.block`, `ada.null`. Each op carries Ada-level type metadata via
-  an `"ada.type"` attribute (a symbol reference to the relevant `ada.type` op)
-  and source name via `NameLoc` where applicable.
+  Operations: `ada.type`, `ada.alloca`, `ada.constant`, `ada.coerce`,
+  `ada.binop`, `ada.null`, `ada.block`, `ada.call`, `ada.subp`, `ada.return`.
+  The `!ada.qual<T, @sym>` type makes Ada type identity part of the MLIR
+  type system: every SSA value's type encodes both its machine representation
+  `T` and its Ada declared type `@sym` (a flat symbol reference to the
+  relevant `ada.type` op). Named objects (parameters, variables) additionally
+  carry a `NameLoc`.
 - **MLIRGen** (`mlir/MLIRGen.cpp`): lowers a Libadalang AST to the Ada
   dialect. Emits bare Ada names; no ABI mangling.
 - **LowerToLLVM** (`mlir/LowerToLLVM.cpp`): lowers the Ada dialect to LLVM
