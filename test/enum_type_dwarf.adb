@@ -17,9 +17,9 @@
 -- CHECK:     DW_AT_name ("blue")
 -- CHECK:     DW_AT_const_value (2)
 
-procedure Test_Enum_Dwarf is
+procedure Enum_Type_Dwarf is
    type Color is (Red, Green, Blue);
    C : constant Color := Green;
 begin
    null;
-end Test_Enum_Dwarf;
+end Enum_Type_Dwarf;

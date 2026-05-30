@@ -19,7 +19,7 @@
 -- Standard Boolean is lazily emitted at module level when Inner's
 -- "return True" resolves to standard Boolean.
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
--- MLIR-LABEL: ada.subp @e
+-- MLIR-LABEL: ada.subp @enum_type_shadow
 -- MLIR:         ada.subp @inner(%arg0: !ada.qual<i1, @standard.boolean>
 -- MLIR:           ada.type @boolean : i1 = #ada.enum_info<"true" = 0, "false" = 1>
 -- MLIR:           ada.constant : !ada.qual<i1, @boolean> = false
@@ -35,20 +35,20 @@
 
 -- Post-order hoisting: Inner.Inner (deeper) is moved to module end first,
 -- then Inner.
--- LLVM-LABEL: define i1 @_ada_e(
--- LLVM:          call i1 @e__inner(
--- LLVM-LABEL: define i1 @e__inner__inner(
--- LLVM-LABEL: define i1 @e__inner(
+-- LLVM-LABEL: define i1 @_ada_enum_type_shadow(
+-- LLVM:          call i1 @enum_type_shadow__inner(
+-- LLVM-LABEL: define i1 @enum_type_shadow__inner__inner(
+-- LLVM-LABEL: define i1 @enum_type_shadow__inner(
 -- Locally-declared Boolean types use the enclosing subprogram as DWARF scope,
 -- not the compile unit.
--- LLVM-DAG: ![[BSCOPE1:[0-9]+]] = distinct !DISubprogram(name: "e__inner",
+-- LLVM-DAG: ![[BSCOPE1:[0-9]+]] = distinct !DISubprogram(name: "enum_type_shadow__inner",
 -- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE1]],
--- LLVM-DAG: ![[BSCOPE2:[0-9]+]] = distinct !DISubprogram(name: "e__inner__inner",
+-- LLVM-DAG: ![[BSCOPE2:[0-9]+]] = distinct !DISubprogram(name: "enum_type_shadow__inner__inner",
 -- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE2]],
 -- LLVM: DILocalVariable(name: "b", arg: 1,
 -- LLVM: DILocalVariable(name: "b", arg: 1,
 
-function E return Boolean is
+function Enum_Type_Shadow return Boolean is
    function Inner (B : Boolean) return Boolean is
       type Boolean is (True, False);
 
@@ -66,4 +66,4 @@ function E return Boolean is
    end Inner;
 begin
    return Inner (True);
-end E;
+end Enum_Type_Shadow;

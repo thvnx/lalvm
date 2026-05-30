@@ -17,7 +17,7 @@
 -- CHECK: DW_AT_name ("x")
 -- CHECK: DW_AT_type ({{.*}} "standard.integer")
 
-function Test_Param_Debug (A, B : Integer) return Integer is
+function Debug_Info_Param (A, B : Integer) return Integer is
    procedure Get_Value (X : out Integer) is
    begin
       X := 42;
@@ -26,4 +26,4 @@ function Test_Param_Debug (A, B : Integer) return Integer is
 begin
    Get_Value (C);
    return A + B + C;
-end Test_Param_Debug;
+end Debug_Info_Param;

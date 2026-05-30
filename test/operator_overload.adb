@@ -5,7 +5,7 @@
 -- Ada operator syntax quotes ("*") are stripped by getName so the MLIR symbol
 -- name is the bare operator symbol; MLIR then quotes it as @"*".
 
--- MLIR-LABEL: ada.subp @test_operator
+-- MLIR-LABEL: ada.subp @operator_overload
 -- MLIR:         ada.subp @"*"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:      ada.return %[[SUM]] : !ada.qual<i32, @standard.integer>
@@ -13,13 +13,13 @@
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 
--- LLVM-LABEL: define void @_ada_test_operator(
+-- LLVM-LABEL: define void @_ada_operator_overload(
 -- LLVM:          ret void
--- LLVM-LABEL: define i32 @test_operator__Omultiply(
+-- LLVM-LABEL: define i32 @operator_overload__Omultiply(
 -- LLVM:          add i32
 -- LLVM:          ret i32
 
-procedure Test_Operator is
+procedure Operator_Overload is
 
    function "*" (A : Integer; B : Integer) return Integer is
    begin

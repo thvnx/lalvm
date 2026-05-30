@@ -20,7 +20,7 @@
 -- CHECK: DW_AT_encoding (DW_ATE_float)
 -- CHECK: DW_AT_byte_size (0x04)
 
-function Test_Var_Debug return Integer is
+function Debug_Info_Var return Integer is
    procedure Get_Int (X : out Integer) is
    begin
       X := 42;
@@ -35,4 +35,4 @@ begin
    Get_Int (I);
    Get_Float (F);
    return I;
-end Test_Var_Debug;
+end Debug_Info_Var;

@@ -1,7 +1,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.subp @test_literal_arithmetic
+-- MLIR-LABEL: ada.subp @literal_arithmetic
 -- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[C1:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
 -- MLIR-NEXT:    %[[C2:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 2
@@ -24,11 +24,11 @@
 -- MLIR-NEXT:    %[[V8:.*]] = ada.binop "+" %[[V7]], %[[C10]] : !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[V8]] : !ada.qual<i32, @standard.integer>
 
--- LLVM-LABEL: define i32 @_ada_test_literal_arithmetic(
+-- LLVM-LABEL: define i32 @_ada_literal_arithmetic(
 -- LLVM:         ret i32 66
 
 -- 1 + 2 + 3 + 4 + 5 - 6 + 7 * 8 - 9 + 10 = 66
-function Test_Literal_Arithmetic return Integer is
+function Literal_Arithmetic return Integer is
 begin
    return 1 + 2 + 3 + 4 + 5 - 6 + 7 * 8 - 9 + 10;
-end Test_Literal_Arithmetic;
+end Literal_Arithmetic;

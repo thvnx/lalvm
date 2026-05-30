@@ -6,19 +6,19 @@
 -- walk into the symbol's own definition body, leaving the recursive
 -- ada.call unrenamed and producing an invalid llvm.call reference.
 
--- MLIR-LABEL: ada.subp @p() -> !ada.qual<i32, @standard.integer>
+-- MLIR-LABEL: ada.subp @nested_subp_recursive() -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.subp @inner(
 -- MLIR:           %[[R:.*]] = ada.call @inner(%{{.*}}) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.call @inner(%{{.*}}) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
--- LLVM-LABEL: define i32 @_ada_p(
--- LLVM:          call i32 @p__inner(
--- LLVM-LABEL: define i32 @p__inner(i32
--- LLVM:          call i32 @p__inner(
+-- LLVM-LABEL: define i32 @_ada_nested_subp_recursive(
+-- LLVM:          call i32 @nested_subp_recursive__inner(
+-- LLVM-LABEL: define i32 @nested_subp_recursive__inner(i32
+-- LLVM:          call i32 @nested_subp_recursive__inner(
 -- LLVM:          ret i32
 
-function P return Integer is
+function Nested_Subp_Recursive return Integer is
    I : Integer := 12;
 
    function Inner (I : Integer) return Integer;
@@ -29,4 +29,4 @@ function P return Integer is
    end Inner;
 begin
    return Inner (I);
-end P;
+end Nested_Subp_Recursive;

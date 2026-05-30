@@ -27,7 +27,7 @@
 -- CHECK: DW_AT_name ("x")
 -- CHECK: DW_AT_type ({{.*}} "standard.boolean")
 
-function Test_Enum_Debug (A : Boolean) return Integer is
+function Debug_Info_Enum (A : Boolean) return Integer is
    procedure Reset (X : out Boolean) is
    begin
       X := False;
@@ -36,4 +36,4 @@ function Test_Enum_Debug (A : Boolean) return Integer is
 begin
    Reset (B);
    return 0;
-end Test_Enum_Debug;
+end Debug_Info_Enum;

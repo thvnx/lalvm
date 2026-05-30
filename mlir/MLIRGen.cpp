@@ -97,6 +97,8 @@ public:
     adaModule = mlir::ModuleOp::create(loc(compilationUnit), stem);
     free(filename);
 
+    verifyUnitFileName(compilationUnit);
+
     // Use a simple Libadalang AST traversal approach based on the C API.
     if (mlir::failed(visit(compilationUnit)))
       return nullptr;
@@ -160,6 +162,37 @@ private:
     if (!nameLoc)
       return srcLoc;
     return mlir::NameLoc::get(nameLoc.getName(), srcLoc);
+  }
+
+  /// Verify that the file name matches the Ada unit name and emit a warning
+  /// if it does not.
+  ///
+  /// @todo Does not support child units (e.g. `Parent.Child`): only the
+  ///       last element of the FQN is checked against the file stem.
+  void verifyUnitFileName(ada_node &node) {
+    // Precondition: adaModule has been created with a name by the caller.
+    ada_symbol_type_array fqn = nullptr;
+    if (!ada_compilation_unit_p_syntactic_fully_qualified_name(&node, &fqn))
+      return;
+    if (!fqn || fqn->n == 0) {
+      ada_symbol_type_array_dec_ref(fqn);
+      return;
+    }
+    ada_text nameText;
+    ada_symbol_text(&fqn->items[fqn->n - 1], &nameText);
+    std::string unitName = libadalang::textToString(nameText);
+    ada_symbol_type_array_dec_ref(fqn);
+
+    ada_analysis_unit_kind kind;
+    if (!ada_compilation_unit_p_unit_kind(&node, &kind))
+      return;
+    llvm::StringRef ext =
+        (kind == ADA_ANALYSIS_UNIT_KIND_UNIT_BODY) ? ".adb" : ".ads";
+
+    if (adaModule.getName()->lower() != unitName)
+      mlir::emitWarning(loc(node),
+                        "file name does not match unit name, should be \"" +
+                            llvm::Twine(unitName) + ext + "\"");
   }
 
   // Maps each DefiningName node to its SSA Value, keyed by ada_base_node

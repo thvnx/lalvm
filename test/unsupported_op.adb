@@ -2,7 +2,7 @@
 
 -- CHECK: invalid binary operator
 
-function Test_Unsupported_Op (A, B : Integer) return Integer is
+function Unsupported_Op (A, B : Integer) return Integer is
 begin
    return A ** B;
-end Test_Unsupported_Op;
+end Unsupported_Op;

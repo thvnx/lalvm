@@ -13,7 +13,7 @@
 -- CHECK: DW_AT_encoding (DW_ATE_unsigned)
 -- CHECK: DW_AT_byte_size (0x01)
 
-procedure Test is
+procedure Debug_Info_Mod is
    type T is mod 128;
    procedure Init (V : out T) is
    begin
@@ -22,4 +22,4 @@ procedure Test is
    X : T;
 begin
    Init (X);
-end Test;
+end Debug_Info_Mod;

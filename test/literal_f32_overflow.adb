@@ -3,7 +3,7 @@
 -- CHECK: error: real constant {{.*}} out of range for f32
 
 -- 1.0E39 > Float'Last (~3.4E38), does not fit in f32
-function Test_F32_Overflow return Float is
+function Literal_F32_Overflow return Float is
 begin
    return 1.0E39;
-end Test_F32_Overflow;
+end Literal_F32_Overflow;
