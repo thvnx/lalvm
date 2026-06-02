@@ -5,12 +5,12 @@
 -- argument with no alloca and no load/store.
 
 -- MLIR-LABEL: ada.subp @param_in
--- MLIR:         ada.subp @double(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.subp @param_in.double(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NOT:       memref
 -- MLIR:           %[[R:.*]] = ada.binop "+" %arg0, %arg0 : !ada.qual<i32, @standard.integer>
 -- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 21
--- MLIR:         %[[V:.*]] = ada.call @double(%[[C]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[V:.*]] = ada.call @param_in.double(%[[C]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.return %[[V]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_param_in(

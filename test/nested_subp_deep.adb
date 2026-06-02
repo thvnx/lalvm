@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @nested_subp_deep
--- MLIR:         ada.subp @a
--- MLIR:           ada.subp @b
--- MLIR:             ada.subp @c
+-- MLIR:         ada.subp @nested_subp_deep.a
+-- MLIR:           ada.subp @nested_subp_deep.a.b
+-- MLIR:             ada.subp @nested_subp_deep.a.b.c
 -- MLIR:               ada.return
 -- MLIR:             ada.return
 -- MLIR:           ada.return

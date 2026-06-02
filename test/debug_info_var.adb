@@ -7,16 +7,16 @@
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_variable
 -- CHECK: DW_AT_name ("i")
--- CHECK: DW_AT_type ({{.*}} "standard.integer")
+-- CHECK: DW_AT_type ({{.*}} "integer")
 -- CHECK: DW_TAG_variable
 -- CHECK: DW_AT_name ("f")
--- CHECK: DW_AT_type ({{.*}} "standard.float")
+-- CHECK: DW_AT_type ({{.*}} "float")
 -- CHECK: DW_TAG_base_type
--- CHECK: DW_AT_name ("standard.integer")
+-- CHECK: DW_AT_name ("integer")
 -- CHECK: DW_AT_encoding (DW_ATE_signed)
 -- CHECK: DW_AT_byte_size (0x04)
 -- CHECK: DW_TAG_base_type
--- CHECK: DW_AT_name ("standard.float")
+-- CHECK: DW_AT_name ("float")
 -- CHECK: DW_AT_encoding (DW_ATE_float)
 -- CHECK: DW_AT_byte_size (0x04)
 

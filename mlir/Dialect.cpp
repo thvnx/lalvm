@@ -33,6 +33,7 @@
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -357,6 +358,23 @@ llvm::LogicalResult BinOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// bareName
+//===----------------------------------------------------------------------===//
+
+llvm::StringRef mlir::ada::bareName(llvm::StringRef qualified) {
+  llvm::StringRef seg = qualified.rsplit('.').second;
+  if (seg.empty())
+    seg = qualified;
+  // Drop the collision suffix added by MLIRGen's makeUnique. Only LALVM ever
+  // introduces a double underscore; canonical Ada names never contain
+  // consecutive underscores, so its presence unambiguously marks the suffix.
+  size_t pos = seg.rfind("__");
+  if (pos != llvm::StringRef::npos)
+    seg = seg.substr(0, pos);
+  return seg;
+}
+
+//===----------------------------------------------------------------------===//
 // SubpOp
 //===----------------------------------------------------------------------===//
 
@@ -389,29 +407,32 @@ static llvm::StringRef gnatOperatorName(llvm::StringRef sym, unsigned numArgs) {
       .Default("");
 }
 
-/// Return the GNAT ABI name for this subprogram.
-/// Operator symbols (e.g. `+`, `*`) are mapped to their GNAT O-names
-/// (e.g. `Oadd`, `Omultiply`) via `gnatOperatorName`. Library-level
-/// subprograms get the `_ada_` prefix; nested ones are qualified with
-/// `__`-separated enclosing scope names (e.g. `outer__inner`).
+/// Return the GNAT ABI name for this subprogram, derived from the unique
+/// qualified dialect sym_name: split on the dot, map operator segments to their
+/// GNAT O-names (e.g. + to Oadd) via gnatOperatorName, and join with double
+/// underscores (e.g. proc.b.inner to proc__b__inner). Library-level
+/// subprograms (whose parent is the module) get the _ada_ prefix; this relies
+/// on the op's parent, so nested subprograms must be mangled before hoisting
+/// moves them to module level.
 std::string SubpOp::getMangledName() {
-  std::string name = getName().str();
-  if (name.size() <= 3)
-    if (llvm::StringRef gnat =
-            gnatOperatorName(name, getFunctionType().getNumInputs());
-        !gnat.empty())
-      name = gnat.str();
+  llvm::SmallVector<llvm::StringRef> segs;
+  getSymName().split(segs, '.');
+  std::string name;
+  for (size_t i = 0; i < segs.size(); ++i) {
+    std::string seg = segs[i].str();
+    // Arity is only known for the leaf segment (this op); a non-leaf operator
+    // scope is rare and defaults to binary.
+    unsigned arity =
+        (i + 1 == segs.size()) ? getFunctionType().getNumInputs() : 2;
+    if (seg.size() <= 3)
+      if (llvm::StringRef gnat = gnatOperatorName(seg, arity); !gnat.empty())
+        seg = gnat.str();
+    if (!name.empty())
+      name += "__";
+    name += seg;
+  }
   if (mlir::isa<mlir::ModuleOp>((*this)->getParentOp()))
     return "_ada_" + name;
-  // @todo BlockOp is skipped here and does not contribute to the mangled name.
-  // Named blocks (RM 5.6) could use their name as a qualifier; unnamed ones
-  // need a synthetic index (GNAT uses `B_N`, e.g. `outer__B_1__inner`) so
-  // that sibling blocks declaring subprograms with the same name produce
-  // distinct symbols.
-  for (mlir::Operation *p = (*this)->getParentOp();
-       mlir::isa<SubpOp, BlockOp>(p); p = p->getParentOp())
-    if (mlir::isa<SubpOp>(p))
-      name = mlir::SymbolTable::getSymbolName(p).str() + "__" + name;
   return name;
 }
 
@@ -454,9 +475,12 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-/// `lookupNearestSymbolFrom` cannot be used here because SubpOp carries the
-/// SymbolTable trait, making it an opaque scope boundary that hides sibling
-/// nested subprograms. Walk up manually instead.
+/// Resolve a callee symbol by walking the enclosing SymbolTable scopes from
+/// `from` up to the module. Used only by `verifySymbolUses` for a best-effort
+/// procedure-vs-function check; MLIRGen resolves calls by node identity, not
+/// through this. `lookupNearestSymbolFrom` cannot be used because SubpOp
+/// carries the SymbolTable trait, an opaque scope boundary, so the walk visits
+/// each scope explicitly.
 mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
                                       llvm::StringRef name) {
   for (mlir::Operation *scope = from; scope; scope = scope->getParentOp()) {

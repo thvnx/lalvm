@@ -73,9 +73,11 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
     for (auto [name, val] : enumInfo.literals())
       elems.push_back(db.createEnumerator(name, static_cast<uint64_t>(val)));
 
+    // The displayed DWARF name is the bare Ada name; the lookup key below stays
+    // the full sym_name so shadowed enums (same bare name) remain distinct.
     auto *enumType = db.createEnumerationType(
-        scope, typeOp.getSymName(), getOrCreateFile(filePath), line,
-        llvm::alignTo(intType.getWidth(), 8),
+        scope, mlir::ada::bareName(typeOp.getSymName()),
+        getOrCreateFile(filePath), line, llvm::alignTo(intType.getWidth(), 8),
         /*AlignInBits=*/0, db.getOrCreateArray(elems),
         /*UnderlyingType=*/nullptr);
     enumTypeByName[typeOp.getSymName()] = enumType;

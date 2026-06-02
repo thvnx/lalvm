@@ -2,12 +2,12 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @nested_func_call
--- MLIR:         ada.subp @inner(
+-- MLIR:         ada.subp @nested_func_call.inner(
 -- MLIR:           ada.return %{{.*}} : !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[C1:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
--- MLIR:         %[[V1:.*]] = ada.call @inner(%[[C1]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[V1:.*]] = ada.call @nested_func_call.inner(%[[C1]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[C2:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
--- MLIR:         %[[V2:.*]] = ada.call @inner(%[[C2]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[V2:.*]] = ada.call @nested_func_call.inner(%[[C2]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @_ada_nested_func_call(

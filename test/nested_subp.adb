@@ -2,10 +2,10 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @nested_subp
--- MLIR:         ada.subp @inner
+-- MLIR:         ada.subp @nested_subp.inner
 -- MLIR:           ada.null
 -- MLIR-NEXT:      ada.return
--- MLIR:         ada.call @inner() : () -> ()
+-- MLIR:         ada.call @nested_subp.inner() : () -> ()
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @_ada_nested_subp(

@@ -1,14 +1,15 @@
--- XFAIL: *
 -- RUN: %lalvm --emit=llvm %s 2>&1 | %FileCheck %s
 
--- Known limitation: overloaded subprograms with the same name produce a
--- "redefinition of symbol" error. GNAT resolves the clash by appending a
--- `__N` suffix to each redefinition (N starting at 2), e.g. `test__p` for
--- the first `P` and `test__p__2` for the second.
+-- Overloaded subprograms with the same name get distinct dialect symbols: each
+-- collision appends a `__N` suffix (N starting at 2). The nested `P` overloads
+-- are `overload_proc.p` and `overload_proc.p__2`, mangled to `overload_proc__p`
+-- and `overload_proc__p__2`.
 
 -- CHECK-NOT: error:
+-- CHECK-DAG: @overload_proc__p(
+-- CHECK-DAG: @overload_proc__p__2(
 
-procedure Test is
+procedure Overload_Proc is
 
    procedure P (A : Boolean) is
       X : Boolean := A;
@@ -25,4 +26,4 @@ procedure Test is
 begin
    P (1);
    P (True);
-end Test;
+end Overload_Proc;

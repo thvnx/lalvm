@@ -7,15 +7,15 @@
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("a")
--- CHECK: DW_AT_type ({{.*}} "standard.integer")
+-- CHECK: DW_AT_type ({{.*}} "integer")
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("b")
--- CHECK: DW_AT_type ({{.*}} "standard.integer")
+-- CHECK: DW_AT_type ({{.*}} "integer")
 
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("x")
--- CHECK: DW_AT_type ({{.*}} "standard.integer")
+-- CHECK: DW_AT_type ({{.*}} "integer")
 
 function Debug_Info_Param (A, B : Integer) return Integer is
    procedure Get_Value (X : out Integer) is

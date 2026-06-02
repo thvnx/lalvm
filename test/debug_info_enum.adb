@@ -8,7 +8,7 @@
 -- the placeholder DIBasicType.
 
 -- CHECK: DW_TAG_enumeration_type
--- CHECK: DW_AT_name ("standard.boolean")
+-- CHECK: DW_AT_name ("boolean")
 -- CHECK: DW_TAG_enumerator
 -- CHECK: DW_AT_name ("false")
 -- CHECK: DW_AT_const_value (0)
@@ -18,14 +18,14 @@
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("a")
--- CHECK: DW_AT_type ({{.*}} "standard.boolean")
+-- CHECK: DW_AT_type ({{.*}} "boolean")
 -- CHECK: DW_TAG_variable
 -- CHECK: DW_AT_name ("b")
--- CHECK: DW_AT_type ({{.*}} "standard.boolean")
+-- CHECK: DW_AT_type ({{.*}} "boolean")
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("x")
--- CHECK: DW_AT_type ({{.*}} "standard.boolean")
+-- CHECK: DW_AT_type ({{.*}} "boolean")
 
 function Debug_Info_Enum (A : Boolean) return Integer is
    procedure Reset (X : out Boolean) is

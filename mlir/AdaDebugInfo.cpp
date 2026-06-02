@@ -91,10 +91,12 @@ static LLVM::DIBasicTypeAttr makeDINamedType(MLIRContext *ctx,
   if (auto numInfo = dyn_cast<ada::NumericTypeInfoAttr>(typeOp.getTypeInfo()))
     if (numInfo.getModulus())
       return LLVM::DIBasicTypeAttr::get(
-          ctx, llvm::dwarf::DW_TAG_base_type, typeOp.getSymName(),
+          ctx, llvm::dwarf::DW_TAG_base_type,
+          ada::bareName(typeOp.getSymName()),
           llvm::alignTo(cast<IntegerType>(typeOp.getMlirType()).getWidth(), 8),
           llvm::dwarf::DW_ATE_unsigned);
-  return makeDIBasicType(ctx, typeOp.getSymName(), typeOp.getMlirType());
+  return makeDIBasicType(ctx, ada::bareName(typeOp.getSymName()),
+                         typeOp.getMlirType());
 }
 
 /// Build an empty DICompositeTypeAttr stub for an enum ada.type op.
@@ -107,6 +109,8 @@ static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
     return {};
   return LLVM::DICompositeTypeAttr::get(
       ctx, llvm::dwarf::DW_TAG_enumeration_type,
+      // Full sym_name: this stub's name is the key matched against the
+      // post-translation enum types in buildEnumDITypes (EnumDITypes.cpp).
       StringAttr::get(ctx, typeOp.getSymName()),
       /*file=*/LLVM::DIFileAttr{}, /*line=*/0, /*scope=*/LLVM::DIScopeAttr{},
       /*baseType=*/LLVM::DITypeAttr{}, LLVM::DIFlags::Zero,

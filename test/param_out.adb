@@ -6,13 +6,13 @@
 -- on the parameter must be a store, not a load.
 
 -- MLIR-LABEL: ada.subp @param_out
--- MLIR:         ada.subp @get_value(%arg0: memref<!ada.qual<i32, @standard.integer>>)
+-- MLIR:         ada.subp @param_out.get_value(%arg0: memref<!ada.qual<i32, @standard.integer>>)
 -- MLIR-NOT:       memref.load %arg0
 -- MLIR:           memref.store {{.*}}, %arg0[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:           ada.return
 -- MLIR:         %[[N_PTR:.*]] = ada.alloca : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR-NOT:     memref.store {{.*}}, %[[N_PTR]]
--- MLIR:         ada.call @get_value(%[[N_PTR]]) : (memref<!ada.qual<i32, @standard.integer>>) -> ()
+-- MLIR:         ada.call @param_out.get_value(%[[N_PTR]]) : (memref<!ada.qual<i32, @standard.integer>>) -> ()
 -- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         ada.return %[[N]] : !ada.qual<i32, @standard.integer>
 

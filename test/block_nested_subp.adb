@@ -6,16 +6,16 @@
 -- BlockOp.
 
 -- MLIR-LABEL: ada.subp @block_nested_subp
--- MLIR:         ada.block {
--- MLIR:           ada.subp @inner
+-- MLIR:         ada.block @block_nested_subp.b {
+-- MLIR:           ada.subp @block_nested_subp.b.inner
 -- MLIR:             ada.return
--- MLIR:           ada.call @inner() : () -> ()
+-- MLIR:           ada.call @block_nested_subp.b.inner() : () -> ()
 -- MLIR:         }
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @_ada_block_nested_subp(
--- LLVM:          call void @block_nested_subp__inner()
--- LLVM-LABEL: define void @block_nested_subp__inner(
+-- LLVM:          call void @block_nested_subp__b__inner()
+-- LLVM-LABEL: define void @block_nested_subp__b__inner(
 
 procedure Block_Nested_Subp is
 begin

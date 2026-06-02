@@ -11,7 +11,7 @@
 -- MLIR:         %[[INIT_V:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
 -- MLIR:         %[[V_PTR:.*]] = ada.alloca : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         memref.store %[[INIT_V]], %[[V_PTR]][] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         ada.block "Swap" {
+-- MLIR:         ada.block @block_swap.swap {
 -- MLIR:           %[[V0:.*]] = memref.load %[[V_PTR]][] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:           %[[U0:.*]] = memref.load %[[U_PTR]][] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:           memref.store %[[U0]], %[[V_PTR]][] : memref<!ada.qual<i32, @standard.integer>>

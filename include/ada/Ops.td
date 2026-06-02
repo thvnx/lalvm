@@ -278,9 +278,11 @@ def NullOp : Ada_Op<"null", [Pure]> {
 // are inlined into the parent block and the op is erased.
 def BlockOp : Ada_Op<"block", [NoTerminator, SingleBlock, SymbolTable]> {
   let summary = "Ada block statement with its own declarative scope";
-  let arguments = (ins OptionalAttr<StrAttr>:$name);
+  // sym_name is the unique qualified dialect symbol, built from the enclosing
+  // scope and the block label (or `b` for unnamed blocks).
+  let arguments = (ins SymbolNameAttr:$sym_name);
   let regions = (region AnyRegion:$body);
-  let assemblyFormat = "($name^)? $body attr-dict";
+  let assemblyFormat = "$sym_name $body attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
@@ -404,9 +406,10 @@ def SubpOp : Ada_Op<"subp", [
     Region *getCallableRegion() { return &getBody(); }
     bool isProcedure() { return getFunctionType().getNumResults() == 0; }
     bool isFunction() { return getFunctionType().getNumResults() == 1; }
-    /// ABI renaming contract (matches LowerToLLVM):
-    ///   - library-level: "_ada_" + bare name
-    ///   - nested: "outer__inner" (no _ada_ prefix)
+    /// GNAT ABI name, derived from the qualified sym_name: split on the dot,
+    /// operator-map each segment, and join with double underscores (e.g.
+    /// proc.b.inner to proc__b__inner). Library-level subprograms get the
+    /// _ada_ prefix. Relies on the op's parent, so call before hoisting.
     std::string getMangledName();
   }];
 

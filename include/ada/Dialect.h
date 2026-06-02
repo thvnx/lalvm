@@ -30,4 +30,14 @@
 #define GET_OP_CLASSES
 #include "ada/Ops.h.inc"
 
+namespace mlir {
+namespace ada {
+/// Return the bare Ada name from a qualified dialect symbol: the segment after
+/// the last dot, with a trailing __N collision suffix removed. Used for
+/// human-facing names (DWARF DW_AT_name) where the simple source name is wanted
+/// rather than the qualified, collision-disambiguated symbol.
+llvm::StringRef bareName(llvm::StringRef qualified);
+} // namespace ada
+} // namespace mlir
+
 #endif // ADA_DIALECT_H

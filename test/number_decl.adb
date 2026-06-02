@@ -8,11 +8,11 @@
 -- MLIR: ada.type @standard.universal_real_type_ : f64 = #ada.numeric_info
 -- MLIR: ada.type @standard.universal_int_type_ : i64 = #ada.numeric_info
 -- MLIR-LABEL: ada.subp @number_decl()
--- MLIR:         ada.subp @f() -> !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.subp @number_decl.f() -> !ada.qual<i32, @standard.integer>
 -- MLIR:           %[[UMAX:.*]] = ada.constant : !ada.qual<i64, @standard.universal_int_type_> = 200
 -- MLIR-NEXT:      %[[MAX:.*]] = ada.coerce %[[UMAX]] : <i64, @standard.universal_int_type_> to <i32, @standard.integer>
 -- MLIR-NEXT:      ada.return %[[MAX]] : !ada.qual<i32, @standard.integer>
--- MLIR:         ada.subp @g() -> !ada.qual<f32, @standard.float>
+-- MLIR:         ada.subp @number_decl.g() -> !ada.qual<f32, @standard.float>
 -- MLIR:           %[[UPI:.*]] = ada.constant : !ada.qual<f64, @standard.universal_real_type_> = {{.*}}
 -- MLIR-NEXT:      %[[PI:.*]] = ada.coerce %[[UPI]] : <f64, @standard.universal_real_type_> to <f32, @standard.float>
 -- MLIR-NEXT:      ada.return %[[PI]] : !ada.qual<f32, @standard.float>

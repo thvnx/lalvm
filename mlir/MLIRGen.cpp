@@ -30,6 +30,7 @@ namespace libadalang = frontend::libadalang;
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
 #include <cassert>
 #include <cerrno>
@@ -224,6 +225,110 @@ private:
   // emission for predefined types such as Boolean) and getMLIRTypeFromDecl.
   llvm::DenseMap<ada_base_node, mlir::ada::TypeOp> typeDecls;
 
+  // Every symbol string handed out, for `__N` collision disambiguation.
+  llvm::StringSet<> usedSymbols;
+
+  // Canonical defining-name node -> its unique qualified dialect symbol. Keyed
+  // on the canonical node so a subprogram spec and body (or a private type's
+  // partial and full view) collapse to one entry; this is the declaration-time
+  // dedup point, not a resolution map.
+  llvm::DenseMap<ada_base_node, std::string> symbolNames;
+
+  // Canonical defining-name node -> the emitted ada.subp, for resolving calls
+  // to the callee op (function type, procedure-vs-function).
+  llvm::DenseMap<ada_base_node, mlir::ada::SubpOp> subpDecls;
+
+  /// Return the canonical defining name for a defining-name node, collapsing
+  /// spec/body and partial/full views. Falls back to the input on failure.
+  ada_node canonicalDefName(ada_node defName) {
+    ada_node decl, canonDecl, canonName;
+    if (!ada_defining_name_p_basic_decl(&defName, &decl) ||
+        ada_node_is_null(&decl))
+      return defName;
+    if (!ada_basic_decl_p_canonical_part(&decl, /*imprecise_fallback=*/false,
+                                         &canonDecl) ||
+        ada_node_is_null(&canonDecl))
+      return defName;
+    if (!ada_basic_decl_p_defining_name(&canonDecl, &canonName) ||
+        ada_node_is_null(&canonName))
+      return defName;
+    return canonName;
+  }
+
+  /// Return `candidate` if unused, else `candidate__2`, `__3`, ... until
+  /// unique. Reserves the chosen name.
+  std::string makeUnique(std::string candidate) {
+    if (usedSymbols.insert(candidate).second)
+      return candidate;
+    for (unsigned n = 2;; ++n) {
+      std::string c = candidate + "__" + std::to_string(n);
+      if (usedSymbols.insert(c).second)
+        return c;
+    }
+  }
+
+  /// The qualified symbol of the scope enclosing the current insertion point
+  /// (an ada.subp or ada.block), or "" at module level.
+  std::string scopePrefixForInsertion() {
+    for (mlir::Operation *op = builder.getInsertionBlock()->getParentOp(); op;
+         op = op->getParentOp()) {
+      if (llvm::isa<mlir::ada::SubpOp, mlir::ada::BlockOp>(op))
+        return mlir::SymbolTable::getSymbolName(op).str();
+      if (llvm::isa<mlir::ModuleOp>(op))
+        return "";
+    }
+    return "";
+  }
+
+  /// Canonical fully-qualified name of a defining name (e.g.
+  /// `standard.integer`), falling back to its simple name on failure.
+  std::string canonicalFqn(ada_node defName) {
+    ada_string_type fqn;
+    if (ada_defining_name_p_canonical_fully_qualified_name(&defName, &fqn)) {
+      char *buf;
+      size_t len;
+      ada_string_to_utf8(fqn, &buf, &len);
+      std::string name(buf, len);
+      free(buf);
+      ada_string_dec_ref(fqn);
+      return name;
+    }
+    return libadalang::getName(&defName, /*canonical=*/true);
+  }
+
+  /// Assign (or recall) the unique dialect symbol for a declaration's canonical
+  /// defining name. Local declarations get `prefix.simple`, made unique with
+  /// `__N`. When `useFqn` is set (predefined/external types emitted via the
+  /// lazy lookupOrEmitTypeOp path), the canonical fully-qualified name is used
+  /// instead (e.g. `standard.integer`). Keyed on the canonical node so a
+  /// subprogram spec and body (or a private type's partial and full view)
+  /// share one symbol.
+  std::string declareSymbol(ada_node canonDef, llvm::StringRef simple,
+                            bool useFqn) {
+    if (auto it = symbolNames.find(canonDef.node); it != symbolNames.end())
+      return it->second;
+    std::string name;
+    if (useFqn) {
+      name = canonicalFqn(canonDef);
+    } else {
+      std::string prefix = scopePrefixForInsertion();
+      name = makeUnique(prefix.empty() ? simple.str()
+                                       : prefix + "." + simple.str());
+    }
+    symbolNames[canonDef.node] = name;
+    return name;
+  }
+
+  /// Resolve a reference to its qualified dialect symbol by canonical defining
+  /// name. Falls back to the canonical fully-qualified name when the referenced
+  /// declaration was never emitted by us (i.e. lives in another unit).
+  std::string resolveSymbol(ada_node refDefName) {
+    ada_node canon = canonicalDefName(refDefName);
+    if (auto it = symbolNames.find(canon.node); it != symbolNames.end())
+      return it->second;
+    return canonicalFqn(canon);
+  }
+
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(const ada_node &node) {
     // const_cast: libadalang C API doesn't have const-qualified overloads;
@@ -290,9 +395,7 @@ private:
       ada_named_stmt_f_decl(&node, &decl);
       ada_named_stmt_decl_f_name(&decl, &nameNode);
       ada_named_stmt_f_stmt(&node, &stmt);
-      ada_text nameText;
-      ada_node_text(&nameNode, &nameText);
-      return mlirGenBlock(stmt, libadalang::textToString(nameText));
+      return mlirGenBlock(stmt, libadalang::getName(&nameNode));
     }
     case ada_begin_block:
     case ada_decl_block:
@@ -656,7 +759,7 @@ private:
     if (it == typeDecls.end()) {
       mlir::OpBuilder::InsertionGuard guard(builder);
       builder.setInsertionPointToStart(adaModule.getBody());
-      if (mlir::failed(mlirGenTypeDecl(type_decl, /*qualifiedName=*/true)))
+      if (mlir::failed(mlirGenTypeDecl(type_decl, /*external=*/true)))
         return {};
       it = typeDecls.find(type_decl.node);
       if (it == typeDecls.end()) {
@@ -754,17 +857,19 @@ private:
 
     auto calleeName = libadalang::getName(&name_node);
 
-    mlir::Operation *from =
-        builder.getInsertionBlock()->getParent()->getParentOp();
-    mlir::Operation *calleeOp =
-        mlir::ada::CallOp::lookupCallee(from, calleeName);
-
-    if (!calleeOp || !isa<mlir::ada::SubpOp>(calleeOp)) {
+    ada_node defName;
+    if (!ada_name_p_referenced_defining_name(&name_node,
+                                             /*imprecise_fallback=*/false,
+                                             &defName) ||
+        ada_node_is_null(&defName)) {
       mlir::emitError(location, "unknown subprogram '") << calleeName << "'";
       return nullptr;
     }
-
-    auto calleeSubp = mlir::cast<mlir::ada::SubpOp>(calleeOp);
+    auto calleeSubp = subpDecls.lookup(canonicalDefName(defName).node);
+    if (!calleeSubp) {
+      mlir::emitError(location, "unknown subprogram '") << calleeName << "'";
+      return nullptr;
+    }
 
     // Evaluate arguments. Formals with a memref type (in out / out) receive the
     // caller's alloca pointer directly; scalar formals (in) receive a value.
@@ -799,8 +904,8 @@ private:
       }
     }
 
-    auto calleeRef =
-        mlir::FlatSymbolRefAttr::get(builder.getContext(), calleeName);
+    auto calleeRef = mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                  resolveSymbol(defName));
 
     if (calleeSubp.isFunction()) {
       ada_node type_decl;
@@ -1071,41 +1176,27 @@ private:
   /// enumeration types (RM 3.5.1) are handled; other kinds are silently skipped
   /// and will be added as support for each kind is implemented.
   ///
-  /// When `qualifiedName` is true the symbol name uses the canonical fully
-  /// qualified Ada name (e.g. `standard.boolean`), suitable for module-level
-  /// ops where multiple packages might export types with the same simple name.
-  /// Local types within a subprogram use the simple name (default).
+  /// `external` is set by lookupOrEmitTypeOp's lazy path (predefined/Standard
+  /// types, emitted at module level): the symbol name uses the canonical fully
+  /// qualified Ada name (e.g. `standard.boolean`). In-place declarations get a
+  /// local qualified symbol built from the enclosing scope (see declareSymbol).
   ///
   /// @todo IntegerTypeInfoAttr, FloatTypeInfoAttr, RecordTypeInfoAttr, etc.
   llvm::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
-                                      bool qualifiedName = false) {
+                                      bool external = false) {
     auto location = loc(type_decl);
 
-    // Resolve the Ada type name: fully qualified for module-level types,
-    // simple canonical name for locals.
+    // Build the type's unique dialect symbol (see declareSymbol).
     auto resolveTypeName = [&]() -> llvm::FailureOr<std::string> {
-      if (qualifiedName) {
-        ada_string_type fqn;
-        if (!ada_basic_decl_p_canonical_fully_qualified_name(&type_decl,
-                                                             &fqn)) {
-          mlir::emitError(location, "failed to get fully qualified type name");
-          return mlir::failure();
-        }
-        char *buf;
-        size_t len;
-        ada_string_to_utf8(fqn, &buf, &len);
-        std::string name(buf, len);
-        free(buf);
-        ada_string_dec_ref(fqn);
-        return name;
-      }
       ada_node nameNode;
       if (!ada_base_type_decl_f_name(&type_decl, &nameNode) ||
           ada_node_is_null(&nameNode)) {
         mlir::emitError(location, "failed to get type name");
         return mlir::failure();
       }
-      return libadalang::getName(&nameNode, /*canonical=*/true);
+      return declareSymbol(canonicalDefName(nameNode),
+                           libadalang::getName(&nameNode, /*canonical=*/true),
+                           external);
     };
 
     // Universal types (RM 3.4.1) and numeric types (RM 3.5.4, 3.5.6, 3.5.7).
@@ -1503,10 +1594,11 @@ private:
   mlir::LogicalResult mlirGenBlock(ada_node &blockNode, llvm::StringRef name) {
     bool isDecl = ada_node_kind(&blockNode) == ada_decl_block;
 
-    mlir::StringAttr nameAttr =
-        name.empty() ? mlir::StringAttr{}
-                     : mlir::StringAttr::get(builder.getContext(), name);
-    auto blockOp = builder.create<mlir::ada::BlockOp>(loc(blockNode), nameAttr);
+    std::string seg = name.empty() ? std::string("b") : name.str();
+    std::string prefix = scopePrefixForInsertion();
+    auto symName = builder.getStringAttr(
+        makeUnique(prefix.empty() ? seg : prefix + "." + seg));
+    auto blockOp = builder.create<mlir::ada::BlockOp>(loc(blockNode), symName);
 
     // Create the entry block of the region; the builder now inserts into it.
     builder.createBlock(&blockOp.getBody());
@@ -1585,15 +1677,18 @@ private:
       retTypes.push_back(retType);
     }
     auto funcType = builder.getFunctionType(argTypes, retTypes);
-    auto subpOp = builder.create<mlir::ada::SubpOp>(
-        location, libadalang::getName(&name).data(), funcType);
+    ada_node canon = canonicalDefName(name);
+    std::string symName =
+        declareSymbol(canon, libadalang::getName(&name), /*useFqn=*/false);
+    auto subpOp =
+        builder.create<mlir::ada::SubpOp>(location, symName, funcType);
+    subpDecls[canon.node] = subpOp;
 
     return subpOp;
   }
 
-  /// Emit a procedure call statement. The callee is looked up first in the
-  /// enclosing ada.subp's SymbolTable (for nested subprograms), then in the
-  /// module-level SymbolTable (for top-level subprograms).
+  /// Emit a procedure call statement. The callee is resolved from the
+  /// referenced defining name via `subpDecls` (see mlirGenCallExpr).
   llvm::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
     ada_node call;
     ada_call_stmt_f_call(&call_stmt, &call);
