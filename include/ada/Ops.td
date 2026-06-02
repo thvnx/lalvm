@@ -77,11 +77,12 @@ def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
 //===----------------------------------------------------------------------===//
 
 // Ada type declaration: carries type metadata through the pipeline.
-// NOTE: `Symbol` trait cannot be used here. `ada.type` ops are marked legal
-// in `LowerToLLVM` and survive into `llvm.func` bodies, whose parent op
-// (`LLVM::LLVMFuncOp`) does not carry `SymbolTable`. The MLIR verifier checks
-// this invariant after every pass, so `Symbol` would always fail post-lowering.
-def TypeOp : Ada_Op<"type", []> {
+// Carries the `Symbol` trait. To keep the symbol's parent a `SymbolTable` at
+// every stage, `HoistNestedSymbolOperations` lifts all `ada.type` ops to module
+// level before lowering, just like nested subprograms. This keeps them out of
+// `llvm.func` bodies (whose parent `LLVM::LLVMFuncOp` is not a `SymbolTable`),
+// where a `Symbol` would otherwise fail the post-pass verifier.
+def TypeOp : Ada_Op<"type", [Symbol]> {
   let summary = "Ada type declaration (metadata only)";
   let description = [{
     Metadata-only op with no runtime value: carries type information (name,

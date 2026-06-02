@@ -8,8 +8,9 @@
 
 #include "ada/EnumDITypes.h"
 #include "ada/Dialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Location.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -55,18 +56,28 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
         mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
     auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
 
-    llvm::StringRef filePath;
-    unsigned line = 0;
-    if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(typeOp.getLoc())) {
-      filePath = flc.getFilename().getValue();
-      line = flc.getStartLine();
+    // HoistNestedSymbolOperations fused the enclosing subprogram (DWARF scope)
+    // onto the type's location before lifting it to module level, away from its
+    // lexical parent. Unwrap it for both the scope and the source file/line; a
+    // type without it (predefined / library-level) is scoped to the cu.
+    mlir::Location loc = typeOp.getLoc();
+    llvm::DIScope *scope = cu;
+    if (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
+      if (auto scopeRef = mlir::dyn_cast_or_null<mlir::ada::DIScopeRefAttr>(
+              fused.getMetadata())) {
+        auto *fn = llvmModule.getFunction(scopeRef.getScope().getValue());
+        if (fn && fn->getSubprogram())
+          scope = fn->getSubprogram();
+      }
+      if (!fused.getLocations().empty())
+        loc = fused.getLocations().front();
     }
 
-    llvm::DIScope *scope = cu;
-    if (auto func = typeOp->getParentOfType<mlir::LLVM::LLVMFuncOp>()) {
-      auto *fn = llvmModule.getFunction(func.getName());
-      if (fn && fn->getSubprogram())
-        scope = fn->getSubprogram();
+    llvm::StringRef filePath;
+    unsigned line = 0;
+    if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(loc)) {
+      filePath = flc.getFilename().getValue();
+      line = flc.getStartLine();
     }
 
     llvm::SmallVector<llvm::Metadata *, 8> elems;

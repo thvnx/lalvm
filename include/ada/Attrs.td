@@ -73,4 +73,17 @@ def DITypeRefAttr : AttrDef<Ada_Dialect, "DITypeRef"> {
   let assemblyFormat = "`<` $sym `>`";
 }
 
+// Reference to an enclosing subprogram, carried as FusedLoc metadata to record
+// the DWARF scope of an op that has been moved away from its lexical parent.
+// Lets a later pass recover the original scope from the location alone, after
+// the IR no longer reflects it through nesting.
+def DIScopeRefAttr : AttrDef<Ada_Dialect, "DIScopeRef"> {
+  let mnemonic = "di_scope";
+  let summary = "Enclosing-subprogram DWARF scope for FusedLoc metadata";
+  let parameters = (ins
+    AttrParameter<"::mlir::FlatSymbolRefAttr", "enclosing subprogram sym_name">:$scope
+  );
+  let assemblyFormat = "`<` $scope `>`";
+}
+
 #endif // ADA_ATTRS

@@ -119,8 +119,9 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   mlir::PassManager pm(module.get()->getName());
   // Attach Ada DICompileUnitAttr so DIScopeForLLVMFuncOpPass uses Ada metadata.
   pm.addPass(mlir::ada::createDICompileUnitAdaPass());
-  // Hoist nested subprograms to module level and apply GNAT ABI name mangling.
-  pm.addPass(mlir::ada::createHoistNestedSubprogramsPass());
+  // Hoist nested symbol ops (subprograms and types) to module level and apply
+  // GNAT ABI name mangling to subprograms.
+  pm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
   // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
   // Attach DI scope metadata so debuggers can map LLVM IR back to source lines.

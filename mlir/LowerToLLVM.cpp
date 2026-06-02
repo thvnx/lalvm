@@ -178,11 +178,6 @@ struct BlockOpLowering : public OpRewritePattern<ada::BlockOp> {
   LogicalResult matchAndRewrite(ada::BlockOp op,
                                 PatternRewriter &rewriter) const final {
     Block &body = op.getBody().front();
-    /// @todo Resolve `ada.type` symbol conflicts before inlining. When two
-    /// sibling blocks declare distinct local types with the same name, inlining
-    /// both into the parent `SymbolTable` creates duplicate symbols. The common
-    /// case (same type in multiple blocks) can be deduplicated; differing types
-    /// need a rename + `ada::DITypeRefAttr` patch in location metadata.
     // Move all ops into the parent block, just before this op.
     rewriter.inlineBlockBefore(&body, op);
     rewriter.eraseOp(op);
