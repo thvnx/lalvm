@@ -418,6 +418,10 @@ private:
     }
     }
 
+    // Only a statement sequence threads a single block across its children; in
+    // other contexts (e.g. a list of declarations) a terminated insertion block
+    // is an artifact of the previously emitted op, not unreachable code.
+    bool inStmtList = ada_node_kind(&node) == ada_stmt_list;
     unsigned i, count = ada_node_children_count(&node);
     for (i = 0; i < count; ++i) {
       ada_node child;
@@ -425,7 +429,22 @@ private:
         mlir::emitError(loc(node), "failed to get child node");
         return mlir::failure();
       }
-      if (!ada_node_is_null(&child) && mlir::failed(visit(child)))
+      if (ada_node_is_null(&child))
+        continue;
+      // A terminator (e.g. an Ada return) ends its block, so the statements
+      // that follow it in the sequence are unreachable. Warn and stop: emitting
+      // dead code is pointless and would leave a predecessor-less block that
+      // trips later passes. (Once real control flow exists, blocks opened after
+      // a terminator gain predecessors from branches and are no longer dead.)
+      if (inStmtList) {
+        if (mlir::Block *blk = builder.getInsertionBlock();
+            blk && !blk->empty() &&
+            blk->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+          mlir::emitWarning(loc(child), "unreachable code");
+          break;
+        }
+      }
+      if (mlir::failed(visit(child)))
         return mlir::failure();
     }
     return mlir::success();
@@ -1608,10 +1627,15 @@ private:
       return nullptr;
     }
 
-    // Procedures have no explicit return statement; add an implicit one.
-    if (isProc)
-      builder.create<mlir::ada::ReturnOp>(
-          mlir::UnknownLoc::get(builder.getContext()), mlir::Value{});
+    // Procedures have no explicit return statement; add an implicit one,
+    // unless the body already ended in a terminator (e.g. an explicit return,
+    // possibly inside a block that dissolved into this region).
+    if (isProc) {
+      mlir::Block *blk = builder.getInsertionBlock();
+      if (blk->empty() || !blk->back().hasTrait<mlir::OpTrait::IsTerminator>())
+        builder.create<mlir::ada::ReturnOp>(
+            mlir::UnknownLoc::get(builder.getContext()), mlir::Value{});
+    }
 
     // Block arguments are subprogram-local; erase any that were marked
     // uninitialized so entries don't accumulate across nested subprograms.
