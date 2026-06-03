@@ -479,15 +479,15 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 /// the module. Used only by `verifySymbolUses` for a best-effort
 /// procedure-vs-function check; MLIRGen resolves calls by node identity, not
 /// through this. `lookupNearestSymbolFrom` cannot be used because the scope
-/// boundaries here (`BlockOp`, `DeclsOp`) are opaque SymbolTables, so the walk
-/// visits each explicitly. `SubpOp` is not itself a SymbolTable: its nested
-/// subprograms live in an interior `ada.decls`, so at each enclosing `SubpOp`
-/// the walk searches that subprogram's `ada.decls` children too (the decls op
-/// is a sibling of a call in the subprogram's statements, not an ancestor).
+/// boundary here (`DeclsOp`) is an opaque SymbolTable, so the walk visits each
+/// explicitly. `SubpOp` is not itself a SymbolTable: its nested subprograms
+/// live in an interior `ada.decls`, so at each enclosing `SubpOp` the walk
+/// searches that subprogram's `ada.decls` children too (the decls op is a
+/// sibling of a call in the subprogram's statements, not an ancestor).
 mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
                                       llvm::StringRef name) {
   for (mlir::Operation *scope = from; scope; scope = scope->getParentOp()) {
-    if (mlir::isa<BlockOp, DeclsOp, mlir::ModuleOp>(scope))
+    if (mlir::isa<DeclsOp, mlir::ModuleOp>(scope))
       if (auto *sym = mlir::SymbolTable::lookupSymbolIn(scope, name))
         return sym;
     if (auto subp = mlir::dyn_cast<SubpOp>(scope))
@@ -533,11 +533,7 @@ void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult ReturnOp::verify() {
-  // Walk up through any enclosing block statements to find the subprogram.
-  mlir::Operation *parent = (*this)->getParentOp();
-  while (parent && mlir::isa<BlockOp>(parent))
-    parent = parent->getParentOp();
-  auto subp = mlir::dyn_cast<SubpOp>(parent);
+  auto subp = mlir::dyn_cast<SubpOp>((*this)->getParentOp());
   if (!subp)
     return emitOpError() << "expects parent to be ada.subp";
   mlir::FunctionType funcType = subp.getFunctionType();

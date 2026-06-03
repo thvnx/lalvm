@@ -28,6 +28,7 @@ namespace libadalang = frontend::libadalang;
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
@@ -228,6 +229,11 @@ private:
   // Every symbol string handed out, for `__N` collision disambiguation.
   llvm::StringSet<> usedSymbols;
 
+  // Unique qualified name of each scope currently open (subprograms and
+  // blocks); the top is the prefix for declarations emitted inside the
+  // innermost scope.
+  llvm::SmallVector<std::string> scopeStack;
+
   // Canonical defining-name node -> its unique qualified dialect symbol. Keyed
   // on the canonical node so a subprogram spec and body (or a private type's
   // partial and full view) collapse to one entry; this is the declaration-time
@@ -267,17 +273,11 @@ private:
     }
   }
 
-  /// The qualified symbol of the scope enclosing the current insertion point
-  /// (an ada.subp or ada.block), or "" at module level.
+  /// The qualified name of the current enclosing scope, or "" at module level.
+  /// Tracked by the generator rather than read from the IR because a block
+  /// leaves no op to recover its scope from.
   std::string scopePrefixForInsertion() {
-    for (mlir::Operation *op = builder.getInsertionBlock()->getParentOp(); op;
-         op = op->getParentOp()) {
-      if (llvm::isa<mlir::ada::SubpOp, mlir::ada::BlockOp>(op))
-        return mlir::SymbolTable::getSymbolName(op).str();
-      if (llvm::isa<mlir::ModuleOp>(op))
-        return "";
-    }
-    return "";
+    return scopeStack.empty() ? std::string() : scopeStack.back();
   }
 
   /// Canonical fully-qualified name of a defining name (e.g.
@@ -1448,13 +1448,12 @@ private:
   /// Silently skipped: SubpDecl (forward declarations), and everything else.
   /// The AST structure is: DeclarativePart -> AdaNodeList -> decl...
   ///
-  /// In subprogram scope (`subpScope`), the `ada.subp`/`ada.type` symbols are
-  /// routed into an interior `ada.decls` (a SymbolTable), since the enclosing
-  /// `ada.subp` is not one; locals (objects, numbers) stay inline in the body.
-  /// The symbols are emitted before the locals so a local can resolve a locally
-  /// declared type or call a nested subprogram. In block scope, the `BlockOp`
-  /// is itself a SymbolTable, so everything is emitted inline in source order.
-  llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls, bool subpScope) {
+  /// The `ada.subp`/`ada.type` symbols are routed into an interior `ada.decls`
+  /// (a SymbolTable), since neither the enclosing `ada.subp` nor a dissolved
+  /// block is one; locals (objects, numbers) stay inline in the region. The
+  /// symbols are emitted before the locals so a local can resolve a locally
+  /// declared type or call a nested subprogram.
+  llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
     // Visit every declaration in source order, invoking `fn`.
     auto forEachDecl =
         [&](llvm::function_ref<llvm::LogicalResult(ada_node &)> fn)
@@ -1495,15 +1494,12 @@ private:
         return mlir::success();
       }
     };
-    // ada.subp/ada.type are symbols; in subprogram scope they go into the
-    // interior ada.decls while locals (objects, numbers) stay in the body.
+    // ada.subp/ada.type are symbols routed into the interior ada.decls; locals
+    // (objects, numbers) stay inline in the region.
     auto isSymbol = [](ada_node &decl) {
       auto kind = ada_node_kind(&decl);
       return kind == ada_concrete_type_decl || kind == ada_subp_body;
     };
-
-    if (!subpScope)
-      return forEachDecl(emitDecl);
 
     bool hasSymbols = false;
     if (mlir::failed(forEachDecl([&](ada_node &decl) {
@@ -1541,6 +1537,9 @@ private:
     mlir::Operation *op = mlirGenSubpSpec(ada_subp_spec, isProc);
     if (!op)
       return nullptr;
+    // Enter the subprogram's naming scope for the declarations in its body.
+    scopeStack.push_back(mlir::SymbolTable::getSymbolName(op).str());
+    auto scopeGuard = llvm::make_scope_exit([&] { scopeStack.pop_back(); });
     mlir::Block *entryBlock = &op->getRegion(0).front();
 
     // Collect (id, mode, typeDecl) triples for all parameters.
@@ -1598,7 +1597,7 @@ private:
     ada_node decls;
     ada_subp_body_f_decls(&subp_body, &decls);
     if (!ada_node_is_null(&decls))
-      if (mlir::failed(mlirGenDeclarativePart(decls, /*subpScope=*/true)))
+      if (mlir::failed(mlirGenDeclarativePart(decls)))
         return nullptr;
 
     ada_node stmts;
@@ -1622,44 +1621,35 @@ private:
     return op;
   }
 
-  /// Lower an Ada block statement (ada_begin_block or ada_decl_block) to an
-  /// ada.block op. The block's declarative part (if any) and statements
-  /// are emitted into the op's region; a new symbol table scope is opened for
-  /// the duration so that local declarations are invisible outside the block.
+  /// Lower an Ada block statement (ada_begin_block or ada_decl_block). The
+  /// block dissolves into the enclosing region: its locals and statements are
+  /// emitted inline and its nested symbols into an in-place `ada.decls`. A
+  /// unique scope segment is pushed so the block's declarations get a qualified
+  /// name that reflects the block scope, which no longer exists as an op.
   mlir::LogicalResult mlirGenBlock(ada_node &blockNode, llvm::StringRef name) {
     bool isDecl = ada_node_kind(&blockNode) == ada_decl_block;
 
     std::string seg = name.empty() ? std::string("b") : name.str();
     std::string prefix = scopePrefixForInsertion();
-    auto symName = builder.getStringAttr(
-        makeUnique(prefix.empty() ? seg : prefix + "." + seg));
-    auto blockOp = builder.create<mlir::ada::BlockOp>(loc(blockNode), symName);
-
-    // Create the entry block of the region; the builder now inserts into it.
-    builder.createBlock(&blockOp.getBody());
+    scopeStack.push_back(makeUnique(prefix.empty() ? seg : prefix + "." + seg));
+    auto scopeGuard = llvm::make_scope_exit([&] { scopeStack.pop_back(); });
 
     // Codegen the declarative part (ada_decl_block only).
     if (isDecl) {
       ada_node decls;
       ada_decl_block_f_decls(&blockNode, &decls);
       if (!ada_node_is_null(&decls))
-        if (mlir::failed(mlirGenDeclarativePart(decls, /*subpScope=*/false)))
+        if (mlir::failed(mlirGenDeclarativePart(decls)))
           return mlir::failure();
     }
 
-    // Codegen the statement sequence.
+    // Codegen the statement sequence inline into the enclosing region.
     ada_node stmts;
     if (isDecl)
       ada_decl_block_f_stmts(&blockNode, &stmts);
     else
       ada_begin_block_f_stmts(&blockNode, &stmts);
-    if (mlir::failed(visit(stmts)))
-      return mlir::failure();
-
-    // Restore the insertion point to after the ada.block in the parent block.
-    builder.setInsertionPointAfter(blockOp);
-
-    return mlir::success();
+    return visit(stmts);
   }
 
   /// Create an ada.subp with the signature derived from the Ada subprogram
@@ -1792,8 +1782,6 @@ private:
       // implicit conversions).
       mlir::Operation *enclosing =
           builder.getInsertionBlock()->getParent()->getParentOp();
-      while (enclosing && mlir::isa<mlir::ada::BlockOp>(enclosing))
-        enclosing = enclosing->getParentOp();
       if (auto subp = mlir::dyn_cast<mlir::ada::SubpOp>(enclosing)) {
         auto results = subp.getFunctionType().getResults();
         if (!results.empty())

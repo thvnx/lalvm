@@ -170,21 +170,6 @@ struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
   }
 };
 
-// OpRewritePattern: no ada.qual operands or results; region inlining needs no
-// type converter.
-struct BlockOpLowering : public OpRewritePattern<ada::BlockOp> {
-  using OpRewritePattern<ada::BlockOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ada::BlockOp op,
-                                PatternRewriter &rewriter) const final {
-    Block &body = op.getBody().front();
-    // Move all ops into the parent block, just before this op.
-    rewriter.inlineBlockBefore(&body, op);
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
 // OpConversionPattern: operands are ada.qual typed; the adaptor provides them
 // already converted to bare MLIR types.
 struct ReturnOpLowering : public OpConversionPattern<ada::ReturnOp> {
@@ -449,7 +434,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
   populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
 
-  patterns.add<NullOpLowering, BlockOpLowering>(&getContext());
+  patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, SubpOpLowering,
                ConstantOpLowering, CoerceOpLowering>(typeConverter,
                                                      &getContext());

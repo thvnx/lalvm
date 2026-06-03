@@ -268,25 +268,6 @@ def NullOp : Ada_Op<"null", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// BlockOp
-//===----------------------------------------------------------------------===//
-
-// Represents an Ada block statement (RM 5.6): an inline scope that may
-// introduce local declarations followed by a sequence of statements. Unlike
-// ada.subp, this op is NOT IsolatedFromAbove; SSA values from the
-// enclosing function are directly accessible. NoTerminator+SingleBlock waive
-// the need for an explicit terminator op. During lowering the region contents
-// are inlined into the parent block and the op is erased.
-def BlockOp : Ada_Op<"block", [NoTerminator, SingleBlock, SymbolTable]> {
-  let summary = "Ada block statement with its own declarative scope";
-  // sym_name is the unique qualified dialect symbol, built from the enclosing
-  // scope and the block label (or `b` for unnamed blocks).
-  let arguments = (ins SymbolNameAttr:$sym_name);
-  let regions = (region AnyRegion:$body);
-  let assemblyFormat = "$sym_name $body attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
 // DeclsOp
 //===----------------------------------------------------------------------===//
 
@@ -323,7 +304,7 @@ def DeclsOp : Ada_Op<"decls", [NoTerminator, SingleBlock, SymbolTable]> {
 //===----------------------------------------------------------------------===//
 
 // Subprogram call. The callee is a flat symbol resolved by walking all
-// enclosing SymbolTable scopes (e.g. BlockOp, DeclsOp, ModuleOp) rather than
+// enclosing SymbolTable scopes (e.g. DeclsOp, ModuleOp) rather than
 // stopping at the nearest one.
 def CallOp : Ada_Op<"call",
                     [CallOpInterface,
