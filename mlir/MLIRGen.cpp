@@ -1682,6 +1682,12 @@ private:
         declareSymbol(canon, libadalang::getName(&name), /*useFqn=*/false);
     auto subpOp =
         builder.create<mlir::ada::SubpOp>(location, symName, funcType);
+    // Nested subprograms are not externally visible: mark them private so they
+    // skip the GNAT `_ada_` prefix (`getMangledName`). Library-level
+    // subprograms (emitted directly under the module) keep the default public
+    // visibility.
+    if (!mlir::isa<mlir::ModuleOp>(subpOp->getParentOp()))
+      subpOp.setPrivate();
     subpDecls[canon.node] = subpOp;
 
     return subpOp;

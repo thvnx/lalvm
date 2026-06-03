@@ -6,7 +6,7 @@
 -- on the parameter must be a store, not a load.
 
 -- MLIR-LABEL: ada.subp @param_out
--- MLIR:         ada.subp @param_out.get_value(%arg0: memref<!ada.qual<i32, @standard.integer>>)
+-- MLIR:         ada.subp private @param_out.get_value(%arg0: memref<!ada.qual<i32, @standard.integer>>)
 -- MLIR-NOT:       memref.load %arg0
 -- MLIR:           memref.store {{.*}}, %arg0[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:           ada.return
@@ -17,7 +17,7 @@
 -- MLIR:         ada.return %[[N]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_param_out(
--- LLVM-LABEL: define void @param_out__get_value(ptr
+-- LLVM-LABEL: define internal void @param_out__get_value(ptr
 -- LLVM:          #dbg_declare(ptr %0,
 -- LLVM-NOT:     load
 -- LLVM:          store i32 42, ptr

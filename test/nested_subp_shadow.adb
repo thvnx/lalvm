@@ -9,7 +9,7 @@
 
 -- MLIR-LABEL: ada.subp @nested_subp_shadow() -> !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[I:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 12
--- MLIR:         ada.subp @nested_subp_shadow.nested_subp_shadow(
+-- MLIR:         ada.subp private @nested_subp_shadow.nested_subp_shadow(
 -- MLIR:           %[[ONE:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
 -- MLIR:           %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] : !ada.qual<i32, @standard.integer>
 -- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
@@ -19,7 +19,7 @@
 -- LLVM-LABEL: define i32 @_ada_nested_subp_shadow(
 -- LLVM:          call i32 @nested_subp_shadow__nested_subp_shadow(i32 12)
 -- LLVM:          ret i32
--- LLVM-LABEL: define i32 @nested_subp_shadow__nested_subp_shadow(i32
+-- LLVM-LABEL: define internal i32 @nested_subp_shadow__nested_subp_shadow(i32
 -- LLVM:          add i32
 -- LLVM:          ret i32
 

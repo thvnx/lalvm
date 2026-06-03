@@ -6,7 +6,7 @@
 -- name is the bare operator symbol; MLIR then quotes it as @"operator_overload.*".
 
 -- MLIR-LABEL: ada.subp @operator_overload
--- MLIR:         ada.subp @"operator_overload.*"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.subp private @"operator_overload.*"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:      ada.return %[[SUM]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
@@ -15,7 +15,7 @@
 
 -- LLVM-LABEL: define void @_ada_operator_overload(
 -- LLVM:          ret void
--- LLVM-LABEL: define i32 @operator_overload__Omultiply(
+-- LLVM-LABEL: define internal i32 @operator_overload__Omultiply(
 -- LLVM:          add i32
 -- LLVM:          ret i32
 

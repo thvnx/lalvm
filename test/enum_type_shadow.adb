@@ -20,10 +20,10 @@
 -- "return True" resolves to standard Boolean.
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @enum_type_shadow
--- MLIR:         ada.subp @enum_type_shadow.inner(%arg0: !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.subp private @enum_type_shadow.inner(%arg0: !ada.qual<i1, @standard.boolean>
 -- MLIR:           ada.type @enum_type_shadow.inner.boolean : i1 = #ada.enum_info<"true" = 0, "false" = 1>
 -- MLIR:           ada.constant : !ada.qual<i1, @enum_type_shadow.inner.boolean> = false
--- MLIR:           ada.subp @enum_type_shadow.inner.inner(%arg1: !ada.qual<i1, @enum_type_shadow.inner.boolean>
+-- MLIR:           ada.subp private @enum_type_shadow.inner.inner(%arg1: !ada.qual<i1, @enum_type_shadow.inner.boolean>
 -- MLIR:             ada.type @enum_type_shadow.inner.inner.boolean : i1 = #ada.enum_info<"not_true" = 0, "true" = 1>
 -- MLIR:             ada.constant : !ada.qual<i1, @enum_type_shadow.inner.inner.boolean> = true
 -- MLIR:             ada.return
@@ -37,8 +37,8 @@
 -- then Inner.
 -- LLVM-LABEL: define i1 @_ada_enum_type_shadow(
 -- LLVM:          call i1 @enum_type_shadow__inner(
--- LLVM-LABEL: define i1 @enum_type_shadow__inner__inner(
--- LLVM-LABEL: define i1 @enum_type_shadow__inner(
+-- LLVM-LABEL: define internal i1 @enum_type_shadow__inner__inner(
+-- LLVM-LABEL: define internal i1 @enum_type_shadow__inner(
 -- Locally-declared Boolean types use the enclosing subprogram as DWARF scope,
 -- not the compile unit.
 -- LLVM-DAG: ![[BSCOPE1:[0-9]+]] = distinct !DISubprogram(name: "enum_type_shadow__inner",

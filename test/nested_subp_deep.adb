@@ -2,9 +2,9 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @nested_subp_deep
--- MLIR:         ada.subp @nested_subp_deep.a
--- MLIR:           ada.subp @nested_subp_deep.a.b
--- MLIR:             ada.subp @nested_subp_deep.a.b.c
+-- MLIR:         ada.subp private @nested_subp_deep.a
+-- MLIR:           ada.subp private @nested_subp_deep.a.b
+-- MLIR:             ada.subp private @nested_subp_deep.a.b.c
 -- MLIR:               ada.return
 -- MLIR:             ada.return
 -- MLIR:           ada.return
@@ -13,9 +13,9 @@
 -- Hoisting moves innermost procs to module end first (post-order), so the
 -- LLVM output order is: outer, then innermost-first.
 -- LLVM-LABEL: define void @_ada_nested_subp_deep(
--- LLVM-LABEL: define void @nested_subp_deep__a__b__c(
--- LLVM-LABEL: define void @nested_subp_deep__a__b(
--- LLVM-LABEL: define void @nested_subp_deep__a(
+-- LLVM-LABEL: define internal void @nested_subp_deep__a__b__c(
+-- LLVM-LABEL: define internal void @nested_subp_deep__a__b(
+-- LLVM-LABEL: define internal void @nested_subp_deep__a(
 
 procedure Nested_Subp_Deep is
    procedure A is

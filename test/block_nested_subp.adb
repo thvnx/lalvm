@@ -7,7 +7,7 @@
 
 -- MLIR-LABEL: ada.subp @block_nested_subp
 -- MLIR:         ada.block @block_nested_subp.b {
--- MLIR:           ada.subp @block_nested_subp.b.inner
+-- MLIR:           ada.subp private @block_nested_subp.b.inner
 -- MLIR:             ada.return
 -- MLIR:           ada.call @block_nested_subp.b.inner() : () -> ()
 -- MLIR:         }
@@ -15,7 +15,7 @@
 
 -- LLVM-LABEL: define void @_ada_block_nested_subp(
 -- LLVM:          call void @block_nested_subp__b__inner()
--- LLVM-LABEL: define void @block_nested_subp__b__inner(
+-- LLVM-LABEL: define internal void @block_nested_subp__b__inner(
 
 procedure Block_Nested_Subp is
 begin

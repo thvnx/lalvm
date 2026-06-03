@@ -368,6 +368,16 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
         mlir::FunctionType::get(op.getContext(), inputTypes, resultTypes);
     auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
                                                     newFuncType);
+    // Carry the subprogram's symbol visibility, and give private (nested)
+    // subprograms internal LLVM linkage; library-level (public) subprograms
+    // keep public visibility and external linkage. `func.func` visibility does
+    // not by itself set linkage, so the `llvm.linkage` attribute is what makes
+    // the lowered function `internal`.
+    func.setVisibility(op.getVisibility());
+    if (op.isPrivate())
+      func->setAttr("llvm.linkage",
+                    mlir::LLVM::LinkageAttr::get(
+                        rewriter.getContext(), mlir::LLVM::Linkage::Internal));
     if (ArrayAttr argAttrs = op.getArgAttrsAttr())
       func.setAllArgAttrs(argAttrs);
     if (ArrayAttr resAttrs = op.getResAttrsAttr())

@@ -411,9 +411,9 @@ static llvm::StringRef gnatOperatorName(llvm::StringRef sym, unsigned numArgs) {
 /// qualified dialect sym_name: split on the dot, map operator segments to their
 /// GNAT O-names (e.g. + to Oadd) via gnatOperatorName, and join with double
 /// underscores (e.g. proc.b.inner to proc__b__inner). Library-level
-/// subprograms (whose parent is the module) get the _ada_ prefix; this relies
-/// on the op's parent, so nested subprograms must be mangled before hoisting
-/// moves them to module level.
+/// subprograms (public symbol visibility) get the _ada_ prefix; reading
+/// visibility rather than the op's parent keeps the name stable across passes
+/// that move the op to module level.
 std::string SubpOp::getMangledName() {
   llvm::SmallVector<llvm::StringRef> segs;
   getSymName().split(segs, '.');
@@ -431,7 +431,7 @@ std::string SubpOp::getMangledName() {
       name += "__";
     name += seg;
   }
-  if (mlir::isa<mlir::ModuleOp>((*this)->getParentOp()))
+  if (isPublic())
     return "_ada_" + name;
   return name;
 }

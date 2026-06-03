@@ -7,14 +7,14 @@
 -- ada.call unrenamed and producing an invalid llvm.call reference.
 
 -- MLIR-LABEL: ada.subp @nested_subp_recursive() -> !ada.qual<i32, @standard.integer>
--- MLIR:         ada.subp @nested_subp_recursive.inner(
+-- MLIR:         ada.subp private @nested_subp_recursive.inner(
 -- MLIR:           %[[R:.*]] = ada.call @nested_subp_recursive.inner(%{{.*}}) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.call @nested_subp_recursive.inner(%{{.*}}) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_nested_subp_recursive(
 -- LLVM:          call i32 @nested_subp_recursive__inner(
--- LLVM-LABEL: define i32 @nested_subp_recursive__inner(i32
+-- LLVM-LABEL: define internal i32 @nested_subp_recursive__inner(i32
 -- LLVM:          call i32 @nested_subp_recursive__inner(
 -- LLVM:          ret i32
 

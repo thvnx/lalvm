@@ -8,19 +8,19 @@
 -- MLIR: ada.type @standard.universal_real_type_ : f64 = #ada.numeric_info
 -- MLIR: ada.type @standard.universal_int_type_ : i64 = #ada.numeric_info
 -- MLIR-LABEL: ada.subp @number_decl()
--- MLIR:         ada.subp @number_decl.f() -> !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.subp private @number_decl.f() -> !ada.qual<i32, @standard.integer>
 -- MLIR:           %[[UMAX:.*]] = ada.constant : !ada.qual<i64, @standard.universal_int_type_> = 200
 -- MLIR-NEXT:      %[[MAX:.*]] = ada.coerce %[[UMAX]] : <i64, @standard.universal_int_type_> to <i32, @standard.integer>
 -- MLIR-NEXT:      ada.return %[[MAX]] : !ada.qual<i32, @standard.integer>
--- MLIR:         ada.subp @number_decl.g() -> !ada.qual<f32, @standard.float>
+-- MLIR:         ada.subp private @number_decl.g() -> !ada.qual<f32, @standard.float>
 -- MLIR:           %[[UPI:.*]] = ada.constant : !ada.qual<f64, @standard.universal_real_type_> = {{.*}}
 -- MLIR-NEXT:      %[[PI:.*]] = ada.coerce %[[UPI]] : <f64, @standard.universal_real_type_> to <f32, @standard.float>
 -- MLIR-NEXT:      ada.return %[[PI]] : !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define void @_ada_number_decl(
--- LLVM-LABEL: define i32 @number_decl__f(
+-- LLVM-LABEL: define internal i32 @number_decl__f(
 -- LLVM:          ret i32 200
--- LLVM-LABEL: define float @number_decl__g(
+-- LLVM-LABEL: define internal float @number_decl__g(
 -- LLVM:          ret float
 
 procedure Number_Decl is
