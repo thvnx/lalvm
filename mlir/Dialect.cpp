@@ -475,18 +475,27 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-/// Resolve a callee symbol by walking the enclosing SymbolTable scopes from
-/// `from` up to the module. Used only by `verifySymbolUses` for a best-effort
+/// Resolve a callee symbol by walking the enclosing scopes from `from` up to
+/// the module. Used only by `verifySymbolUses` for a best-effort
 /// procedure-vs-function check; MLIRGen resolves calls by node identity, not
-/// through this. `lookupNearestSymbolFrom` cannot be used because SubpOp
-/// carries the SymbolTable trait, an opaque scope boundary, so the walk visits
-/// each scope explicitly.
+/// through this. `lookupNearestSymbolFrom` cannot be used because the scope
+/// boundaries here (`BlockOp`, `DeclsOp`) are opaque SymbolTables, so the walk
+/// visits each explicitly. `SubpOp` is not itself a SymbolTable: its nested
+/// subprograms live in an interior `ada.decls`, so at each enclosing `SubpOp`
+/// the walk searches that subprogram's `ada.decls` children too (the decls op
+/// is a sibling of a call in the subprogram's statements, not an ancestor).
 mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
                                       llvm::StringRef name) {
   for (mlir::Operation *scope = from; scope; scope = scope->getParentOp()) {
-    if (mlir::isa<BlockOp, SubpOp, mlir::ModuleOp>(scope))
+    if (mlir::isa<BlockOp, DeclsOp, mlir::ModuleOp>(scope))
       if (auto *sym = mlir::SymbolTable::lookupSymbolIn(scope, name))
         return sym;
+    if (auto subp = mlir::dyn_cast<SubpOp>(scope))
+      for (mlir::Block &block : subp.getBody())
+        for (mlir::Operation &op : block)
+          if (auto decls = mlir::dyn_cast<DeclsOp>(&op))
+            if (auto *sym = mlir::SymbolTable::lookupSymbolIn(decls, name))
+              return sym;
   }
   return nullptr;
 }

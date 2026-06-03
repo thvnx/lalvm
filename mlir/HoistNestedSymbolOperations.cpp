@@ -54,10 +54,17 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedSubps;
   llvm::SmallVector<Operation *, 4> librarySubps;
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedTypes;
+  llvm::SmallVector<ada::DeclsOp, 4> declsOps;
   // Collect all subprograms and types in one walk before any mutations. The
   // walk completes fully before the loops below mutate the IR (moveBefore,
   // setSymbolName), so there is no iterator invalidation.
   module.walk([&](Operation *op) {
+    // ada.decls only holds nested subprograms/types, all hoisted to module
+    // level below. Collect the now-redundant containers to erase afterward.
+    if (auto decls = dyn_cast<ada::DeclsOp>(op)) {
+      declsOps.push_back(decls);
+      return;
+    }
     // ada.type carries the Symbol trait, so its parent must be a SymbolTable at
     // every stage. Hoist nested ones to module level alongside subprograms so
     // none survive inside a non-SymbolTable llvm.func body after lowering. No
@@ -87,24 +94,24 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
     }
     nestedSubps.emplace_back(op, cast<ada::SubpOp>(op).getMangledName());
   });
+  // Hoist every nested subprogram to module level first, keeping its FQN
+  // dialect name. While nested inside an `ada.decls` (a SymbolTable that is a
+  // sibling of the calling statements, not an ancestor), a call in the
+  // enclosing body cannot resolve to it, so renaming uses would miss the call
+  // sites. Once at module level, every call resolves by the standard upward
+  // symbol-table walk.
+  for (auto &[op, mangledName] : nestedSubps)
+    op->moveBefore(module.getBody(), module.getBody()->end());
+  // Now rename with the standard utility. With the subprogram directly under
+  // the module, `replaceAllSymbolUses` walks the whole module region, which
+  // includes the subprogram's own body, so self-recursive calls are rewritten
+  // too.
   for (auto &[op, mangledName] : nestedSubps) {
     auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
-    // Save the old name before any mutation.
-    std::string oldName = mlir::SymbolTable::getSymbolName(op).str();
     if (mlir::failed(
             mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
       return signalPassFailure();
-    // replaceAllSymbolUses stops at the symbol's own definition body, so
-    // self-recursive calls inside 'op' are left unrenamed.  Fix that with a
-    // targeted walk that crosses SymbolTable boundaries.
-    auto mangledSymRef =
-        mlir::FlatSymbolRefAttr::get(module.getContext(), mangledName);
-    op->walk([&](ada::CallOp callOp) {
-      if (callOp.getCallee() == oldName)
-        callOp.setCalleeAttr(mangledSymRef);
-    });
     mlir::SymbolTable::setSymbolName(op, mangledName);
-    op->moveBefore(module.getBody(), module.getBody()->end());
   }
   for (Operation *op : librarySubps) {
     std::string mangledName = cast<ada::SubpOp>(op).getMangledName();
@@ -128,6 +135,16 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
               ctx, mlir::FlatSymbolRefAttr::get(ctx, scopeName))));
     }
     op->moveBefore(module.getBody(), module.getBody()->end());
+  }
+  // Every nested subprogram and type has been lifted to module level, so each
+  // ada.decls is now empty; erase the containers. Done last so the moves above
+  // (which read parent chains crossing these ops) are unaffected.
+  for (ada::DeclsOp decls : declsOps) {
+    if (!decls.getBody().front().empty()) {
+      decls.emitError("ada.decls is not empty after hoisting nested symbols");
+      return signalPassFailure();
+    }
+    decls.erase();
   }
 }
 

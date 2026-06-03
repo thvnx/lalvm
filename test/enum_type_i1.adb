@@ -3,8 +3,9 @@
 
 -- 2 literals -> i1; On has position 1.
 -- MLIR-LABEL: ada.subp @enum_type_i1
--- MLIR:         ada.type @enum_type_i1.switch : i1 = #ada.enum_info<"off" = 0, "on" = 1>
--- MLIR-NEXT:    %[[C:.*]] = ada.constant : !ada.qual<i1, @enum_type_i1.switch> = true
+-- MLIR:         ada.decls {
+-- MLIR-NEXT:      ada.type @enum_type_i1.switch : i1 = #ada.enum_info<"off" = 0, "on" = 1>
+-- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i1, @enum_type_i1.switch> = true
 -- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 

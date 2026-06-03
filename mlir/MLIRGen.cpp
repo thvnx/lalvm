@@ -1441,54 +1441,89 @@ private:
     return mlir::success();
   }
 
-  /// Emit declarations from a subprogram's declarative part.
+  /// Emit declarations from a declarative part.
   /// Supported: ObjectDecl (initialized only), SubpBody (nested subprograms),
-  ///            NumberDecl (expression stashed for lazy use-site emission).
+  ///            NumberDecl (expression stashed for lazy use-site emission),
+  ///            ConcreteTypeDecl.
   /// Silently skipped: SubpDecl (forward declarations), and everything else.
   /// The AST structure is: DeclarativePart -> AdaNodeList -> decl...
-  llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
-    unsigned listCount = ada_node_children_count(&decls);
-    for (unsigned i = 0; i < listCount; ++i) {
-      ada_node list;
-      if (ada_node_child(&decls, i, &list) == 0) {
-        mlir::emitError(loc(decls), "failed to get declarative list");
+  ///
+  /// In subprogram scope (`subpScope`), the `ada.subp`/`ada.type` symbols are
+  /// routed into an interior `ada.decls` (a SymbolTable), since the enclosing
+  /// `ada.subp` is not one; locals (objects, numbers) stay inline in the body.
+  /// The symbols are emitted before the locals so a local can resolve a locally
+  /// declared type or call a nested subprogram. In block scope, the `BlockOp`
+  /// is itself a SymbolTable, so everything is emitted inline in source order.
+  llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls, bool subpScope) {
+    // Visit every declaration in source order, invoking `fn`.
+    auto forEachDecl =
+        [&](llvm::function_ref<llvm::LogicalResult(ada_node &)> fn)
+        -> llvm::LogicalResult {
+      unsigned listCount = ada_node_children_count(&decls);
+      for (unsigned i = 0; i < listCount; ++i) {
+        ada_node list;
+        if (ada_node_child(&decls, i, &list) == 0)
+          return mlir::emitError(loc(decls), "failed to get declarative list");
+        unsigned count = ada_node_children_count(&list);
+        for (unsigned j = 0; j < count; ++j) {
+          ada_node decl;
+          if (ada_node_child(&list, j, &decl) == 0)
+            return mlir::emitError(loc(decls), "failed to get declaration");
+          if (mlir::failed(fn(decl)))
+            return mlir::failure();
+        }
+      }
+      return mlir::success();
+    };
+
+    // Emit one declaration; no-op for kinds we don't handle.
+    auto emitDecl = [&](ada_node &decl) -> llvm::LogicalResult {
+      switch (ada_node_kind(&decl)) {
+      case ada_number_decl:
+        return mlirGenNumberDecl(decl);
+      case ada_object_decl:
+        return mlirGenObjectDecl(decl);
+      case ada_concrete_type_decl:
+        return mlirGenTypeDecl(decl);
+      case ada_subp_body: {
+        // mlirGenSubpBody moves the insertion point into the nested
+        // subprogram; restore it so the next declaration lands in this scope.
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        return mlirGenSubpBody(decl) ? mlir::success() : mlir::failure();
+      }
+      default:
+        return mlir::success();
+      }
+    };
+    // ada.subp/ada.type are symbols; in subprogram scope they go into the
+    // interior ada.decls while locals (objects, numbers) stay in the body.
+    auto isSymbol = [](ada_node &decl) {
+      auto kind = ada_node_kind(&decl);
+      return kind == ada_concrete_type_decl || kind == ada_subp_body;
+    };
+
+    if (!subpScope)
+      return forEachDecl(emitDecl);
+
+    bool hasSymbols = false;
+    if (mlir::failed(forEachDecl([&](ada_node &decl) {
+          hasSymbols |= isSymbol(decl);
+          return mlir::success();
+        })))
+      return mlir::failure();
+
+    if (hasSymbols) {
+      auto declsOp = builder.create<mlir::ada::DeclsOp>(loc(decls));
+      builder.createBlock(&declsOp.getBody());
+      if (mlir::failed(forEachDecl([&](ada_node &decl) {
+            return isSymbol(decl) ? emitDecl(decl) : mlir::success();
+          })))
         return mlir::failure();
-      }
-      unsigned count = ada_node_children_count(&list);
-      for (unsigned j = 0; j < count; ++j) {
-        ada_node decl;
-        if (ada_node_child(&list, j, &decl) == 0) {
-          mlir::emitError(loc(decls), "failed to get declaration");
-          return mlir::failure();
-        }
-        switch (ada_node_kind(&decl)) {
-        case ada_number_decl:
-          if (mlir::failed(mlirGenNumberDecl(decl)))
-            return mlir::failure();
-          break;
-        case ada_concrete_type_decl:
-          if (mlir::failed(mlirGenTypeDecl(decl)))
-            return mlir::failure();
-          break;
-        case ada_object_decl:
-          if (mlir::failed(mlirGenObjectDecl(decl)))
-            return mlir::failure();
-          break;
-        case ada_subp_body: {
-          // Save and restore the insertion point: mlirGenSubpBody moves it to
-          // the nested function's entry block, which would corrupt the
-          // enclosing function's emit position.
-          mlir::OpBuilder::InsertionGuard guard(builder);
-          if (!mlirGenSubpBody(decl))
-            return mlir::failure();
-          break;
-        }
-        default:
-          break;
-        }
-      }
+      builder.setInsertionPointAfter(declsOp);
     }
-    return mlir::success();
+    return forEachDecl([&](ada_node &decl) {
+      return isSymbol(decl) ? mlir::success() : emitDecl(decl);
+    });
   }
 
   /// Lower one Ada subprogram body to an `ada.subp` operation.
@@ -1563,7 +1598,7 @@ private:
     ada_node decls;
     ada_subp_body_f_decls(&subp_body, &decls);
     if (!ada_node_is_null(&decls))
-      if (mlir::failed(mlirGenDeclarativePart(decls)))
+      if (mlir::failed(mlirGenDeclarativePart(decls, /*subpScope=*/true)))
         return nullptr;
 
     ada_node stmts;
@@ -1608,7 +1643,7 @@ private:
       ada_node decls;
       ada_decl_block_f_decls(&blockNode, &decls);
       if (!ada_node_is_null(&decls))
-        if (mlir::failed(mlirGenDeclarativePart(decls)))
+        if (mlir::failed(mlirGenDeclarativePart(decls, /*subpScope=*/false)))
           return mlir::failure();
     }
 

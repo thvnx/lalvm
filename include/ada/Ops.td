@@ -287,11 +287,43 @@ def BlockOp : Ada_Op<"block", [NoTerminator, SingleBlock, SymbolTable]> {
 }
 
 //===----------------------------------------------------------------------===//
+// DeclsOp
+//===----------------------------------------------------------------------===//
+
+// Enclosing SymbolTable for a subprogram's nested symbol declarations, since
+// `ada.subp` itself is not one. See the op description for details.
+def DeclsOp : Ada_Op<"decls", [NoTerminator, SingleBlock, SymbolTable]> {
+  let summary = "Container for a subprogram's nested symbol declarations";
+  let description = [{
+    A `SymbolTable` region holding the nested symbol declarations (`ada.subp`,
+    `ada.type`) of a subprogram's declarative part. `ada.subp` is not itself a
+    `SymbolTable` (its body is a multi-block CFG), so its nested symbols need
+    some enclosing `SymbolTable`; this op provides one inside the subprogram
+    body. It carries no operands or results and is not `IsolatedFromAbove`, so
+    enclosing SSA values pass through it. `HoistNestedSymbolOperations` lifts the
+    contents to module level and erases the emptied op before lowering, so it
+    never reaches `LowerToLLVM`.
+
+    ```mlir
+    ada.subp @foo() {
+      ada.decls {
+        ada.subp @"foo.bar"() { ada.return }
+        ada.type @"foo.color" : i8 = #ada.enum_info<"red" = 0, "green" = 1>
+      }
+      ada.return
+    }
+    ```
+  }];
+  let regions = (region AnyRegion:$body);
+  let assemblyFormat = "$body attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
 
 // Subprogram call. The callee is a flat symbol resolved by walking all
-// enclosing SymbolTable scopes (e.g. BlockOp, SubpOp, ModuleOp) rather than
+// enclosing SymbolTable scopes (e.g. BlockOp, DeclsOp, ModuleOp) rather than
 // stopping at the nearest one.
 def CallOp : Ada_Op<"call",
                     [CallOpInterface,
@@ -362,13 +394,13 @@ def CallOp : Ada_Op<"call",
 // data flow into nested subprograms to be explicit; upward references to
 // outer variables must be threaded via a static link rather than captured
 // as SSA values. This makes hoisting to module level in LowerToLLVM
-// straightforward (LLVM does not support nested functions). SymbolTable
-// scopes nested subprogram bodies to the enclosing subprogram rather than
-// to the module. AutomaticAllocationScope marks the op as the alloca scope
-// boundary for mem2reg.
+// straightforward (LLVM does not support nested functions). The op is not a
+// SymbolTable: its body is a multi-block CFG (for control flow), so nested
+// symbol declarations live in an interior `ada.decls` (a SymbolTable) rather
+// than directly in the body. AutomaticAllocationScope marks the op as the
+// alloca scope boundary for mem2reg.
 def SubpOp : Ada_Op<"subp", [
-    FunctionOpInterface, IsolatedFromAbove, SymbolTable,
-    AutomaticAllocationScope
+    FunctionOpInterface, IsolatedFromAbove, AutomaticAllocationScope
   ]> {
   let summary = "Ada subprogram (function or procedure)";
   let description = [{
