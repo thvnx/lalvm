@@ -197,6 +197,27 @@ struct AdaDebugInfoPass
     MLIRContext *ctx = &getContext();
     ModuleOp module = getOperation();
 
+    // Pass 0: nested subprograms are private (internal linkage); derived from
+    // the visibility carried onto the llvm.func, mark their DISubprogram local
+    // to the unit so DWARF does not emit DW_AT_external for them. Run first so
+    // the later passes read the updated subprogram.
+    module.walk([&](LLVM::LLVMFuncOp func) {
+      if (!func.isPrivate())
+        return;
+      auto fused = dyn_cast<FusedLoc>(func.getLoc());
+      if (!fused)
+        return;
+      auto sp = dyn_cast_or_null<LLVM::DISubprogramAttr>(fused.getMetadata());
+      if (!sp)
+        return;
+      auto newSp = LLVM::DISubprogramAttr::get(
+          ctx, sp.getId(), sp.getCompileUnit(), sp.getScope(), sp.getName(),
+          sp.getLinkageName(), sp.getFile(), sp.getLine(), sp.getScopeLine(),
+          sp.getSubprogramFlags() | LLVM::DISubprogramFlags::LocalToUnit,
+          sp.getType(), sp.getRetainedNodes(), sp.getAnnotations());
+      func->setLoc(FusedLoc::get(ctx, fused.getLocations(), newSp));
+    });
+
     // Pass 1: record (func, name) pairs for all llvm.alloca ops with NameLoc.
     // Used to suppress scalar debug entries when an alloca already tracks the
     // variable with dbg.declare.

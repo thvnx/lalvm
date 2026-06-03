@@ -157,6 +157,12 @@ static int dumpLLVMIR(mlir::MLIRContext &context,
   llvmModule->setModuleIdentifier(llvm::sys::path::filename(inputFilename));
   llvmModule->setSourceFileName(inputFilename);
 
+  // Request DWARF 5 so the backend emits the modern `.debug_names`
+  // accelerator table instead of the deprecated GNU `.debug_pubnames`
+  // (the name-table kind stays at its default; the DWARF version is the
+  // selector, see `DwarfCompileUnit::hasDwarfPubSections`).
+  llvmModule->addModuleFlag(llvm::Module::Max, "Dwarf Version", 5);
+
   mlir::ada::buildEnumDITypes(*llvmModule, *module);
 
   // Initialize LLVM targets.
