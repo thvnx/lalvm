@@ -189,6 +189,19 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
   return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
 }
 
+// Rebuild `sp` overriding its flags and subroutine type, preserving every other
+// field. DISubprogramAttr has no copy-with, so the full get() is unavoidable;
+// this keeps the boilerplate in one place.
+static LLVM::DISubprogramAttr cloneSubprogram(LLVM::DISubprogramAttr sp,
+                                              LLVM::DISubprogramFlags flags,
+                                              LLVM::DISubroutineTypeAttr type) {
+  return LLVM::DISubprogramAttr::get(
+      sp.getContext(), sp.getId(), sp.getCompileUnit(), sp.getScope(),
+      sp.getName(), sp.getLinkageName(), sp.getFile(), sp.getLine(),
+      sp.getScopeLine(), flags, type, sp.getRetainedNodes(),
+      sp.getAnnotations());
+}
+
 struct AdaDebugInfoPass
     : public PassWrapper<AdaDebugInfoPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AdaDebugInfoPass)
@@ -210,15 +223,66 @@ struct AdaDebugInfoPass
       auto sp = dyn_cast_or_null<LLVM::DISubprogramAttr>(fused.getMetadata());
       if (!sp)
         return;
-      auto newSp = LLVM::DISubprogramAttr::get(
-          ctx, sp.getId(), sp.getCompileUnit(), sp.getScope(), sp.getName(),
-          sp.getLinkageName(), sp.getFile(), sp.getLine(), sp.getScopeLine(),
-          sp.getSubprogramFlags() | LLVM::DISubprogramFlags::LocalToUnit,
-          sp.getType(), sp.getRetainedNodes(), sp.getAnnotations());
+      auto newSp = cloneSubprogram(
+          sp, sp.getSubprogramFlags() | LLVM::DISubprogramFlags::LocalToUnit,
+          sp.getType());
       func->setLoc(FusedLoc::get(ctx, fused.getLocations(), newSp));
     });
 
-    // Pass 1: record (func, name) pairs for all llvm.alloca ops with NameLoc.
+    // Build ada.type op caches used by the remaining passes.
+    // typeOpCache (keyed by MLIR type) is a fallback when no Ada type ref is
+    // encoded in the value's location. typeOpByName (keyed by sym_name) is the
+    // primary lookup when attachAdaTypeRef embedded a FlatSymbolRefAttr.
+    llvm::DenseMap<mlir::Type, ada::TypeOp> typeOpCache;
+    llvm::DenseMap<mlir::StringAttr, ada::TypeOp> typeOpByName;
+    module.walk([&](ada::TypeOp typeOp) {
+      typeOpCache.try_emplace(typeOp.getMlirType(), typeOp);
+      typeOpByName.try_emplace(typeOp.getSymNameAttr(), typeOp);
+    });
+
+    // Pass 1: populate each subprogram's DISubroutineType so DWARF emits the
+    // return type as the subprogram's DW_AT_type and records the full
+    // signature. Element 0 is the return type (null = void/procedure), carried
+    // by LowerToLLVM as a DITypeRef nested one level under the DISubprogram's
+    // FusedLoc; the remaining elements are the parameter types, read from the
+    // entry block-arg locations (the same metadata Pass 5 uses). Runs before
+    // the variable/parameter passes so their DIEs reference the rebuilt
+    // subprogram as scope.
+    module.walk([&](LLVM::LLVMFuncOp func) {
+      // Definitions only: parameter types come from the entry block args, so a
+      // bodyless declaration would yield a misleading param-less signature.
+      if (func.getBody().empty())
+        return;
+      auto fused = dyn_cast<FusedLoc>(func.getLoc());
+      if (!fused)
+        return;
+      auto sp = dyn_cast_or_null<LLVM::DISubprogramAttr>(fused.getMetadata());
+      if (!sp)
+        return;
+
+      // Element 0: return type, from the DITypeRef nested under the function's
+      // FusedLoc. Null for procedures (no nested DITypeRef) = void return.
+      LLVM::DITypeAttr returnType;
+      if (!fused.getLocations().empty())
+        returnType =
+            extractDITypeFromLoc(ctx, fused.getLocations()[0], typeOpByName);
+
+      // Remaining elements: parameter types from entry block-arg locations.
+      SmallVector<LLVM::DITypeAttr> types{returnType};
+      for (BlockArgument arg : func.getBody().front().getArguments()) {
+        auto nl = dyn_cast<NameLoc>(arg.getLoc());
+        types.push_back(
+            nl ? extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName)
+               : LLVM::DITypeAttr{});
+      }
+
+      auto subType = LLVM::DISubroutineTypeAttr::get(
+          ctx, llvm::dwarf::DW_CC_normal, types);
+      auto newSp = cloneSubprogram(sp, sp.getSubprogramFlags(), subType);
+      func->setLoc(FusedLoc::get(ctx, fused.getLocations(), newSp));
+    });
+
+    // Pass 2: record (func, name) pairs for all llvm.alloca ops with NameLoc.
     // Used to suppress scalar debug entries when an alloca already tracks the
     // variable with dbg.declare.
     using FuncNamePair = std::pair<Operation *, StringAttr>;
@@ -232,7 +296,7 @@ struct AdaDebugInfoPass
         allocaNames.insert({func, nl.getName()});
     });
 
-    // Pass 2: collect debug entries.
+    // Pass 3: collect debug entries.
     struct DebugEntry {
       Operation *op;
       LLVM::DISubprogramAttr subprogram;
@@ -269,18 +333,7 @@ struct AdaDebugInfoPass
           {op, subprogram, nl.getName(), nl.getChildLoc(), isAlloca});
     });
 
-    // Build ada.type op caches for Passes 3-4.
-    // typeOpCache (keyed by MLIR type) is a fallback when no Ada type ref is
-    // encoded in the value's location. typeOpByName (keyed by sym_name) is the
-    // primary lookup when attachAdaTypeRef embedded a FlatSymbolRefAttr.
-    llvm::DenseMap<mlir::Type, ada::TypeOp> typeOpCache;
-    llvm::DenseMap<mlir::StringAttr, ada::TypeOp> typeOpByName;
-    module.walk([&](ada::TypeOp typeOp) {
-      typeOpCache.try_emplace(typeOp.getMlirType(), typeOp);
-      typeOpByName.try_emplace(typeOp.getSymNameAttr(), typeOp);
-    });
-
-    // Pass 3: emit debug intrinsics.
+    // Pass 4: emit debug intrinsics.
     for (auto &entry : entries) {
       auto [fileAttr, line] =
           getFileAndLine(ctx, entry.innerLoc, entry.subprogram);
@@ -314,7 +367,7 @@ struct AdaDebugInfoPass
                                  entry.op->getResult(0), varInfo);
     }
 
-    // Pass 4: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
+    // Pass 5: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
     // block args with NameLoc (Ada parameters).
     OpBuilder builder(ctx);
     module.walk([&](LLVM::LLVMFuncOp func) {

@@ -367,6 +367,17 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
       func.setAllArgAttrs(argAttrs);
     if (ArrayAttr resAttrs = op.getResAttrsAttr())
       func.setAllResultAttrs(resAttrs);
+    // Carry the result's Ada type ref on the function location so
+    // AdaDebugInfoPass can emit the subprogram's return type (DW_AT_type).
+    // Mirrors the per-parameter DITypeRef attached to entry block-arg locs
+    // below, but on the function's own loc: DIScopeForLLVMFuncOpPass nests this
+    // FusedLoc under the DISubprogram, where the DI pass reads it back.
+    // Procedures have no result and keep the plain loc (null return = void).
+    if (!funcType.getResults().empty())
+      if (auto typed = dyn_cast<ada::QualType>(funcType.getResults()[0]))
+        func->setLoc(mlir::FusedLoc::get(
+            func.getContext(), {func.getLoc()},
+            ada::DITypeRefAttr::get(func.getContext(), typed.getAdaType())));
     rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
     if (mlir::failed(
             rewriter.convertRegionTypes(&func.getBody(), *getTypeConverter())))
