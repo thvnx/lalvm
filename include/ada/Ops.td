@@ -371,17 +371,19 @@ def CallOp : Ada_Op<"call",
 //===----------------------------------------------------------------------===//
 
 // A single op for both Ada functions and procedures. Functions have one result
-// type; procedures have an empty result list. IsolatedFromAbove forces all
-// data flow into nested subprograms to be explicit; upward references to
-// outer variables must be threaded via a static link rather than captured
-// as SSA values. This makes hoisting to module level in LowerToLLVM
-// straightforward (LLVM does not support nested functions). The op is not a
-// SymbolTable: its body is a multi-block CFG (for control flow), so nested
-// symbol declarations live in an interior `ada.decls` (a SymbolTable) rather
-// than directly in the body. AutomaticAllocationScope marks the op as the
-// alloca scope boundary for mem2reg.
+// type; procedures have an empty result list. The op is NOT IsolatedFromAbove:
+// a nested subprogram may reference an enclosing variable as an ordinary
+// cross-region SSA use (an up-level reference). The `ClosureConversion` pass
+// lambda-lifts those captures into explicit parameters and hoists the
+// subprogram to module level, so it is self-contained (and effectively
+// isolated again) by the time `LowerToLLVM` turns it into a `func.func` (LLVM
+// does not support nested functions). The op is also not a SymbolTable: its
+// body is a multi-block CFG (for control flow), so nested symbol declarations
+// live in an interior `ada.decls` (a SymbolTable) rather than directly in the
+// body. AutomaticAllocationScope marks the op as the alloca scope boundary for
+// mem2reg.
 def SubpOp : Ada_Op<"subp", [
-    FunctionOpInterface, IsolatedFromAbove, AutomaticAllocationScope
+    FunctionOpInterface, AutomaticAllocationScope
   ]> {
   let summary = "Ada subprogram (function or procedure)";
   let description = [{
