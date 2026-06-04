@@ -6,10 +6,11 @@
 -- name is the bare operator symbol; MLIR then quotes it as @"operator_overload.*".
 
 -- MLIR-LABEL: ada.subp @operator_overload
--- MLIR:         ada.subp private @"operator_overload.*"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR:           %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
--- MLIR-NEXT:      ada.return %[[SUM]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.decls {
+-- MLIR:           ada.subp private @"operator_overload.*"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:             %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:        ada.return %[[SUM]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 

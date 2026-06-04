@@ -3,10 +3,10 @@
 
 -- 3 literals -> i8; Green has position 1.
 -- MLIR-LABEL: ada.subp @enum_type_i8
--- MLIR:         ada.decls {
--- MLIR-NEXT:      ada.type @enum_type_i8.color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i8, @enum_type_i8.color> = 1
--- MLIR-NEXT:    ada.null
+-- MLIR-NEXT:    ada.decls {
+-- MLIR-NEXT:      ada.type @enum_type_i8.color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
+-- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 
 -- DWARF: !DICompositeType(tag: DW_TAG_enumeration_type, name: "color"

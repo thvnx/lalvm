@@ -1469,9 +1469,13 @@ private:
   ///
   /// The `ada.subp`/`ada.type` symbols are routed into an interior `ada.decls`
   /// (a SymbolTable), since neither the enclosing `ada.subp` nor a dissolved
-  /// block is one; locals (objects, numbers) stay inline in the region. The
-  /// symbols are emitted before the locals so a local can resolve a locally
-  /// declared type or call a nested subprogram.
+  /// block is one; locals (objects, numbers) stay inline in the region.
+  /// Declarations are emitted in source order, with the `ada.decls` placed
+  /// *after* the locals: each local lands in the region just before the
+  /// `ada.decls`, each symbol inside it. So a local dominates the `ada.decls`
+  /// (required once a nested subprogram captures it) and is bound before a
+  /// later nested subprogram is emitted, while a symbol is still available by
+  /// name to the locals around it.
   llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
     // Visit every declaration in source order, invoking `fn`.
     auto forEachDecl =
@@ -1494,7 +1498,8 @@ private:
       return mlir::success();
     };
 
-    // Emit one declaration; no-op for kinds we don't handle.
+    // Emit one declaration at the current insertion point; no-op for kinds we
+    // don't handle.
     auto emitDecl = [&](ada_node &decl) -> llvm::LogicalResult {
       switch (ada_node_kind(&decl)) {
       case ada_number_decl:
@@ -1503,12 +1508,8 @@ private:
         return mlirGenObjectDecl(decl);
       case ada_concrete_type_decl:
         return mlirGenTypeDecl(decl);
-      case ada_subp_body: {
-        // mlirGenSubpBody moves the insertion point into the nested
-        // subprogram; restore it so the next declaration lands in this scope.
-        mlir::OpBuilder::InsertionGuard guard(builder);
+      case ada_subp_body:
         return mlirGenSubpBody(decl) ? mlir::success() : mlir::failure();
-      }
       default:
         return mlir::success();
       }
@@ -1527,18 +1528,25 @@ private:
         })))
       return mlir::failure();
 
-    if (hasSymbols) {
-      auto declsOp = builder.create<mlir::ada::DeclsOp>(loc(decls));
-      builder.createBlock(&declsOp.getBody());
-      if (mlir::failed(forEachDecl([&](ada_node &decl) {
-            return isSymbol(decl) ? emitDecl(decl) : mlir::success();
-          })))
-        return mlir::failure();
-      builder.setInsertionPointAfter(declsOp);
-    }
-    return forEachDecl([&](ada_node &decl) {
-      return isSymbol(decl) ? mlir::success() : emitDecl(decl);
-    });
+    // No symbols: emit the locals inline in source order, no ada.decls needed.
+    if (!hasSymbols)
+      return forEachDecl(emitDecl);
+
+    // Otherwise route each declaration in source order: locals just before the
+    // ada.decls, symbols into it. mlirGenSubpBody moves the insertion point
+    // into the nested subprogram, but the next iteration resets it here.
+    auto declsOp = builder.create<mlir::ada::DeclsOp>(loc(decls));
+    mlir::Block *declsBlock = builder.createBlock(&declsOp.getBody());
+    if (mlir::failed(forEachDecl([&](ada_node &decl) {
+          if (isSymbol(decl))
+            builder.setInsertionPointToEnd(declsBlock);
+          else
+            builder.setInsertionPoint(declsOp);
+          return emitDecl(decl);
+        })))
+      return mlir::failure();
+    builder.setInsertionPointAfter(declsOp);
+    return mlir::success();
   }
 
   /// Lower one Ada subprogram body to an `ada.subp` operation.
