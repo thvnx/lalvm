@@ -5,7 +5,25 @@ LALVM is a prototype Ada-to-LLVM compiler using MLIR as an intermediate represen
 ## Pipeline
 
 ```
-Ada source -> Libadalang AST -> Ada MLIR dialect -> Intermediate dialects -> LLVM dialect -> LLVM IR
+  Ada source (.adb / .ads)
+  |
+  v  Libadalang ------------------->  --emit=ast
+  |
+  v  MLIRGen
+  |
+  +--> mem2reg -------------------->  --emit=mlir
+  |
+  +---- lowering path (--emit=llvm) ----
+  |
+  v  ClosureConversion
+  v  mem2reg
+  v  DICompileUnitAda
+  v  HoistNestedSymbolOperations
+  v  LowerToLLVM
+  v  DIScopeForLLVMFuncOp
+  v  AdaDebugInfo
+  |
+  v  LLVM IR ---------------------->  --emit=llvm
 ```
 
 ## Building
@@ -61,16 +79,26 @@ lalvm --emit=llvm compute.adb   # LLVM IR
 
 MLIR output:
 ```mlir
-ada.type @standard.integer : i32 = #ada.numeric_info
-ada.subp @compute(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
-  ada.subp @double(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
-    %0 = ada.binop "+" %arg0, %arg0 : !ada.qual<i32, @standard.integer>
+module @compute {
+  ada.type @standard.integer : i32 = #ada.numeric_info
+  ada.subp @compute(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
+    %0 = ada.call @compute.double(%arg0) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+    ada.decls {
+      ada.subp private @compute.double(%arg1: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
+        %1 = ada.binop "+" %arg1, %arg1 : !ada.qual<i32, @standard.integer>
+        ada.return %1 : !ada.qual<i32, @standard.integer>
+      }
+    }
     ada.return %0 : !ada.qual<i32, @standard.integer>
   }
-  %0 = ada.call @double(%arg0) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
-  ada.return %0 : !ada.qual<i32, @standard.integer>
 }
 ```
+
+Nested subprograms are kept in an `ada.decls` symbol container under their
+enclosing subprogram and carry a qualified `private` name; closure conversion
+and hoisting flatten them to module level on the `--emit=llvm` path. Here
+`mem2reg` has already promoted the `Result` local, so the call result flows
+straight into the `return`.
 
 ## Generating assembly
 
@@ -143,7 +171,9 @@ are not yet implemented.
 - Block statements (`begin`/`end` and `declare`/`begin`/`end`)
 
 **Declarations:**
-- Subprograms: functions and procedures, library-level and nested
+- Subprograms: functions and procedures, library-level and nested, including
+  up-level references (a nested subprogram reading or writing an enclosing
+  subprogram's variables)
 - Local variables with and without initializers (multiple names per declaration)
 - Named numbers (`N : constant := 42`)
 - Type declarations: integer, float, modular integer, enum (including `Boolean`)
@@ -162,22 +192,31 @@ for enum types
 
 ## Architecture
 
-The compiler is organized in three layers:
+The compiler is organized into the Ada dialect plus a sequence of MLIR passes:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`): custom MLIR dialect.
   Operations: `ada.type`, `ada.alloca`, `ada.constant`, `ada.coerce`,
-  `ada.binop`, `ada.null`, `ada.block`, `ada.call`, `ada.subp`, `ada.return`.
+  `ada.binop`, `ada.null`, `ada.decls`, `ada.call`, `ada.subp`, `ada.return`.
   The `!ada.qual<T, @sym>` type makes Ada type identity part of the MLIR
   type system: every SSA value's type encodes both its machine representation
   `T` and its Ada declared type `@sym` (a flat symbol reference to the
   relevant `ada.type` op). Named objects (parameters, variables) additionally
   carry a `NameLoc`.
 - **MLIRGen** (`mlir/MLIRGen.cpp`): lowers a Libadalang AST to the Ada
-  dialect. Emits bare Ada names; no ABI mangling.
-- **LowerToLLVM** (`mlir/LowerToLLVM.cpp`): lowers the Ada dialect to LLVM
-  IR. Owns all ABI concerns: `_ada_` prefix for library-level subprograms,
-  `parent__child` mangling for nested ones, GNAT O-name mangling for
-  operator subprograms.
+  dialect. Emits bare Ada names with no ABI mangling; nested subprograms and
+  local types are placed in an `ada.decls` symbol container, and block
+  statements dissolve into the enclosing subprogram.
+- **ClosureConversion** (`mlir/ClosureConversion.cpp`): lambda-lifts up-level
+  references (a nested subprogram reading or writing an enclosing variable)
+  into explicit parameters, then hoists the now self-contained nested
+  subprograms to module level. Runs before `mem2reg`.
+- **HoistNestedSymbolOperations** (`mlir/HoistNestedSymbolOperations.cpp`):
+  applies GNAT ABI name mangling to every subprogram (`_ada_` prefix for
+  library-level ones, `parent__child` for nested ones, GNAT O-names for
+  operators) and lifts the remaining `ada.type` ops to module level, leaving
+  the emptied `ada.decls` containers to erase.
+- **LowerToLLVM** (`mlir/LowerToLLVM.cpp`): lowers the (now flat) Ada dialect
+  to the LLVM dialect, giving nested (private) subprograms internal linkage.
 - **AdaDebugInfoPass** (`mlir/AdaDebugInfo.cpp`): post-lowering pass that
   emits `dbg.declare`/`dbg.value` intrinsics from `NameLoc` annotations on
   LLVM ops.
