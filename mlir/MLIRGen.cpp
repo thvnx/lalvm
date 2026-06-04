@@ -1049,6 +1049,19 @@ private:
       return mlirGenIntLiteral(expr);
     case ada_real_literal:
       return mlirGenRealLiteral(expr);
+    case ada_char_literal: {
+      // A character literal denotes an enumeration literal of a character type
+      // (predefined Standard.Character, RM 3.5.2); emit it as the corresponding
+      // enum value, like any other enum literal.
+      ada_node ref_decl;
+      if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
+                                     &ref_decl) &&
+          !ada_node_is_null(&ref_decl) &&
+          ada_node_kind(&ref_decl) == ada_enum_literal_decl)
+        return mlirGenEnumLit(ref_decl, expr);
+      mlir::emitError(loc(expr), "failed to resolve character literal");
+      return nullptr;
+    }
     case ada_bin_op:
       return mlirGenBinOp(expr);
     case ada_call_expr: {
@@ -1191,6 +1204,59 @@ private:
     return mlir::success();
   }
 
+  /// True if `type_decl` is a character type (RM 3.5.2): an enumeration whose
+  /// literals are character literals. Callers use this once per type to choose
+  /// between `enumLiteralRep` and `charLiteralRep` without re-checking each
+  /// literal.
+  static bool isCharacterType(ada_node type_decl) {
+    ada_bool result = false;
+    return ada_base_type_decl_p_is_char_type(
+               &type_decl, &libadalang::kNullOrigin, &result) &&
+           result;
+  }
+
+  /// Representation value of an ordinary enum literal: its `p_enum_rep`
+  /// (honoring RM 13.4 representation clauses). Returns nullopt and emits a
+  /// diagnostic on failure. For a character type use `charLiteralRep`.
+  std::optional<int64_t> enumLiteralRep(ada_node &lit,
+                                        mlir::Location location) {
+    ada_big_integer bigint;
+    if (!ada_enum_literal_decl_p_enum_rep(&lit, &bigint)) {
+      mlir::emitError(location, "failed to get enum literal rep value");
+      return std::nullopt;
+    }
+    std::string s = libadalang::bigIntToString(bigint);
+    errno = 0;
+    char *end;
+    int64_t val = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
+    if (end == s.c_str() || errno == ERANGE) {
+      mlir::emitError(location, "enum rep value out of range: ") << s;
+      return std::nullopt;
+    }
+    return val;
+  }
+
+  /// Representation value of a character enum literal (RM 3.5.2): the Latin-1
+  /// code point from the wrapped `CharLiteral`'s `p_denoted_value`.
+  /// `p_enum_rep` is unusable here because Libadalang materializes only the
+  /// referenced Character literals, so it would give a wrong position. Returns
+  /// nullopt and emits a diagnostic on failure.
+  std::optional<int64_t> charLiteralRep(ada_node &lit,
+                                        mlir::Location location) {
+    ada_node defName, charLit;
+    uint32_t codePoint;
+    if (!ada_enum_literal_decl_f_name(&lit, &defName) ||
+        ada_node_is_null(&defName) ||
+        !ada_defining_name_f_name(&defName, &charLit) ||
+        ada_node_is_null(&charLit) ||
+        ada_node_kind(&charLit) != ada_char_literal ||
+        !ada_char_literal_p_denoted_value(&charLit, &codePoint)) {
+      mlir::emitError(location, "failed to evaluate character literal");
+      return std::nullopt;
+    }
+    return codePoint;
+  }
+
   /// Emit an ada.type op for an Ada type declaration (RM 3.1). Currently only
   /// enumeration types (RM 3.5.1) are handled; other kinds are silently skipped
   /// and will be added as support for each kind is implemented.
@@ -1292,6 +1358,7 @@ private:
     ada_node literals;
     ada_enum_type_def_f_enum_literals(&type_def, &literals);
     unsigned litCount = ada_node_children_count(&literals);
+    bool isChar = isCharacterType(type_decl);
 
     llvm::SmallVector<mlir::Attribute> nameAttrs;
     llvm::SmallVector<int64_t> values;
@@ -1315,20 +1382,11 @@ private:
           builder.getContext(),
           libadalang::getName(&lit_name, /*canonical=*/true)));
 
-      ada_big_integer bigint;
-      if (!ada_enum_literal_decl_p_enum_rep(&lit, &bigint)) {
-        mlir::emitError(location, "failed to get enum literal rep value");
+      std::optional<int64_t> rep = isChar ? charLiteralRep(lit, location)
+                                          : enumLiteralRep(lit, location);
+      if (!rep)
         return mlir::failure();
-      }
-      std::string s = libadalang::bigIntToString(bigint);
-      errno = 0;
-      char *end;
-      int64_t val = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
-      if (end == s.c_str() || errno == ERANGE) {
-        mlir::emitError(location, "enum rep value out of range: ") << s;
-        return mlir::failure();
-      }
-      values.push_back(val);
+      values.push_back(*rep);
     }
 
     auto typeInfo = mlir::ada::EnumTypeInfoAttr::get(
@@ -1839,13 +1897,11 @@ private:
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
-    // Enumeration types (RM 3.5.1): choose the smallest integer width that
-    // can hold all literals (GNAT convention: up to 256 -> i8, up to 65536
-    // -> i16, else i32).
-    // TODO: representation clauses (RM 13.4) can assign arbitrary values to
-    // literals; the width should then cover the range of those values, not the
-    // literal count. Until representation clauses are supported,
-    // emitIntConstant will catch out-of-range rep values and report an error.
+    // Enumeration types (RM 3.5.1): choose the smallest integer width that can
+    // hold the largest representation value (GNAT convention: up to 255 -> i8,
+    // up to 65535 -> i16, else i32).
+    // TODO: negative representation values (RM 13.4) are not yet handled; the
+    // width assumes a non-negative range.
     ada_node type_def;
     if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
         ada_node_is_null(&type_def))
@@ -1863,14 +1919,35 @@ private:
 
     if (!ada_node_is_null(&type_def) &&
         ada_node_kind(&type_def) == ada_enum_type_def) {
+      // Once the type is emitted, reuse the stored MLIR type rather than
+      // rescanning the literals on every use (as the modular branch does).
+      if (auto it = typeDecls.find(canon_type.node); it != typeDecls.end())
+        return it->second.getMlirType();
+
+      // Width covers the range of representation values, not the literal count:
+      // character types (RM 3.5.2) only materialize their referenced literals,
+      // and representation clauses (RM 13.4) can assign values beyond the
+      // count.
       ada_node literals;
       ada_enum_type_def_f_enum_literals(&type_def, &literals);
       unsigned count = ada_node_children_count(&literals);
-      if (count <= 2)
+      bool isChar = isCharacterType(canon_type);
+      int64_t maxRep = 0;
+      for (unsigned i = 0; i < count; ++i) {
+        ada_node lit;
+        if (ada_node_child(&literals, i, &lit) == 0)
+          continue;
+        std::optional<int64_t> rep = isChar ? charLiteralRep(lit, diagLoc)
+                                            : enumLiteralRep(lit, diagLoc);
+        if (!rep)
+          return {};
+        maxRep = std::max(maxRep, *rep);
+      }
+      if (maxRep <= 1)
         return builder.getIntegerType(1);
-      if (count <= 256)
+      if (maxRep <= 255)
         return builder.getIntegerType(8);
-      if (count <= 65536)
+      if (maxRep <= 65535)
         return builder.getIntegerType(16);
       return builder.getIntegerType(32);
     }
