@@ -60,6 +60,7 @@ add_llvm_executable(lalvm
   frontend/DiagnosticPrinter.cpp
   mlir/MLIRGen.cpp
   mlir/Dialect.cpp
+  mlir/ClosureConversion.cpp
   mlir/HoistNestedSymbolOperations.cpp
   mlir/LowerToLLVM.cpp
   mlir/AdaToLLVMIRTranslation.cpp

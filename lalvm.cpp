@@ -113,6 +113,17 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
   context.getOrLoadDialect<mlir::memref::MemRefDialect>();
 
+  // Lambda-lift up-level references and hoist nested subprograms to module
+  // level before mem2reg, so a captured local stays an alloca able to carry
+  // up-level writes. Run only on the lowering path, leaving --emit=mlir as the
+  // nested dialect view.
+  mlir::PassManager ccPm(module.get()->getName());
+  ccPm.addPass(mlir::ada::createClosureConversionPass());
+  if (mlir::failed(mlir::applyPassManagerCLOptions(ccPm)))
+    return 1;
+  if (mlir::failed(ccPm.run(*module)))
+    return 1;
+
   if (int error = applyMLIRPasses(module))
     return error;
 

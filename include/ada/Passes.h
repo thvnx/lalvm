@@ -20,9 +20,17 @@ class Pass;
 
 namespace ada {
 
-/// Create a pass that hoists nested Ada symbol operations (subprograms and
-/// types) to module level and applies GNAT ABI name mangling to subprograms.
-/// Must run before LowerToLLVM.
+/// Create a pass that lambda-lifts up-level references in nested subprograms:
+/// each value captured from an enclosing scope becomes an explicit parameter,
+/// call sites are rewritten to pass it, and the now self-contained subprogram
+/// is hoisted to module level. Must run before `mem2reg` so captured locals
+/// stay allocas that can carry up-level writes.
+std::unique_ptr<mlir::Pass> createClosureConversionPass();
+
+/// Create a pass that applies GNAT ABI name mangling to subprograms (now at
+/// module level after closure conversion) and hoists the remaining nested Ada
+/// `ada.type` ops to module level, erasing the emptied `ada.decls`. Must run
+/// before LowerToLLVM.
 std::unique_ptr<mlir::Pass> createHoistNestedSymbolOperationsPass();
 
 /// Create a pass for lowering Ada dialect operations to the LLVM dialect.

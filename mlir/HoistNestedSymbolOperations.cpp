@@ -6,11 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the HoistNestedSymbolOperationsPass, which lifts all
-// nested ada.subp ops to module level and applies GNAT-style ABI name
-// mangling. It also lifts all ada.type ops to module level so that their
-// Symbol trait stays valid (parent is always the module's SymbolTable) through
-// lowering, where they survive inside no llvm.func body.
+// This file implements the HoistNestedSymbolOperationsPass. Closure conversion
+// has already hoisted nested ada.subp ops to module level, so this pass applies
+// GNAT-style ABI name mangling to every subprogram in place. It also lifts the
+// remaining nested ada.type ops to module level so that their Symbol trait
+// stays valid (parent is always the module's SymbolTable) through lowering,
+// where they survive inside no llvm.func body, and erases the emptied
+// ada.decls.
 //
 //===----------------------------------------------------------------------===//
 
@@ -39,41 +41,28 @@ struct HoistNestedSymbolOperationsPass
 } // namespace
 
 void HoistNestedSymbolOperationsPass::runOnOperation() {
-  // Two-phase ABI renaming before lowering. All ops are collected in a single
-  // walk before any mutations so the parent chain is still intact.
-  //
-  // Phase 1: hoist nested subprograms: LLVM does not support nested
-  // functions. Each nested op is renamed with GNAT-style __ separators built
-  // from the full enclosing scope chain (e.g. @inner inside @outer becomes
-  // @outer__inner). Parent names at this point are still bare Ada names, so
-  // the mangling matches GNAT (outer__inner, not _ada_outer__inner).
-  //
-  // Phase 2: apply _ada_ prefix: library-level subprograms get the GNAT
-  // _ada_ prefix. Done after hoisting so nested mangling uses bare names.
+  // All ops are collected in one walk before any mutation, so the scope-name
+  // capture below reads intact FQN sym_names and there is no iterator
+  // invalidation.
   ModuleOp module = getOperation();
-  llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedSubps;
-  llvm::SmallVector<Operation *, 4> librarySubps;
+  llvm::SmallVector<std::pair<Operation *, std::string>, 4> subps;
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedTypes;
   llvm::SmallVector<ada::DeclsOp, 4> declsOps;
-  // Collect all subprograms and types in one walk before any mutations. The
-  // walk completes fully before the loops below mutate the IR (moveBefore,
-  // setSymbolName), so there is no iterator invalidation.
   module.walk([&](Operation *op) {
-    // ada.decls only holds nested subprograms/types, all hoisted to module
-    // level below. Collect the now-redundant containers to erase afterward.
+    // ada.decls now holds at most ada.type ops (closure conversion hoisted the
+    // subprograms out); collect them to erase once their types are lifted.
     if (auto decls = dyn_cast<ada::DeclsOp>(op)) {
       declsOps.push_back(decls);
       return;
     }
     // ada.type carries the Symbol trait, so its parent must be a SymbolTable at
-    // every stage. Hoist nested ones to module level alongside subprograms so
-    // none survive inside a non-SymbolTable llvm.func body after lowering. No
-    // mangling: type symbols are not part of the GNAT ABI, and FQN sym_names
-    // are already unique, so a plain move suffices.
+    // every stage. Hoist nested ones to module level so none survive inside a
+    // non-SymbolTable llvm.func body after lowering. No mangling: type symbols
+    // are not part of the GNAT ABI, and FQN sym_names are already unique.
     if (isa<ada::TypeOp>(op)) {
       if (!isa<ModuleOp>(op->getParentOp())) {
         // Capture the enclosing subprogram's mangled name now, while FQN
-        // sym_names are still intact (the rename loops run afterward). It is
+        // sym_names are still intact (the rename loop runs afterward). It is
         // fused onto the type's location below as its DWARF scope, recovered in
         // EnumDITypes once the op has been lifted away from its lexical parent.
         std::string scopeName;
@@ -86,46 +75,27 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
       }
       return;
     }
-    if (!isa<ada::SubpOp>(op))
-      return;
-    if (isa<ModuleOp>(op->getParentOp())) {
-      librarySubps.push_back(op);
-      return;
-    }
-    nestedSubps.emplace_back(op, cast<ada::SubpOp>(op).getMangledName());
+    if (auto subp = dyn_cast<ada::SubpOp>(op))
+      subps.emplace_back(op, subp.getMangledName());
   });
-  // Hoist every nested subprogram to module level first, keeping its FQN
-  // dialect name. While nested inside an `ada.decls` (a SymbolTable that is a
-  // sibling of the calling statements, not an ancestor), a call in the
-  // enclosing body cannot resolve to it, so renaming uses would miss the call
-  // sites. Once at module level, every call resolves by the standard upward
-  // symbol-table walk.
-  for (auto &[op, mangledName] : nestedSubps)
-    op->moveBefore(module.getBody(), module.getBody()->end());
-  // Now rename with the standard utility. With the subprogram directly under
-  // the module, `replaceAllSymbolUses` walks the whole module region, which
-  // includes the subprogram's own body, so self-recursive calls are rewritten
-  // too.
-  for (auto &[op, mangledName] : nestedSubps) {
+  // Mangle every subprogram in place (closure conversion already moved the
+  // nested ones to module level). getMangledName reads visibility rather than
+  // the op's parent, so library-level (public, `_ada_`) and nested (private)
+  // subprograms still mangle correctly. replaceAllSymbolUses walks the whole
+  // module region (including each subprogram's own body), so self-recursive
+  // calls are rewritten too.
+  for (auto &[op, mangledName] : subps) {
     auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
     if (mlir::failed(
             mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
       return signalPassFailure();
     mlir::SymbolTable::setSymbolName(op, mangledName);
   }
-  for (Operation *op : librarySubps) {
-    std::string mangledName = cast<ada::SubpOp>(op).getMangledName();
-    auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
-    if (mlir::failed(
-            mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
-      return signalPassFailure();
-    mlir::SymbolTable::setSymbolName(op, mangledName);
-  }
-  // Hoist nested ada.type ops to module level. Their FQN sym_names are unique,
-  // so no rename or symbol-use rewrite is needed: a plain move keeps every
-  // type-symbol reference (the @sym in ada.qual) valid. Fuse the captured
-  // enclosing subprogram onto the location so EnumDITypes can still place the
-  // type's DWARF scope under that subprogram after the move.
+  // Hoist the remaining nested ada.type ops to module level. Their FQN
+  // sym_names are unique, so a plain move keeps every type-symbol reference
+  // (the @sym in ada.qual) valid. Fuse the captured enclosing subprogram onto
+  // the location so EnumDITypes can still place the type's DWARF scope under
+  // it.
   for (auto &[op, scopeName] : nestedTypes) {
     if (!scopeName.empty()) {
       auto *ctx = module.getContext();
@@ -136,9 +106,8 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
     }
     op->moveBefore(module.getBody(), module.getBody()->end());
   }
-  // Every nested subprogram and type has been lifted to module level, so each
-  // ada.decls is now empty; erase the containers. Done last so the moves above
-  // (which read parent chains crossing these ops) are unaffected.
+  // Closure conversion erased the subprogram-only ada.decls; the rest held
+  // types, now lifted out, so every remaining container is empty. Erase them.
   for (ada::DeclsOp decls : declsOps) {
     if (!decls.getBody().front().empty()) {
       decls.emitError("ada.decls is not empty after hoisting nested symbols");
@@ -148,8 +117,9 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
   }
 }
 
-/// Create a pass that hoists nested Ada symbol operations (subprograms and
-/// types) to module level and applies GNAT ABI name mangling to subprograms.
+/// Create a pass that GNAT-mangles subprograms in place and hoists the
+/// remaining nested Ada `ada.type` ops to module level, erasing the emptied
+/// `ada.decls`.
 std::unique_ptr<mlir::Pass> mlir::ada::createHoistNestedSymbolOperationsPass() {
   return std::make_unique<HoistNestedSymbolOperationsPass>();
 }
