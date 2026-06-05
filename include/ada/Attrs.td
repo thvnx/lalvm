@@ -86,4 +86,18 @@ def DIScopeRefAttr : AttrDef<Ada_Dialect, "DIScopeRef"> {
   let assemblyFormat = "`<` $scope `>`";
 }
 
+// Bare Ada source name of a subprogram, carried as FusedLoc metadata so that
+// AdaDebugInfoPass can set DW_AT_name to the source name while DW_AT_linkage_name
+// keeps the GNAT-mangled symbol. Captured by HoistNestedSymbolOperations before
+// it overwrites the sym_name with the mangled form (after which the bare name is
+// no longer recoverable).
+def DINameAttr : AttrDef<Ada_Dialect, "DIName"> {
+  let mnemonic = "di_name";
+  let summary = "Bare Ada source name for FusedLoc metadata";
+  let parameters = (ins
+    AttrParameter<"::mlir::StringAttr", "bare Ada source name">:$name
+  );
+  let assemblyFormat = "`<` $name `>`";
+}
+
 #endif // ADA_ATTRS

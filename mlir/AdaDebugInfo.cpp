@@ -189,17 +189,17 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
   return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
 }
 
-// Rebuild `sp` overriding its flags and subroutine type, preserving every other
-// field. DISubprogramAttr has no copy-with, so the full get() is unavoidable;
-// this keeps the boilerplate in one place.
+// Rebuild `sp` overriding its name, flags, and subroutine type, preserving
+// every other field (notably linkageName). DISubprogramAttr has no copy-with,
+// so the full get() is unavoidable; this keeps the boilerplate in one place.
 static LLVM::DISubprogramAttr cloneSubprogram(LLVM::DISubprogramAttr sp,
+                                              StringAttr name,
                                               LLVM::DISubprogramFlags flags,
                                               LLVM::DISubroutineTypeAttr type) {
   return LLVM::DISubprogramAttr::get(
-      sp.getContext(), sp.getId(), sp.getCompileUnit(), sp.getScope(),
-      sp.getName(), sp.getLinkageName(), sp.getFile(), sp.getLine(),
-      sp.getScopeLine(), flags, type, sp.getRetainedNodes(),
-      sp.getAnnotations());
+      sp.getContext(), sp.getId(), sp.getCompileUnit(), sp.getScope(), name,
+      sp.getLinkageName(), sp.getFile(), sp.getLine(), sp.getScopeLine(), flags,
+      type, sp.getRetainedNodes(), sp.getAnnotations());
 }
 
 struct AdaDebugInfoPass
@@ -210,22 +210,35 @@ struct AdaDebugInfoPass
     MLIRContext *ctx = &getContext();
     ModuleOp module = getOperation();
 
-    // Pass 0: nested subprograms are private (internal linkage); derived from
-    // the visibility carried onto the llvm.func, mark their DISubprogram local
-    // to the unit so DWARF does not emit DW_AT_external for them. Run first so
-    // the later passes read the updated subprogram.
+    // Pass 0: fix up the DISubprogram fields DIScopeForLLVMFuncOpPass could not
+    // set correctly from the mangled llvm.func name alone. Run first so the
+    // later passes read the updated subprogram.
+    //   - DW_AT_name: use the bare Ada source name (carried as a DINameAttr on
+    //     the function location by HoistNestedSymbolOperations); DW_AT_linkage
+    //     stays the mangled symbol.
+    //   - DW_AT_external: private (nested) subprograms have internal linkage,
+    //     so their DISubprogram is marked local to the unit.
     module.walk([&](LLVM::LLVMFuncOp func) {
-      if (!func.isPrivate())
-        return;
       auto fused = dyn_cast<FusedLoc>(func.getLoc());
       if (!fused)
         return;
       auto sp = dyn_cast_or_null<LLVM::DISubprogramAttr>(fused.getMetadata());
       if (!sp)
         return;
-      auto newSp = cloneSubprogram(
-          sp, sp.getSubprogramFlags() | LLVM::DISubprogramFlags::LocalToUnit,
-          sp.getType());
+
+      StringAttr name = sp.getName();
+      if (auto nameLoc =
+              func.getLoc()->findInstanceOf<FusedLocWith<ada::DINameAttr>>())
+        name = nameLoc.getMetadata().getName();
+
+      LLVM::DISubprogramFlags flags = sp.getSubprogramFlags();
+      if (func.isPrivate())
+        flags = flags | LLVM::DISubprogramFlags::LocalToUnit;
+
+      if (name == sp.getName() && flags == sp.getSubprogramFlags())
+        return; // nothing to change
+
+      auto newSp = cloneSubprogram(sp, name, flags, sp.getType());
       func->setLoc(FusedLoc::get(ctx, fused.getLocations(), newSp));
     });
 
@@ -278,7 +291,8 @@ struct AdaDebugInfoPass
 
       auto subType = LLVM::DISubroutineTypeAttr::get(
           ctx, llvm::dwarf::DW_CC_normal, types);
-      auto newSp = cloneSubprogram(sp, sp.getSubprogramFlags(), subType);
+      auto newSp =
+          cloneSubprogram(sp, sp.getName(), sp.getSubprogramFlags(), subType);
       func->setLoc(FusedLoc::get(ctx, fused.getLocations(), newSp));
     });
 

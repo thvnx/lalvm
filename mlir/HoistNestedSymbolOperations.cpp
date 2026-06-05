@@ -85,7 +85,18 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
   // module region (including each subprogram's own body), so self-recursive
   // calls are rewritten too.
   for (auto &[op, mangledName] : subps) {
-    auto mangledAttr = mlir::StringAttr::get(module.getContext(), mangledName);
+    auto *ctx = module.getContext();
+    // Capture the bare Ada source name before the sym_name is overwritten with
+    // the mangled form (after which it is no longer recoverable: the `__`
+    // segment separator collides with MLIRGen's `__N` collision suffix). Fuse
+    // it onto the location so AdaDebugInfoPass can set DW_AT_name to the source
+    // name while DW_AT_linkage_name keeps the mangled symbol.
+    auto bareNameAttr = mlir::StringAttr::get(
+        ctx, ada::bareName(cast<ada::SubpOp>(op).getSymName()));
+    op->setLoc(mlir::FusedLoc::get(ctx, {op->getLoc()},
+                                   ada::DINameAttr::get(ctx, bareNameAttr)));
+
+    auto mangledAttr = mlir::StringAttr::get(ctx, mangledName);
     if (mlir::failed(
             mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
       return signalPassFailure();
