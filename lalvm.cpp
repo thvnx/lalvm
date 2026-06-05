@@ -49,10 +49,13 @@
 namespace cl = llvm::cl;
 namespace libadalang = frontend::libadalang;
 
-static cl::opt<std::string> inputFilename(cl::Positional,
-                                          cl::desc("<input Ada file>"),
-                                          cl::init("-"),
-                                          cl::value_desc("filename"));
+// lalvm's own options live in this category; HideUnrelatedOptions (in main)
+// hides everything LLVM/MLIR back ends register from --help.
+static cl::OptionCategory lalvmCategory("lalvm options");
+
+static cl::opt<std::string>
+    inputFilename(cl::Positional, cl::desc("<input Ada file>"), cl::init("-"),
+                  cl::value_desc("filename"), cl::cat(lalvmCategory));
 
 namespace {
 enum InputType { Ada, MLIR };
@@ -61,8 +64,8 @@ enum InputType { Ada, MLIR };
 static cl::opt<enum InputType> inputType(
     "x", cl::init(Ada), cl::desc("Decides the kind of input to load"),
     cl::values(clEnumValN(Ada, "Ada", "load the input file as a Ada source.")),
-    cl::values(clEnumValN(MLIR, "mlir",
-                          "load the input file as an MLIR file")));
+    cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR file")),
+    cl::cat(lalvmCategory));
 
 namespace {
 enum Action { None, EmitAST, EmitMLIR, EmitLLVMIR, EmitObject, EmitAssembly };
@@ -74,13 +77,15 @@ static cl::opt<enum Action> emitAction(
     cl::values(clEnumValN(EmitMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(EmitLLVMIR, "llvm", "output the LLVM IR dump")),
     cl::values(clEnumValN(EmitObject, "obj", "output an object file")),
-    cl::values(clEnumValN(EmitAssembly, "asm", "output target assembly")));
+    cl::values(clEnumValN(EmitAssembly, "asm", "output target assembly")),
+    cl::cat(lalvmCategory));
 
 static cl::opt<std::string> outputFilename("o",
                                            cl::desc("Output filename "
                                                     "(default: stdout)"),
                                            cl::value_desc("filename"),
-                                           cl::init("-"));
+                                           cl::init("-"),
+                                           cl::cat(lalvmCategory));
 
 /// Register the standard codegen flags (-mcpu, -mattr, --relocation-model,
 /// --code-model, ...) shared with llc; consumed when building the target
@@ -304,7 +309,10 @@ int main(int argc, char **argv) {
   mlir::registerMLIRContextCLOptions();
   mlir::registerTransformsPasses();
   mlir::registerPassManagerCLOptions();
-  cl::ParseCommandLineOptions(argc, argv, "ada compiler\n");
+  // Hide the options LLVM/MLIR back ends register so --help lists only lalvm's
+  // own options.
+  cl::HideUnrelatedOptions(lalvmCategory);
+  cl::ParseCommandLineOptions(argc, argv, "Ada to LLVM Compiler\n");
 
   if (emitAction == Action::None) {
     llvm::errs()
