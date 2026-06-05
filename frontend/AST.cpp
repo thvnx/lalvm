@@ -220,12 +220,17 @@ bool libadalang::isEnumTypeDecl(ada_node &typeDecl) {
 }
 
 bool libadalang::isUniversalTypeDecl(ada_node &typeDecl) {
-  ada_node nameNode;
-  if (!ada_base_type_decl_f_name(&typeDecl, &nameNode) ||
-      ada_node_is_null(&nameNode))
-    return false;
-  std::string name = getName(&nameNode);
-  return name == kUniversalIntTypeName || name == kUniversalRealTypeName;
+  // Identify the universal integer/real types by entity identity rather than by
+  // name: p_universal_int_type / p_universal_real_type return the Standard
+  // universal types (using typeDecl's context), compared via is_equivalent.
+  for (auto getUniversal : {ada_ada_node_p_universal_int_type,
+                            ada_ada_node_p_universal_real_type}) {
+    ada_node universal;
+    if (getUniversal(&typeDecl, &universal) && !ada_node_is_null(&universal) &&
+        ada_node_is_equivalent(&typeDecl, &universal))
+      return true;
+  }
+  return false;
 }
 
 bool libadalang::isNumericTypeDecl(ada_node &typeDecl) {
