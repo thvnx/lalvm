@@ -4,27 +4,31 @@ LALVM is a prototype Ada-to-LLVM compiler using MLIR as an intermediate represen
 
 ## Pipeline
 
+The front end (Libadalang + MLIRGen) is shared; the `--emit` flag selects how far
+the pipeline runs and what it prints.
+
+```mermaid
+flowchart TD
+    src["Ada source"] --> ast["Libadalang"]
+    ast --> |--emit=mlir/llvm|ada["Ada dialect MLIR"]
+    ast -->|--emit=ast| dast(["AST dump"])
+
+    ada --> |--emit=mlir|m2r["mem2reg"]
+    ada --> |--emit=llvm|cc["ClosureConversion"]
+    cc --> m2r
+    m2r -->|--emit=mlir| dmlir(["MLIR dump"])
+
+    m2r --> |--emit=llvm|cu["DICompileUnitAda"]
+    cu --> hoist["HoistNestedSymbolOperations"]
+    hoist --> low["LowerToLLVM"]
+    low --> scope["DIScopeForLLVMFuncOp"]
+    scope --> di["AdaDebugInfo"]
+    di --> dllvm(["LLVM IR dump"])
 ```
-  Ada source (.adb / .ads)
-  |
-  v  Libadalang ------------------->  --emit=ast
-  |
-  v  MLIRGen
-  |
-  +--> mem2reg -------------------->  --emit=mlir
-  |
-  +---- lowering path (--emit=llvm) ----
-  |
-  v  ClosureConversion
-  v  mem2reg
-  v  DICompileUnitAda
-  v  HoistNestedSymbolOperations
-  v  LowerToLLVM
-  v  DIScopeForLLVMFuncOp
-  v  AdaDebugInfo
-  |
-  v  LLVM IR ---------------------->  --emit=llvm
-```
+
+- `--emit=ast` stops after Libadalang and dumps the AST.
+- `--emit=mlir` runs MLIRGen then `mem2reg` and dumps the Ada dialect.
+- `--emit=llvm` runs the full lowering chain above, then translates to LLVM IR.
 
 ## Building
 
