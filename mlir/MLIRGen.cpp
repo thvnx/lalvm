@@ -945,6 +945,19 @@ private:
                                              args);
   }
 
+  /// Emit a function call used in expression context, returning its result.
+  /// Errors if the callee is a procedure (no result).
+  mlir::Value mlirGenCallExprValue(ada_node &call) {
+    auto callOp = mlirGenCallExpr(call);
+    if (!callOp)
+      return nullptr;
+    if (callOp.getNumResults() == 0) {
+      mlir::emitError(loc(call), "procedure called in expression context");
+      return nullptr;
+    }
+    return callOp->getResult(0);
+  }
+
   /// Emit a static expression at its use site, with the concrete MLIR type
   /// resolved from `typeContext` (typically the identifier that names the
   /// constant, so `p_expected_expression_type` on it returns the type
@@ -1036,13 +1049,21 @@ private:
           return visit_static_expr(fallbackExpr, expr);
         }
       }
-      // Enum literal: emit as its integer representation.
+      // Enum literal: emit as its integer representation. (Checked before the
+      // call test below: enum literals are parameterless functions that
+      // p_is_call also reports as calls.)
       ada_node ref_decl;
       if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
                                      &ref_decl) &&
           !ada_node_is_null(&ref_decl) &&
           ada_node_kind(&ref_decl) == ada_enum_literal_decl)
         return mlirGenEnumLit(ref_decl, expr);
+      // A parameterless function call written without parentheses (e.g.
+      // `F : Float := G`) is an identifier that p_is_call reports as a call
+      // (RM 6.4); lower it as a call rather than rejecting it as a value.
+      ada_bool isCall = false;
+      if (ada_name_p_is_call(&expr, &isCall) && isCall)
+        return mlirGenCallExprValue(expr);
       return mlirGenVariable(expr);
     }
     case ada_int_literal:
@@ -1064,16 +1085,8 @@ private:
     }
     case ada_bin_op:
       return mlirGenBinOp(expr);
-    case ada_call_expr: {
-      auto callOp = mlirGenCallExpr(expr);
-      if (!callOp)
-        return nullptr;
-      if (callOp.getNumResults() == 0) {
-        mlir::emitError(loc(expr), "procedure called in expression context");
-        return nullptr;
-      }
-      return callOp->getResult(0);
-    }
+    case ada_call_expr:
+      return mlirGenCallExprValue(expr);
     default:
       mlir::emitError(loc(expr), "unsupported expression: ")
           << libadalang::image(&expr);
