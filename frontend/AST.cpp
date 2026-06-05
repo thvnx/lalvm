@@ -29,9 +29,9 @@ static void abort_on_exception(void) {
     exit(1);
 }
 
-static void print_indent(int level) {
+static void print_indent(llvm::raw_ostream &os, int level) {
   for (int i = 0; i < level; ++i)
-    llvm::outs() << "| ";
+    os << "| ";
 }
 
 static void fprint_text(llvm::raw_ostream &stream, ada_text text,
@@ -58,18 +58,18 @@ static void fprint_text(llvm::raw_ostream &stream, ada_text text,
     stream << '"';
 }
 
-static void dump_image(ada_node *node, int level) {
+static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
   if (ada_node_is_null(node)) {
-    print_indent(level);
-    llvm::outs() << "<null node>\n";
+    print_indent(os, level);
+    os << "<null node>\n";
     return;
   }
 
   ada_text img;
   ada_node_image(node, &img);
-  print_indent(level);
-  fprint_text(llvm::outs(), img, false);
-  llvm::outs() << "\n";
+  print_indent(os, level);
+  fprint_text(os, img, false);
+  os << "\n";
   ada_destroy_text(&img);
 
   unsigned count = ada_node_children_count(node);
@@ -77,7 +77,7 @@ static void dump_image(ada_node *node, int level) {
     ada_node child;
     if (ada_node_child(node, i, &child) == 0)
       llvm::errs() << "Error while getting a child\n";
-    dump_image(&child, level + 1);
+    dump_image(os, &child, level + 1);
   }
 }
 
@@ -121,7 +121,9 @@ libadalang::AdaAST::~AdaAST() {
   // call exit(), and a failure in decref is unrecoverable anyway.
 }
 
-void libadalang::dump(ada_node *node) { dump_image(node, 0); }
+void libadalang::dump(ada_node *node, llvm::raw_ostream &os) {
+  dump_image(os, node, 0);
+}
 
 std::string libadalang::getName(ada_node *node, bool canonical) {
   switch (ada_node_kind(node)) {

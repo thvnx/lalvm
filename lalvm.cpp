@@ -6,7 +6,11 @@
 #include "ada/MLIRGen.h"
 #include "ada/Passes.h"
 
+#include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Host.h"
 
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -23,12 +27,17 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorOr.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -56,14 +65,32 @@ static cl::opt<enum InputType> inputType(
                           "load the input file as an MLIR file")));
 
 namespace {
-enum Action { None, DumpAST, DumpMLIR, DumpLLVMIR };
+enum Action { None, EmitAST, EmitMLIR, EmitLLVMIR, EmitObject, EmitAssembly };
 } // namespace
 
 static cl::opt<enum Action> emitAction(
     "emit", cl::desc("Select the kind of output desired"),
-    cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
-    cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
-    cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")));
+    cl::values(clEnumValN(EmitAST, "ast", "output the AST dump")),
+    cl::values(clEnumValN(EmitMLIR, "mlir", "output the MLIR dump")),
+    cl::values(clEnumValN(EmitLLVMIR, "llvm", "output the LLVM IR dump")),
+    cl::values(clEnumValN(EmitObject, "obj", "output an object file")),
+    cl::values(clEnumValN(EmitAssembly, "asm", "output target assembly")));
+
+static cl::opt<std::string> outputFilename("o",
+                                           cl::desc("Output filename "
+                                                    "(default: stdout)"),
+                                           cl::value_desc("filename"),
+                                           cl::init("-"));
+
+/// Register the standard codegen flags (-mcpu, -mattr, --relocation-model,
+/// --code-model, ...) shared with llc; consumed when building the target
+/// machine for --emit=obj/asm.
+///
+/// @todo Also register a -mtriple option (and initialize all target backends)
+///       to emit for a non-host target. Deferred until cross-compilation is
+///       needed; it also requires applying the target datalayout to the module
+///       before lowering.
+static llvm::codegen::RegisterCodeGenFlags codeGenFlags;
 
 // Load a .mlir file directly, bypassing Libadalang entirely.
 static int loadMLIRFile(mlir::MLIRContext &context,
@@ -147,7 +174,74 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   return 0;
 }
 
-static int dumpLLVMIR(mlir::MLIRContext &context,
+// Write textual output produced by `print` to `outputFilename` ("-" = stdout).
+static int
+writeTextOutput(llvm::function_ref<void(llvm::raw_ostream &)> print) {
+  std::error_code ec;
+  llvm::raw_fd_ostream out(outputFilename, ec, llvm::sys::fs::OF_Text);
+  if (ec) {
+    llvm::errs() << "Could not open output file '" << outputFilename
+                 << "': " << ec.message() << "\n";
+    return 1;
+  }
+  print(out);
+  return 0;
+}
+
+// Run the LLVM backend to emit an object file or target assembly for
+// `llvmModule` (using host target machine `tm`). Output goes to -o when given,
+// otherwise to the input basename with a .o/.s extension (in the current
+// directory), mirroring a compiler's default object/assembly output.
+static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
+                           bool emitObject) {
+  std::string path = outputFilename;
+  if (outputFilename.getNumOccurrences() == 0) {
+    llvm::StringRef stem =
+        inputFilename == "-" ? "a" : llvm::sys::path::stem(inputFilename);
+    path = stem.str() + (emitObject ? ".o" : ".s");
+  }
+
+  // Writing a binary object to a terminal produces garbage; require -o (llc
+  // does the same). Assembly is text and prints fine.
+  if (emitObject && path == "-" &&
+      llvm::sys::Process::StandardOutIsDisplayed()) {
+    llvm::errs() << "Refusing to write a binary object file to the terminal; "
+                    "use -o <file>\n";
+    return 1;
+  }
+
+  std::error_code ec;
+  llvm::raw_fd_ostream out(
+      path, ec, emitObject ? llvm::sys::fs::OF_None : llvm::sys::fs::OF_Text);
+  if (ec) {
+    llvm::errs() << "Could not open output file '" << path
+                 << "': " << ec.message() << "\n";
+    return 1;
+  }
+
+  // addPassesToEmitFile writes via pwrite; a non-seekable stream (e.g. a pipe)
+  // must be buffered first.
+  llvm::raw_pwrite_stream *os = &out;
+  std::unique_ptr<llvm::buffer_ostream> buffered;
+  if (!out.supportsSeeking()) {
+    buffered = std::make_unique<llvm::buffer_ostream>(out);
+    os = buffered.get();
+  }
+
+  llvm::legacy::PassManager pm;
+  if (tm.addPassesToEmitFile(pm, *os, /*DwoOut=*/nullptr,
+                             emitObject
+                                 ? llvm::CodeGenFileType::ObjectFile
+                                 : llvm::CodeGenFileType::AssemblyFile)) {
+    llvm::errs() << "Target cannot emit a "
+                 << (emitObject ? "object" : "assembly") << " file\n";
+    return 1;
+  }
+  pm.run(llvmModule);
+  return 0;
+}
+
+static int emitLLVMIR(mlir::MLIRContext &context,
                       mlir::OwningOpRef<mlir::ModuleOp> &module) {
   if (int error = applyLoweringPasses(context, module))
     return error;
@@ -176,29 +270,30 @@ static int dumpLLVMIR(mlir::MLIRContext &context,
 
   mlir::ada::buildEnumDITypes(*llvmModule, *module);
 
-  // Initialize LLVM targets.
+  // Initialize the host target backend.
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
 
-  // Create target machine and configure the LLVM Module
-  auto tmBuilderOrError = llvm::orc::JITTargetMachineBuilder::detectHost();
-  if (!tmBuilderOrError) {
-    llvm::errs() << "Could not create JITTargetMachineBuilder\n";
-    return 1;
-  }
-
-  auto tmOrError = tmBuilderOrError->createTargetMachine();
+  // Build the host target machine, honoring the codegen flags (-mcpu, -mattr,
+  // --relocation-model, ...) registered above, and stamp its triple/datalayout
+  // onto the LLVM module.
+  auto tmOrError = llvm::codegen::createTargetMachineForTriple(
+      llvm::sys::getDefaultTargetTriple());
   if (!tmOrError) {
-    llvm::errs() << "Could not create TargetMachine\n";
+    llvm::errs() << "Could not create target machine: "
+                 << llvm::toString(tmOrError.takeError()) << "\n";
     return 1;
   }
-  mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(),
-                                                        tmOrError.get().get());
+  llvm::TargetMachine &tm = *tmOrError.get();
+  mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(), &tm);
 
   // TODO: add an optional optimization pipeline via
   // mlir::makeOptimizingTransformer.
-  llvm::outs() << *llvmModule << "\n";
-  return 0;
+  if (emitAction == Action::EmitLLVMIR)
+    return writeTextOutput(
+        [&](llvm::raw_ostream &os) { os << *llvmModule << "\n"; });
+
+  return emitMachineCode(*llvmModule, tm, emitAction == Action::EmitObject);
 }
 
 int main(int argc, char **argv) {
@@ -220,8 +315,8 @@ int main(int argc, char **argv) {
   bool isMLIRInput = inputType == InputType::MLIR ||
                      llvm::StringRef(inputFilename).ends_with(".mlir");
 
-  // DumpAST is Ada-only and needs no MLIR context.
-  if (emitAction == Action::DumpAST) {
+  // EmitAST is Ada-only and needs no MLIR context.
+  if (emitAction == Action::EmitAST) {
     if (isMLIRInput) {
       llvm::errs() << "Can't dump a Libadalang AST when the input is MLIR\n";
       return 1;
@@ -231,11 +326,10 @@ int main(int argc, char **argv) {
       return 1;
     if (!ast.isValid())
       return 1;
-    ast.dump();
-    return 0;
+    return writeTextOutput([&](llvm::raw_ostream &os) { ast.dump(os); });
   }
 
-  // DumpMLIR and DumpLLVMIR: load a module then emit.
+  // EmitMLIR and EmitLLVMIR: load a module then emit.
   mlir::MLIRContext context;
   context.getOrLoadDialect<mlir::ada::AdaDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
@@ -254,15 +348,18 @@ int main(int argc, char **argv) {
   }
 
   switch (emitAction) {
-  case Action::DumpMLIR: {
+  case Action::EmitMLIR: {
     if (int error = applyMLIRPasses(module))
       return error;
-    module->print(llvm::outs());
-    llvm::outs() << "\n";
-    return 0;
+    return writeTextOutput([&](llvm::raw_ostream &os) {
+      module->print(os);
+      os << "\n";
+    });
   }
-  case Action::DumpLLVMIR:
-    return dumpLLVMIR(context, module);
+  case Action::EmitLLVMIR:
+  case Action::EmitObject:
+  case Action::EmitAssembly:
+    return emitLLVMIR(context, module);
   default:
     llvm_unreachable("unhandled emit action");
   }

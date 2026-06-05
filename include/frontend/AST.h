@@ -15,8 +15,8 @@ class Diagnostic;
 namespace frontend {
 namespace libadalang {
 
-/// Dump an ada_node tree.
-void dump(ada_node *node);
+/// Dump an ada_node tree to `os`.
+void dump(ada_node *node, llvm::raw_ostream &os);
 
 /// Get the name (in utf8 format) of the given ada_node (return an empty string
 /// if no name). If canonical is true (the default), the name is returned in its
@@ -58,7 +58,7 @@ public:
 
   /// Return whether everything went well during object construction.
   bool isValid() { return valid; }
-  void dump() { libadalang::dump(&root); }
+  void dump(llvm::raw_ostream &os) { libadalang::dump(&root, os); }
 
   /// Print any Libadalang parse/lex diagnostics for this unit to stderr,
   /// matching the standard "file:line:col: error: msg" diagnostic format.

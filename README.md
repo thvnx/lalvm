@@ -23,12 +23,16 @@ flowchart TD
     hoist --> low["LowerToLLVM"]
     low --> scope["DIScopeForLLVMFuncOp"]
     scope --> di["AdaDebugInfo"]
-    di --> dllvm(["LLVM IR dump"])
+    di -->|--emit=llvm| dllvm(["LLVM IR dump"])
+    di -->|--emit=obj/asm| be["LLVM backend"]
+    be --> dcode(["object / assembly"])
 ```
 
 - `--emit=ast` stops after Libadalang and dumps the AST.
 - `--emit=mlir` runs MLIRGen then `mem2reg` and dumps the Ada dialect.
 - `--emit=llvm` runs the full lowering chain above, then translates to LLVM IR.
+- `--emit=obj` / `--emit=asm` run the LLVM backend on that IR to write an object
+  file or target assembly for the host target.
 
 ## Building
 
@@ -53,12 +57,16 @@ mode, assertions enabled).
 ## Usage
 
 ```
-lalvm --emit=<action> [--x=<input-type>] <input-file>
+lalvm --emit=<action> [--x=<input-type>] [-o <file>] <input-file>
 ```
 
 Options:
-- `--emit {ast,mlir,llvm}`: output format (required)
+- `--emit {ast,mlir,llvm,obj,asm}`: output format (required)
 - `--x {Ada,mlir}`: input type (default: Ada; inferred from `.mlir` extension)
+- `-o <file>`: output file (default: stdout for text dumps; the input basename
+  with a `.o`/`.s` extension for `obj`/`asm`)
+- standard LLVM codegen flags (`-mcpu`, `-mattr`, `--relocation-model`, ...)
+  apply to `--emit=obj`/`asm`
 
 ## Example
 
@@ -104,20 +112,26 @@ and hoisting flatten them to module level on the `--emit=llvm` path. Here
 `mem2reg` has already promoted the `Result` local, so the call result flows
 straight into the `return`.
 
-## Generating assembly
+## Generating machine code
 
-The LLVM IR produced by `--emit=llvm` can be passed to `llc` to generate assembly
-for any target supported by LLVM:
+lalvm can run the LLVM backend itself to emit target assembly or an object file
+for the host target:
 
 ```sh
-# Native target
-lalvm --emit=llvm add.adb | llc -o add.s
+lalvm --emit=asm compute.adb         # -> compute.s
+lalvm --emit=obj compute.adb         # -> compute.o
+lalvm --emit=asm compute.adb -o -    # assembly to stdout
+```
 
-# Specific target (e.g. AArch64)
+Without `-o`, `obj`/`asm` output goes to the input basename with a `.o`/`.s`
+extension. CPU and codegen tuning use the standard LLVM flags (`-mcpu`,
+`-mattr`, `--relocation-model`, ...).
+
+To target a non-host architecture, pipe the LLVM IR to `llc` (lalvm itself only
+emits for the host):
+
+```sh
 lalvm --emit=llvm add.adb | llc -mtriple=aarch64-linux-gnu -o add.s
-
-# Object file
-lalvm --emit=llvm add.adb | llc -filetype=obj -o add.o
 ```
 
 ## Symbol naming (ABI)
