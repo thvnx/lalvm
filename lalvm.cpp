@@ -1,6 +1,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include "ada/Dialect.h"
 #include "ada/EnumDITypes.h"
@@ -344,6 +345,7 @@ int main(int argc, char **argv) {
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
   context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
   context.getOrLoadDialect<mlir::memref::MemRefDialect>();
+  context.getOrLoadDialect<mlir::scf::SCFDialect>();
   mlir::OwningOpRef<mlir::ModuleOp> module;
 
   if (isMLIRInput) {

@@ -27,7 +27,9 @@
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -60,8 +62,8 @@ struct AdaToLLVMLoweringPass
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AdaToLLVMLoweringPass)
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry
-        .insert<LLVM::LLVMDialect, func::FuncDialect, arith::ArithDialect>();
+    registry.insert<LLVM::LLVMDialect, func::FuncDialect, arith::ArithDialect,
+                    cf::ControlFlowDialect>();
   }
   void runOnOperation() final;
 };
@@ -500,8 +502,9 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   // Provide the patterns used for lowering.
   RewritePatternSet patterns(&getContext());
-  // TODO: add populateSCFToControlFlowConversionPatterns once the Ada codegen
-  // emits SCF ops (e.g. for if/loop statements).
+  // Lower structured control flow (scf.if from if expressions, RM 4.5.7) to
+  // unstructured cf, which the cf patterns below then take to LLVM.
+  mlir::populateSCFToControlFlowConversionPatterns(patterns);
   mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);

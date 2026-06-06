@@ -18,6 +18,7 @@
 
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
@@ -1165,6 +1166,8 @@ private:
       return mlirGenBinOp(expr);
     case ada_call_expr:
       return mlirGenCallExprValue(expr);
+    case ada_if_expr:
+      return mlirGenIfExpr(expr);
     case ada_paren_expr: {
       // A parenthesized expression (RM 4.4) has the value of its operand; the
       // parentheses only group syntactically. Visit the inner expression.
@@ -1969,6 +1972,151 @@ private:
       builder.setInsertionPointToEnd(mergeBlock);
     }
     return mlir::success();
+  }
+
+  /// Synthesize an `ada.constant` for Boolean `True`. The Boolean type is
+  /// resolved with `p_bool_type`; the literal's value is read from the
+  /// `enum_info` metadata on the resolved `ada.type` (`enumRep`), keeping the
+  /// rep mapping single-sourced rather than hardcoding 1.
+  ///
+  /// @param context_node Any node, used to reach the analysis unit for the
+  ///                     static `p_bool_type` query.
+  /// @param location     MLIR location for the constant and diagnostics.
+  mlir::Value synthesizeBooleanTrue(ada_node &context_node,
+                                    mlir::Location location) {
+    ada_node bool_decl;
+    if (!ada_ada_node_p_bool_type(&context_node, &bool_decl) ||
+        ada_node_is_null(&bool_decl)) {
+      mlir::emitError(location, "failed to resolve Boolean type");
+      return nullptr;
+    }
+    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(bool_decl, location);
+    if (!typeOp)
+      return nullptr;
+    auto enumInfo =
+        mlir::dyn_cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
+    if (!enumInfo) {
+      mlir::emitError(location, "Boolean type missing enum metadata");
+      return nullptr;
+    }
+    std::optional<int64_t> rep = enumInfo.enumRep("true");
+    if (!rep) {
+      mlir::emitError(location, "Boolean type has no 'true' enum literal");
+      return nullptr;
+    }
+    mlir::ada::QualType boolType = getAdaQualType(bool_decl, location);
+    if (!boolType)
+      return nullptr;
+    auto intType = mlir::cast<mlir::IntegerType>(boolType.getMlirType());
+    return builder.create<mlir::ada::ConstantOp>(
+        location, boolType, mlir::IntegerAttr::get(intType, *rep));
+  }
+
+  /// Emit an if expression (RM 4.5.7) as a (possibly nested) `scf.if` that
+  /// yields the expression's value. The expected type T is applied to every
+  /// dependent_expression (RM 4.5.7(8/3)), so each branch value is coerced to
+  /// T before being yielded. `elsif` parts nest as an `scf.if` in the else
+  /// region; conditions are thus tested in order, the first True winning
+  /// (RM 4.5.7(20/3)). When the `else` part is absent the if expression is of a
+  /// boolean type and the missing else yields `True` (RM 4.5.7(18/3, 20/3)).
+  mlir::Value mlirGenIfExpr(ada_node &if_expr) {
+    mlir::Location location = loc(if_expr);
+
+    // Result type, shared by every dependent_expression.
+    ada_node type_decl{};
+    if (!ada_expr_p_expression_type(&if_expr, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
+      mlir::emitError(location, "failed to resolve type of if expression");
+      return nullptr;
+    }
+    mlir::ada::QualType resultType = getAdaQualType(type_decl, location);
+    if (!resultType)
+      return nullptr;
+
+    // Collect the guards: the `if` plus each `elsif`, as (condition, then).
+    llvm::SmallVector<std::pair<ada_node, ada_node>, 4> guards;
+    ada_node cond, thenExpr;
+    ada_if_expr_f_cond_expr(&if_expr, &cond);
+    ada_if_expr_f_then_expr(&if_expr, &thenExpr);
+    guards.push_back({cond, thenExpr});
+
+    ada_node alternatives;
+    ada_if_expr_f_alternatives(&if_expr, &alternatives);
+    unsigned nalt = ada_node_children_count(&alternatives);
+    for (unsigned i = 0; i < nalt; ++i) {
+      ada_node part;
+      if (ada_node_child(&alternatives, i, &part) == 0 ||
+          ada_node_is_null(&part)) {
+        mlir::emitError(location, "failed to get elsif expression part");
+        return nullptr;
+      }
+      ada_node ec, et;
+      ada_elsif_expr_part_f_cond_expr(&part, &ec);
+      ada_elsif_expr_part_f_then_expr(&part, &et);
+      guards.push_back({ec, et});
+    }
+
+    ada_node elseExpr;
+    ada_if_expr_f_else_expr(&if_expr, &elseExpr);
+    bool hasElse = !ada_node_is_null(&elseExpr);
+
+    return emitIfExprChain(guards, /*idx=*/0, elseExpr, hasElse, resultType,
+                           location);
+  }
+
+  /// Recursively emit the `scf.if` for guard `idx`; the else region holds the
+  /// next guard's `scf.if`, the explicit else value, or a synthesized `True`
+  /// for a missing else (boolean if expression). See `mlirGenIfExpr`.
+  mlir::Value
+  emitIfExprChain(llvm::ArrayRef<std::pair<ada_node, ada_node>> guards,
+                  unsigned idx, ada_node elseExpr, bool hasElse,
+                  mlir::ada::QualType resultType, mlir::Location location) {
+    ada_node condNode = guards[idx].first;
+    ada_node thenNode = guards[idx].second;
+
+    mlir::Value cond = visit_expr(condNode);
+    if (!cond)
+      return nullptr;
+    // The condition is Boolean (RM 4.5.7, enforced by libadalang); unwrap to
+    // the underlying i1 that scf.if's verifier requires.
+    mlir::Value condI1 = unwrap(cond, loc(condNode));
+    if (!condI1)
+      return nullptr;
+
+    auto ifOp = builder.create<mlir::scf::IfOp>(
+        location, mlir::TypeRange{resultType}, condI1, /*withElseRegion=*/true);
+
+    // Then region: the dependent_expression for this guard.
+    builder.setInsertionPointToStart(ifOp.thenBlock());
+    mlir::Value thenVal = visit_expr(thenNode);
+    if (!thenVal)
+      return nullptr;
+    thenVal = coerce(thenVal, resultType, loc(thenNode));
+    builder.create<mlir::scf::YieldOp>(loc(thenNode), thenVal);
+
+    // Else region: the next guard, the explicit else, or a synthesized True.
+    builder.setInsertionPointToStart(ifOp.elseBlock());
+    mlir::Value elseVal;
+    if (idx + 1 < guards.size()) {
+      elseVal = emitIfExprChain(guards, idx + 1, elseExpr, hasElse, resultType,
+                                location);
+    } else if (hasElse) {
+      elseVal = visit_expr(elseExpr);
+      if (elseVal)
+        elseVal = coerce(elseVal, resultType, loc(elseExpr));
+    } else {
+      // No else: the if expression is of a boolean type and the absent else
+      // yields True (RM 4.5.7(18/3, 20/3)).
+      elseVal = synthesizeBooleanTrue(condNode, location);
+      if (elseVal)
+        elseVal = coerce(elseVal, resultType, location);
+    }
+    if (!elseVal)
+      return nullptr;
+    builder.create<mlir::scf::YieldOp>(location, elseVal);
+
+    builder.setInsertionPointAfter(ifOp);
+    return ifOp.getResult(0);
   }
 
   /// Create an ada.subp with the signature derived from the Ada subprogram
