@@ -265,12 +265,12 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
     // Map each relational operator to its integer and float predicate. Integer
     // comparisons use signed predicates (Ada integer types are signed).
     //
-    // A Boolean '/=' is not an independent operation: RM 6.6 defines it as the
-    // complementary result of '=' ("/=" with a Boolean result cannot even be
-    // declared on its own). The complementary predicates realize that negation
-    // exactly: 'ne' is 'not eq', and 'une' is 'not oeq' (true when either
-    // operand is NaN). 'one' would only be 'not oeq' for non-NaN operands, so
-    // it is not 'not (=)' and must not be used here.
+    // A Boolean '/=' is not an independent operation: @rm{6-6} defines it as
+    // the complementary result of '=' ("/=" with a Boolean result cannot even
+    // be declared on its own). The complementary predicates realize that
+    // negation exactly: 'ne' is 'not eq', and 'une' is 'not oeq' (true when
+    // either operand is NaN). 'one' would only be 'not oeq' for non-NaN
+    // operands, so it is not 'not (=)' and must not be used here.
     arith::CmpIPredicate iPred;
     arith::CmpFPredicate fPred;
     switch (op.getKind()) {
@@ -502,7 +502,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   // Provide the patterns used for lowering.
   RewritePatternSet patterns(&getContext());
-  // Lower structured control flow (scf.if from if expressions, RM 4.5.7) to
+  // Lower structured control flow (scf.if from if expressions, @rm{4-5-7}) to
   // unstructured cf, which the cf patterns below then take to LLVM.
   mlir::populateSCFToControlFlowConversionPatterns(patterns);
   mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);

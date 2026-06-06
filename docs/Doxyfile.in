@@ -20,6 +20,10 @@ EXTENSION_MAPPING = .inc=C++
 
 PREDEFINED = GET_ATTRDEF_CLASSES GET_OP_CLASSES
 
+# Link Ada RM references: @rm{5-1} renders as "RM 5-1" linking to AA-5-1.html.
+# Dashes (not dots) because aliases do no text substitution on the slug.
+ALIASES = "rm{1}=<a href=\"https://ada-rapporteur-group.github.io/ARM/Ada_202Y/AA-\1.html\">RM \1</a>"
+
 # mlir-tblgen re-declares the `symbolizeEnum` template once per enum; doxygen
 # cannot match the duplicate declarations. The filter drops the repeats (keeping
 # the first), preserving the docs without an exclusion. See the script header.

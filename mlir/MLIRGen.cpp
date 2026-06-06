@@ -216,11 +216,11 @@ private:
   // first assignment. Erased on the first memref.store to the alloca.
   llvm::DenseSet<mlir::Value> uninitAllocas;
 
-  // Named numbers (RM 3.3.2): maps each DefiningName node to the pre-evaluated
-  // arith.constant (null when the expression could not be folded at declaration
-  // time, e.g. composite real expressions). Use-site resolution re-emits the
-  // constant in the concrete target type, or falls back to visit_static_expr
-  // via the NumberDecl recovered from the key.
+  // Named numbers (@rm{3-3-2}): maps each DefiningName node to the
+  // pre-evaluated arith.constant (null when the expression could not be folded
+  // at declaration time, e.g. composite real expressions). Use-site resolution
+  // re-emits the constant in the concrete target type, or falls back to
+  // visit_static_expr via the NumberDecl recovered from the key.
   llvm::DenseMap<ada_node, mlir::Value, AdaNodeDenseMapInfo> numberDecls;
 
   // Cache from type decl node to its emitted ada.type op. Populated by
@@ -481,7 +481,7 @@ private:
   /// Return the alloca pointer (memref<T>) for a variable expression without
   /// emitting a load. Used to pass `in out` / `out` actual parameters by
   /// reference. Ada requires the actual for such a formal to be a variable
-  /// (RM 6.4.1), so the resolved value is always a memref.
+  /// (@rm{6-4-1}), so the resolved value is always a memref.
   mlir::Value resolveVarPtr(ada_node &expr) {
     mlir::Value val = findVarValue(expr);
     if (!val || !mlir::isa<mlir::MemRefType>(val.getType())) {
@@ -560,9 +560,9 @@ private:
   /// Boolean result type resolved from libadalang.
   ///
   /// Only predefined scalar `=`/`/=` are handled, via `ada.cmp`. A Boolean
-  /// `/=` is always the complement of `=` (RM 6.6); for the predefined case
+  /// `/=` is always the complement of `=` (@rm{6-6}); for the predefined case
   /// `ada.cmp` lowers it to the complementary predicate.
-  /// @todo When a type provides a user-defined `"="` (RM 6.6), `/=` must be
+  /// @todo When a type provides a user-defined `"="` (@rm{6-6}), `/=` must be
   ///       lowered as `not ("=" (lhs, rhs))` -- a call to the user `=` negated
   ///       -- rather than as an `ada.cmp`. Needs Boolean `not` support.
   mlir::Value emitCmpOp(ada_node &op, mlir::Value lhs, mlir::Value rhs,
@@ -613,11 +613,12 @@ private:
         !ada_node_is_null(&type_decl))
       resultType = getAdaQualType(type_decl, loc(binop));
 
-    // Relational operators (RM 4.5.2) take operands of a common type and yield
-    // Boolean. Coerce both operands to that operand type; the result is
+    // Relational operators (@rm{4-5-2}) take operands of a common type and
+    // yield Boolean. Coerce both operands to that operand type; the result is
     // Boolean, so unlike arithmetic the result type cannot double as the
     // operand coercion target. `coerce` is a no-op today, but is the eventual
-    // home for each operand's range/constraint check (RM 4.5, Constraint_Error)
+    // home for each operand's range/constraint check (@rm{4-5},
+    // Constraint_Error)
     // -- which is required even when the operand and operator types are
     // nominally identical, since the static type does not guarantee the value
     // is in range. The Boolean result is coerced at the assignment/decl-init
@@ -635,7 +636,7 @@ private:
       break;
     }
 
-    // Arithmetic operators (RM 4.5.3-4.5.5): operands and result share one
+    // Arithmetic operators (@rm{4-5-3}-4.5.5): operands and result share one
     // type. Coerce both operands to the result type so
     // SameOperandsAndResultType is satisfied when the sides differ.
     if (resultType) {
@@ -864,7 +865,7 @@ private:
     return it->second;
   }
 
-  /// Emit an enum literal as its integer representation (Ada RM 13.4).
+  /// Emit an enum literal as its integer representation (Ada @rm{13-4}).
   /// The rep value and MLIR type are read from the `ada.type` op metadata;
   /// Libadalang is only consulted for the literal name and the enclosing type.
   ///
@@ -981,7 +982,7 @@ private:
           if (!ptr)
             return nullptr;
           // After the call the variable is considered initialized: `out`
-          // formals are contractually written by the callee (RM 6.4.1).
+          // formals are contractually written by the callee (@rm{6-4-1}).
           uninitAllocas.erase(ptr);
           args.push_back(ptr);
         } else {
@@ -1135,7 +1136,7 @@ private:
         return mlirGenEnumLit(ref_decl, expr);
       // A parameterless function call written without parentheses (e.g.
       // `F : Float := G`) is an identifier that p_is_call reports as a call
-      // (RM 6.4); lower it as a call rather than rejecting it as a value.
+      // (@rm{6-4}); lower it as a call rather than rejecting it as a value.
       ada_bool isCall = false;
       if (ada_name_p_is_call(&expr, &isCall) && isCall)
         return mlirGenCallExprValue(expr);
@@ -1147,8 +1148,8 @@ private:
       return mlirGenRealLiteral(expr);
     case ada_char_literal: {
       // A character literal denotes an enumeration literal of a character type
-      // (predefined Standard.Character, RM 3.5.2); emit it as the corresponding
-      // enum value, like any other enum literal.
+      // (predefined Standard.Character, @rm{3-5-2}); emit it as the
+      // corresponding enum value, like any other enum literal.
       ada_node ref_decl;
       if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
                                      &ref_decl) &&
@@ -1169,7 +1170,7 @@ private:
     case ada_if_expr:
       return mlirGenIfExpr(expr);
     case ada_paren_expr: {
-      // A parenthesized expression (RM 4.4) has the value of its operand; the
+      // A parenthesized expression (@rm{4-4}) has the value of its operand; the
       // parentheses only group syntactically. Visit the inner expression.
       ada_node inner;
       ada_paren_expr_f_expr(&expr, &inner);
@@ -1183,7 +1184,7 @@ private:
     return nullptr;
   }
 
-  /// Emit a named number declaration (RM 3.3.2).
+  /// Emit a named number declaration (@rm{3-3-2}).
   ///
   /// Syntax:
   /// @code{.txt}
@@ -1305,7 +1306,7 @@ private:
     return mlir::success();
   }
 
-  /// True if `type_decl` is a character type (RM 3.5.2): an enumeration whose
+  /// True if `type_decl` is a character type (@rm{3-5-2}): an enumeration whose
   /// literals are character literals. Callers use this once per type to choose
   /// between `enumLiteralRep` and `charLiteralRep` without re-checking each
   /// literal.
@@ -1317,7 +1318,7 @@ private:
   }
 
   /// Representation value of an ordinary enum literal: its `p_enum_rep`
-  /// (honoring RM 13.4 representation clauses). Returns nullopt and emits a
+  /// (honoring @rm{13-4} representation clauses). Returns nullopt and emits a
   /// diagnostic on failure. For a character type use `charLiteralRep`.
   std::optional<int64_t> enumLiteralRep(ada_node &lit,
                                         mlir::Location location) {
@@ -1337,7 +1338,7 @@ private:
     return val;
   }
 
-  /// Representation value of a character enum literal (RM 3.5.2): the Latin-1
+  /// Representation value of a character enum literal (@rm{3-5-2}): the Latin-1
   /// code point from the wrapped `CharLiteral`'s `p_denoted_value`.
   /// `p_enum_rep` is unusable here because Libadalang materializes only the
   /// referenced Character literals, so it would give a wrong position. Returns
@@ -1358,9 +1359,9 @@ private:
     return codePoint;
   }
 
-  /// Emit an ada.type op for an Ada type declaration (RM 3.1). Currently only
-  /// enumeration types (RM 3.5.1) are handled; other kinds are silently skipped
-  /// and will be added as support for each kind is implemented.
+  /// Emit an ada.type op for an Ada type declaration (@rm{3-1}). Currently only
+  /// enumeration types (@rm{3-5-1}) are handled; other kinds are silently
+  /// skipped and will be added as support for each kind is implemented.
   ///
   /// `external` is set by lookupOrEmitTypeOp's lazy path (predefined/Standard
   /// types, emitted at module level): the symbol name uses the canonical fully
@@ -1385,7 +1386,8 @@ private:
                            external);
     };
 
-    // Universal types (RM 3.4.1) and numeric types (RM 3.5.4, 3.5.6, 3.5.7).
+    // Universal types (@rm{3-4-1}) and numeric types
+    // (@rm{3-5-4}, @rm{3.5.6}, @rm{3.5.7}).
     if (libadalang::isUniversalTypeDecl(type_decl) ||
         libadalang::isNumericTypeDecl(type_decl)) {
       auto typeName = resolveTypeName();
@@ -1499,7 +1501,7 @@ private:
     return mlir::success();
   }
 
-  /// Emit an object declaration (RM 3.3.1).
+  /// Emit an object declaration (@rm{3-3-1}).
   ///
   /// Syntax:
   /// @code{.txt}
@@ -1875,12 +1877,12 @@ private:
       builder.create<mlir::cf::BranchOp>(location, mergeBlock);
   }
 
-  /// Emit an if statement (RM 5.3) as an unstructured CFG. Each guard (the `if`
-  /// condition and every `elsif`) branches to its then-block or to the next
-  /// test; the last guard's false edge goes to the else-block, or to the merge
-  /// block when there is no else. Elsif conditions are evaluated in their own
-  /// blocks, so a condition is tested only when all earlier ones were false
-  /// (RM 5.3). A branch that does not already terminate (e.g. via `return`)
+  /// Emit an if statement (@rm{5-3}) as an unstructured CFG. Each guard (the
+  /// `if` condition and every `elsif`) branches to its then-block or to the
+  /// next test; the last guard's false edge goes to the else-block, or to the
+  /// merge block when there is no else. Elsif conditions are evaluated in their
+  /// own blocks, so a condition is tested only when all earlier ones were false
+  /// (@rm{5-3}). A branch that does not already terminate (e.g. via `return`)
   /// falls through to the merge block. If every path terminates, the merge
   /// block is unreachable and is erased.
   llvm::LogicalResult mlirGenIf(ada_node &if_stmt) {
@@ -1924,8 +1926,8 @@ private:
       mlir::Value c = visit_expr(guards[i].first);
       if (!c)
         return mlir::failure();
-      // The condition must be Boolean (RM 5.3, enforced by libadalang). Unwrap
-      // to the underlying type; cf.cond_br's verifier requires i1.
+      // The condition must be Boolean (@rm{5-3}, enforced by libadalang).
+      // Unwrap to the underlying type; cf.cond_br's verifier requires i1.
       mlir::Value condI1 = unwrap(c, loc(guards[i].first));
       if (!condI1)
         return mlir::failure();
@@ -2012,13 +2014,14 @@ private:
         location, boolType, mlir::IntegerAttr::get(intType, *rep));
   }
 
-  /// Emit an if expression (RM 4.5.7) as a (possibly nested) `scf.if` that
+  /// Emit an if expression (@rm{4-5-7}) as a (possibly nested) `scf.if` that
   /// yields the expression's value. The expected type T is applied to every
-  /// dependent_expression (RM 4.5.7(8/3)), so each branch value is coerced to
+  /// dependent_expression (@rm{4-5-7}(8/3)), so each branch value is coerced to
   /// T before being yielded. `elsif` parts nest as an `scf.if` in the else
   /// region; conditions are thus tested in order, the first True winning
-  /// (RM 4.5.7(20/3)). When the `else` part is absent the if expression is of a
-  /// boolean type and the missing else yields `True` (RM 4.5.7(18/3, 20/3)).
+  /// (@rm{4-5-7}(20/3)). When the `else` part is absent the if expression is of
+  /// a boolean type and the missing else yields `True` (@rm{4-5-7}(18/3,
+  /// 20/3)).
   mlir::Value mlirGenIfExpr(ada_node &if_expr) {
     mlir::Location location = loc(if_expr);
 
@@ -2077,7 +2080,7 @@ private:
     mlir::Value cond = visit_expr(condNode);
     if (!cond)
       return nullptr;
-    // The condition is Boolean (RM 4.5.7, enforced by libadalang); unwrap to
+    // The condition is Boolean (@rm{4-5-7}, enforced by libadalang); unwrap to
     // the underlying i1 that scf.if's verifier requires.
     mlir::Value condI1 = unwrap(cond, loc(condNode));
     if (!condI1)
@@ -2106,7 +2109,7 @@ private:
         elseVal = coerce(elseVal, resultType, loc(elseExpr));
     } else {
       // No else: the if expression is of a boolean type and the absent else
-      // yields True (RM 4.5.7(18/3, 20/3)).
+      // yields True (@rm{4-5-7}(18/3, 20/3)).
       elseVal = synthesizeBooleanTrue(condNode, location);
       if (elseVal)
         elseVal = coerce(elseVal, resultType, location);
@@ -2274,10 +2277,10 @@ private:
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
-    // Enumeration types (RM 3.5.1): choose the smallest integer width that can
-    // hold the largest representation value (GNAT convention: up to 255 -> i8,
-    // up to 65535 -> i16, else i32).
-    // TODO: negative representation values (RM 13.4) are not yet handled; the
+    // Enumeration types (@rm{3-5-1}): choose the smallest integer width that
+    // can hold the largest representation value (GNAT convention: up to 255 ->
+    // i8, up to 65535 -> i16, else i32).
+    // TODO: negative representation values (@rm{13-4}) are not yet handled; the
     // width assumes a non-negative range.
     ada_node type_def;
     if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
@@ -2302,9 +2305,9 @@ private:
         return it->second.getMlirType();
 
       // Width covers the range of representation values, not the literal count:
-      // character types (RM 3.5.2) only materialize their referenced literals,
-      // and representation clauses (RM 13.4) can assign values beyond the
-      // count.
+      // character types (@rm{3-5-2}) only materialize their referenced
+      // literals, and representation clauses (@rm{13-4}) can assign values
+      // beyond the count.
       ada_node literals;
       ada_enum_type_def_f_enum_literals(&type_def, &literals);
       unsigned count = ada_node_children_count(&literals);

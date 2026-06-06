@@ -33,13 +33,13 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 // Operators
 //===----------------------------------------------------------------------===//
 
-// Logical operators (RM 4.5.1)
+// Logical operators (@rm{4-5-1})
 def AdaOp_And     : I32EnumAttrCase<"And",     0,  "and">;
 def AdaOp_Or      : I32EnumAttrCase<"Or",      1,  "or">;
 def AdaOp_Xor     : I32EnumAttrCase<"Xor",     2,  "xor">;
 def AdaOp_AndThen : I32EnumAttrCase<"AndThen", 3,  "and then">;
 def AdaOp_OrElse  : I32EnumAttrCase<"OrElse",  4,  "or else">;
-// Relational operators (RM 4.5.2)
+// Relational operators (@rm{4-5-2})
 def AdaOp_Eq      : I32EnumAttrCase<"Eq",      5,  "=">;
 def AdaOp_Neq     : I32EnumAttrCase<"Neq",     6,  "/=">;
 def AdaOp_Lt      : I32EnumAttrCase<"Lt",      7,  "<">;
@@ -48,16 +48,16 @@ def AdaOp_Gt      : I32EnumAttrCase<"Gt",      9,  ">">;
 def AdaOp_Gte     : I32EnumAttrCase<"Gte",     10, ">=">;
 def AdaOp_In      : I32EnumAttrCase<"In",      11, "in">;
 def AdaOp_NotIn   : I32EnumAttrCase<"NotIn",   12, "not in">;
-// Binary and unary adding operators (RM 4.5.3/RM 4.5.4)
+// Binary and unary adding operators (@rm{4-5-3}/@rm{4-5-4})
 def AdaOp_Plus    : I32EnumAttrCase<"Plus",    13, "+">;
 def AdaOp_Minus   : I32EnumAttrCase<"Minus",   14, "-">;
 def AdaOp_Concat  : I32EnumAttrCase<"Concat",  15, "&">;
-// Multiplying operators (RM 4.5.5)
+// Multiplying operators (@rm{4-5-5})
 def AdaOp_Mult    : I32EnumAttrCase<"Mult",    16, "*">;
 def AdaOp_Div     : I32EnumAttrCase<"Div",     17, "/">;
 def AdaOp_Mod     : I32EnumAttrCase<"Mod",     18, "mod">;
 def AdaOp_Rem     : I32EnumAttrCase<"Rem",     19, "rem">;
-// Highest precedence operators (RM 4.5.6)
+// Highest precedence operators (@rm{4-5-6})
 def AdaOp_Pow     : I32EnumAttrCase<"Pow",     20, "**">;
 def AdaOp_Abs     : I32EnumAttrCase<"Abs",     21, "abs">;
 def AdaOp_Not     : I32EnumAttrCase<"Not",     22, "not">;
@@ -200,14 +200,14 @@ def ConstantOp : Ada_Op<"constant", [Pure, ConstantLike]> {
 
 // Emitted by MLIRGen at every point where a value flows into a typed location:
 // parameter passing, assignment, return, object initialization, and explicit
-// type conversions (RM 4.6). Lowered to an arith cast when the underlying MLIR
+// type conversions (@rm{4-6}). Lowered to an arith cast when the underlying MLIR
 // types differ; a no-op otherwise. Future: will also emit a range check against
 // the target type's bounds before the cast, raising Constraint_Error on
 // violation.
 def CoerceOp : Ada_Op<"coerce", [Pure]> {
   let summary = "Ada value coercion between types";
   let description = [{
-    Represents the coercion of a value to a target Ada type (RM 4.6). Emitted
+    Represents the coercion of a value to a target Ada type (@rm{4-6}). Emitted
     at every point where a value flows into a typed location: explicit type
     conversions, assignments, parameter passing, and return statements.
 
@@ -240,8 +240,8 @@ def CoerceOp : Ada_Op<"coerce", [Pure]> {
 def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
   let summary = "Ada predefined binary arithmetic operation";
   let description = [{
-    Represents an Ada predefined binary arithmetic operation (RM 4.5.3-4.5.5).
-    The operator is encoded as an `AdaBinaryOp` enum attribute.
+    Represents an Ada predefined binary arithmetic operation (@rm{4-5-3} to
+    @rm{4.5.5}). The operator is encoded as an `AdaBinaryOp` enum attribute.
 
     `SameOperandsAndResultType` constrains the op so that both operands and the
     result share one type (integer or float). The constraint also auto-generates
@@ -272,7 +272,7 @@ def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
 def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
   let summary = "Ada predefined relational operation";
   let description = [{
-    Represents an Ada predefined relational operation (RM 4.5.2). The operator
+    Represents an Ada predefined relational operation (@rm{4-5-2}). The operator
     is encoded as an `AdaRelationalOp` enum attribute.
 
     Both operands share one type (`SameTypeOperands`); the result is the
@@ -324,7 +324,7 @@ def UnwrapOp : Ada_Op<"unwrap", [Pure]> {
 def NullOp : Ada_Op<"null", [Pure]> {
   let summary = "null statement: no operation";
   let description = [{
-    Represents the Ada null statement (RM 5.1), which explicitly does nothing.
+    Represents the Ada null statement (@rm{5-1}), which explicitly does nothing.
     It is used as a placeholder where a statement is syntactically required but
     no action is needed (e.g. an empty procedure body or an empty branch).
     Lowered to nothing by the LowerToLLVM pass.
@@ -512,7 +512,7 @@ def SubpOp : Ada_Op<"subp", [
 def ReturnOp : Ada_Op<"return", [Terminator, ReturnLike]> {
   let summary = "return operation";
   let description = [{
-    Represents an Ada return statement (RM 5.8). Functions carry one return
+    Represents an Ada return statement (@rm{5-8}). Functions carry one return
     operand whose type must match the subprogram result type; procedures carry
     none.
 

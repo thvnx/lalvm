@@ -412,7 +412,7 @@ llvm::LogicalResult CmpOp::verify() {
     return emitOpError() << "unsupported operand type " << operandType
                          << "; expected integer or float";
 
-  // Relational operators yield the predefined type Boolean (RM 4.5.2).
+  // Relational operators yield the predefined type Boolean (@rm{4-5-2}).
   mlir::Type resultType = getResult().getType();
   if (auto typedType = mlir::dyn_cast<ada::QualType>(resultType))
     resultType = typedType.getMlirType();
