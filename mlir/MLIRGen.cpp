@@ -451,13 +451,9 @@ private:
       // dead code is pointless and would leave a predecessor-less block that
       // trips later passes. (Once real control flow exists, blocks opened after
       // a terminator gain predecessors from branches and are no longer dead.)
-      if (inStmtList) {
-        if (mlir::Block *blk = builder.getInsertionBlock();
-            blk && !blk->empty() &&
-            blk->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
-          mlir::emitWarning(loc(child), "unreachable code");
-          break;
-        }
+      if (inStmtList && currentBlockTerminated()) {
+        mlir::emitWarning(loc(child), "unreachable code");
+        break;
       }
       if (mlir::failed(visit(child)))
         return mlir::failure();
@@ -1781,8 +1777,7 @@ private:
     // unless the body already ended in a terminator (e.g. an explicit return,
     // possibly inside a block that dissolved into this region).
     if (isProc) {
-      mlir::Block *blk = builder.getInsertionBlock();
-      if (blk->empty() || !blk->back().hasTrait<mlir::OpTrait::IsTerminator>())
+      if (!currentBlockTerminated())
         builder.create<mlir::ada::ReturnOp>(
             mlir::UnknownLoc::get(builder.getContext()), mlir::Value{});
     }
@@ -1848,11 +1843,18 @@ private:
                                                value);
   }
 
+  /// True if the current insertion block ends in a terminator (e.g. a
+  /// `return`). False for an empty or absent block.
+  bool currentBlockTerminated() {
+    mlir::Block *blk = builder.getInsertionBlock();
+    return blk && !blk->empty() &&
+           blk->back().hasTrait<mlir::OpTrait::IsTerminator>();
+  }
+
   /// Append a branch to `mergeBlock` if the current insertion block is not
   /// already terminated (e.g. by a `return`).
   void branchToMergeIfOpen(mlir::Block *mergeBlock, mlir::Location location) {
-    mlir::Block *blk = builder.getInsertionBlock();
-    if (blk->empty() || !blk->back().hasTrait<mlir::OpTrait::IsTerminator>())
+    if (!currentBlockTerminated())
       builder.create<mlir::cf::BranchOp>(location, mergeBlock);
   }
 
