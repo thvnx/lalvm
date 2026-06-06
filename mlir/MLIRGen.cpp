@@ -1165,6 +1165,13 @@ private:
       return mlirGenBinOp(expr);
     case ada_call_expr:
       return mlirGenCallExprValue(expr);
+    case ada_paren_expr: {
+      // A parenthesized expression (RM 4.4) has the value of its operand; the
+      // parentheses only group syntactically. Visit the inner expression.
+      ada_node inner;
+      ada_paren_expr_f_expr(&expr, &inner);
+      return visit_expr(inner);
+    }
     default:
       mlir::emitError(loc(expr), "unsupported expression: ")
           << libadalang::image(&expr);
