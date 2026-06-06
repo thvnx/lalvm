@@ -16,6 +16,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 #include "llvm/Support/Debug.h"
@@ -388,6 +389,8 @@ private:
       return mlir::success();
     case ada_call_stmt:
       return mlirGenCallStmt(node);
+    case ada_if_stmt:
+      return mlirGenIf(node);
     case ada_named_stmt: {
       // Named block statement: "Name: [declare] begin ... end Name;"
       // The name lives on the wrapping named_stmt; the actual block is f_stmt.
@@ -1817,6 +1820,135 @@ private:
     else
       ada_begin_block_f_stmts(&blockNode, &stmts);
     return visit(stmts);
+  }
+
+  /// Unwrap an Ada-qualified value (`!ada.qual<T, @...>`) to its underlying
+  /// builtin MLIR type `T`, e.g. to feed a `cf`/`arith` op that needs the raw
+  /// type. Emits a diagnostic and returns null if `value` is not qualified.
+  ///
+  /// Unwrapping discards the Ada type identity, so the op's location is a
+  /// `FusedLoc` carrying the type reference (the same `DITypeRefAttr`
+  /// LowerToLLVM threads through value locations), keeping the type
+  /// discoverable for debug info.
+  mlir::Value unwrap(mlir::Value value, mlir::Location location) {
+    auto qual = mlir::dyn_cast<mlir::ada::QualType>(value.getType());
+    if (!qual) {
+      mlir::emitError(location, "cannot unwrap non-qualified value of type ")
+          << value.getType();
+      return nullptr;
+    }
+    auto *ctx = builder.getContext();
+    mlir::Location fused = mlir::FusedLoc::get(
+        ctx, {location}, mlir::ada::DITypeRefAttr::get(ctx, qual.getAdaType()));
+    return builder.create<mlir::ada::UnwrapOp>(fused, qual.getMlirType(),
+                                               value);
+  }
+
+  /// Append a branch to `mergeBlock` if the current insertion block is not
+  /// already terminated (e.g. by a `return`).
+  void branchToMergeIfOpen(mlir::Block *mergeBlock, mlir::Location location) {
+    mlir::Block *blk = builder.getInsertionBlock();
+    if (blk->empty() || !blk->back().hasTrait<mlir::OpTrait::IsTerminator>())
+      builder.create<mlir::cf::BranchOp>(location, mergeBlock);
+  }
+
+  /// Emit an if statement (RM 5.3) as an unstructured CFG. Each guard (the `if`
+  /// condition and every `elsif`) branches to its then-block or to the next
+  /// test; the last guard's false edge goes to the else-block, or to the merge
+  /// block when there is no else. Elsif conditions are evaluated in their own
+  /// blocks, so a condition is tested only when all earlier ones were false
+  /// (RM 5.3). A branch that does not already terminate (e.g. via `return`)
+  /// falls through to the merge block. If every path terminates, the merge
+  /// block is unreachable and is erased.
+  llvm::LogicalResult mlirGenIf(ada_node &if_stmt) {
+    // Collect the guards: the `if` plus each `elsif`, as (condition, stmts).
+    llvm::SmallVector<std::pair<ada_node, ada_node>, 4> guards;
+    ada_node cond, thenStmts;
+    ada_if_stmt_f_cond_expr(&if_stmt, &cond);
+    ada_if_stmt_f_then_stmts(&if_stmt, &thenStmts);
+    guards.push_back({cond, thenStmts});
+
+    ada_node alternatives;
+    ada_if_stmt_f_alternatives(&if_stmt, &alternatives);
+    unsigned nalt = ada_node_children_count(&alternatives);
+    for (unsigned i = 0; i < nalt; ++i) {
+      ada_node part;
+      if (ada_node_child(&alternatives, i, &part) == 0 ||
+          ada_node_is_null(&part)) {
+        mlir::emitError(loc(if_stmt), "failed to get elsif part");
+        return mlir::failure();
+      }
+      ada_node ec, es;
+      ada_elsif_stmt_part_f_cond_expr(&part, &ec);
+      ada_elsif_stmt_part_f_stmts(&part, &es);
+      guards.push_back({ec, es});
+    }
+
+    ada_node elsePart;
+    ada_if_stmt_f_else_part(&if_stmt, &elsePart);
+    bool hasElse = !ada_node_is_null(&elsePart);
+
+    // Split off the merge/continuation block (empty: we are at block end).
+    mlir::Block *condBlock = builder.getInsertionBlock();
+    mlir::Block *mergeBlock =
+        condBlock->splitBlock(builder.getInsertionPoint());
+
+    mlir::Block *curTest = condBlock;
+    for (unsigned i = 0; i < guards.size(); ++i) {
+      bool last = (i + 1 == guards.size());
+
+      builder.setInsertionPointToEnd(curTest);
+      mlir::Value c = visit_expr(guards[i].first);
+      if (!c)
+        return mlir::failure();
+      // The condition must be Boolean (RM 5.3, enforced by libadalang). Unwrap
+      // to the underlying type; cf.cond_br's verifier requires i1.
+      mlir::Value condI1 = unwrap(c, loc(guards[i].first));
+      if (!condI1)
+        return mlir::failure();
+
+      // The then-block and the block taken when this condition is false.
+      mlir::Block *thenBlock = builder.createBlock(mergeBlock);
+      mlir::Block *falseBlock;
+      if (!last || hasElse)
+        falseBlock =
+            builder.createBlock(mergeBlock); // next elsif test, or else
+      else
+        falseBlock = mergeBlock;
+
+      builder.setInsertionPointToEnd(curTest);
+      builder.create<mlir::cf::CondBranchOp>(loc(guards[i].first), condI1,
+                                             thenBlock, falseBlock);
+
+      // Fill the then-block; fall through to merge if it did not terminate.
+      builder.setInsertionPointToEnd(thenBlock);
+      if (mlir::failed(visit(guards[i].second)))
+        return mlir::failure();
+      branchToMergeIfOpen(mergeBlock, loc(if_stmt));
+
+      curTest = falseBlock; // the next elsif test, or the else block
+    }
+
+    // Else part: after the loop curTest is the else block (when hasElse).
+    if (hasElse) {
+      builder.setInsertionPointToEnd(curTest);
+      ada_node elseStmts;
+      ada_else_part_f_stmts(&elsePart, &elseStmts);
+      if (mlir::failed(visit(elseStmts)))
+        return mlir::failure();
+      branchToMergeIfOpen(mergeBlock, loc(if_stmt));
+    }
+
+    if (mergeBlock->hasNoPredecessors()) {
+      // Every path terminated (e.g. all branches return): the merge is dead.
+      // Leave the insertion point in a terminated block so the enclosing
+      // statement loop reports any following statements as unreachable.
+      mergeBlock->erase();
+      builder.setInsertionPointToEnd(condBlock);
+    } else {
+      builder.setInsertionPointToEnd(mergeBlock);
+    }
+    return mlir::success();
   }
 
   /// Create an ada.subp with the signature derived from the Ada subprogram

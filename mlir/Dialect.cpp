@@ -422,6 +422,22 @@ llvm::LogicalResult CmpOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// UnwrapOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult UnwrapOp::verify() {
+  auto qual = mlir::dyn_cast<ada::QualType>(getValue().getType());
+  if (!qual)
+    return emitOpError() << "operand must be an ada.qual type, got "
+                         << getValue().getType();
+  if (getResult().getType() != qual.getMlirType())
+    return emitOpError() << "result type " << getResult().getType()
+                         << " must be the operand's underlying type "
+                         << qual.getMlirType();
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // bareName
 //===----------------------------------------------------------------------===//
 

@@ -292,6 +292,20 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
   }
 };
 
+// ada.unwrap exposes the builtin value under an ada.qual annotation. The type
+// converter maps ada.qual<T> to T, so the adaptor's operand is already the
+// target type; the op is a no-op and is replaced by its operand.
+struct UnwrapOpLowering : public OpConversionPattern<ada::UnwrapOp> {
+  using OpConversionPattern<ada::UnwrapOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::UnwrapOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getValue());
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: MemRef operations on ada.qual element types
 //===----------------------------------------------------------------------===//
@@ -495,8 +509,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
-               SubpOpLowering, ConstantOpLowering, CoerceOpLowering>(
-      typeConverter, &getContext());
+               UnwrapOpLowering, SubpOpLowering, ConstantOpLowering,
+               CoerceOpLowering>(typeConverter, &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));

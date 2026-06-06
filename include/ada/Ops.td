@@ -293,6 +293,31 @@ def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
 }
 
 //===----------------------------------------------------------------------===//
+// UnwrapOp
+//===----------------------------------------------------------------------===//
+
+// Exposes the builtin MLIR value underneath an `ada.qual` annotation. Value
+// preserving: the result is the same value with the Ada type identity dropped.
+// Used to feed an Ada value into builtin/`cf`/`arith` ops that require the raw
+// type, e.g. the `i1` condition of a `cf.cond_br`.
+def UnwrapOp : Ada_Op<"unwrap", [Pure]> {
+  let summary = "Expose the underlying MLIR value of an Ada-qualified value";
+  let description = [{
+    Converts a value of `ada.qual<T, @sym>` to its underlying MLIR type `T`,
+    discarding the Ada type identity. The lowered `ada.qual<T>` is just `T`, so
+    this op folds away during lowering.
+
+    ```mlir
+    %0 = ada.unwrap %c : !ada.qual<i1, @standard.boolean> to i1
+    ```
+  }];
+  let arguments = (ins AnyType:$value);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$value attr-dict `:` type($value) `to` type($result)";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // NullOp
 //===----------------------------------------------------------------------===//
 

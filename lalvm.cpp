@@ -1,4 +1,5 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 #include "ada/Dialect.h"
@@ -341,6 +342,7 @@ int main(int argc, char **argv) {
   mlir::MLIRContext context;
   context.getOrLoadDialect<mlir::ada::AdaDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();
+  context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
   context.getOrLoadDialect<mlir::memref::MemRefDialect>();
   mlir::OwningOpRef<mlir::ModuleOp> module;
 
