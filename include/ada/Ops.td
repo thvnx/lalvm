@@ -105,8 +105,8 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
     Syntax example:
 
     ```mlir
-    ada.type @Color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
-    ada.type @Integer : i32 = #ada.numeric_info
+    ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
+    ada.type @integer : i32 = #ada.numeric_info
     ```
   }];
   let arguments = (ins
@@ -241,7 +241,7 @@ def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
   let summary = "Ada predefined binary arithmetic operation";
   let description = [{
     Represents an Ada predefined binary arithmetic operation (@rm{4-5-3} to
-    @rm{4.5.5}). The operator is encoded as an `AdaBinaryOp` enum attribute.
+    @rm{4-5-5}). The operator is encoded as an `AdaBinaryOp` enum attribute.
 
     `SameOperandsAndResultType` constrains the op so that both operands and the
     result share one type (integer or float). The constraint also auto-generates
@@ -379,10 +379,10 @@ def CallOp : Ada_Op<"call",
     Represents an Ada subprogram call. Procedure calls carry no result;
     function calls carry exactly one.
 
-    Before lowering, `LowerToLLVM` hoists nested subprograms to module level,
-    renames them with GNAT-style `__`-separated qualifiers, and rewrites all
-    call references accordingly. Each `ada.call` is then converted to a
-    `func.call`.
+    Before lowering, `HoistNestedSymbolOperations` lifts nested subprograms to
+    module level, renames them with GNAT-style `__`-separated qualifiers, and
+    rewrites all call references accordingly. `LowerToLLVM` then converts each
+    `ada.call` to a `func.call`.
 
     Syntax example:
 
