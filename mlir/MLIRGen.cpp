@@ -126,8 +126,8 @@ private:
   /// Insertion-point cursor: tracks where the next MLIR operation is emitted.
   mlir::OpBuilder builder;
 
-  mlir::StringAttr getNameAttr(ada_node *node) {
-    return builder.getStringAttr(libadalang::getName(node));
+  mlir::StringAttr getNameAttr(ada_node &node) {
+    return builder.getStringAttr(libadalang::getName(&node));
   }
 
   /// Attach an Ada source name to `op`. The Ada type symbol is carried in the
@@ -393,9 +393,7 @@ private:
     case ada_return_stmt:
       return mlirGenReturn(node);
     case ada_assign_stmt:
-      if (mlir::failed(mlirGenAssign(node)))
-        return mlir::failure();
-      return mlir::success();
+      return mlirGenAssign(node);
     case ada_null_stmt:
       builder.create<mlir::ada::NullOp>(loc(node));
       return mlir::success();
@@ -1282,7 +1280,7 @@ private:
       }
       mlir::Value constValue;
       if (constAttr && typeOp) {
-        auto nameAttr = getNameAttr(&id);
+        auto nameAttr = getNameAttr(id);
         auto typedType = qualTypeFor(typeOp, constAttr.getType());
         auto constOp = builder.create<mlir::ada::ConstantOp>(loc(id), typedType,
                                                              constAttr);
@@ -1557,7 +1555,7 @@ private:
         mlir::emitError(declLoc, "failed to get declared identifier");
         return mlir::failure();
       }
-      auto nameAttr = getNameAttr(&id);
+      auto nameAttr = getNameAttr(id);
 
       auto elemType =
           mlir::cast<mlir::ada::QualType>(memrefType.getElementType());
@@ -1749,7 +1747,7 @@ private:
     // alloca pointer; stores to them are immediately visible at the call site.
     // `out` parameters are additionally marked uninitialized.
     for (auto [entry, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
-      auto nameAttr = getNameAttr(&entry.id);
+      auto nameAttr = getNameAttr(entry.id);
       mlir::Location srcLoc = loc(entry.id);
       // Ensure the ada.type op is emitted so AdaDebugInfoPass can look it up.
       lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
