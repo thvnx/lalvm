@@ -244,6 +244,54 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
   }
 };
 
+// Lowers ada.cmp to arith.cmpi/arith.cmpf, dispatching on the relational
+// operator kind and on integer vs. float operand type. The result is i1,
+// matching the lowered Boolean (i1) result type.
+struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
+  using OpConversionPattern<ada::CmpOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::CmpOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type type = adaptor.getLhs().getType();
+    bool isInt = mlir::isa<mlir::IntegerType>(type);
+    if (!isInt && !mlir::isa<mlir::FloatType>(type))
+      return rewriter.notifyMatchFailure(op, [type](Diagnostic &diag) {
+        diag << "unsupported operand type: " << type;
+      });
+
+    // Map each relational operator to its integer and float predicate. Integer
+    // comparisons use signed predicates (Ada integer types are signed).
+    //
+    // A Boolean '/=' is not an independent operation: RM 6.6 defines it as the
+    // complementary result of '=' ("/=" with a Boolean result cannot even be
+    // declared on its own). The complementary predicates realize that negation
+    // exactly: 'ne' is 'not eq', and 'une' is 'not oeq' (true when either
+    // operand is NaN). 'one' would only be 'not oeq' for non-NaN operands, so
+    // it is not 'not (=)' and must not be used here.
+    arith::CmpIPredicate iPred;
+    arith::CmpFPredicate fPred;
+    switch (op.getKind()) {
+    case ada::AdaRelationalOp::Eq:
+      iPred = arith::CmpIPredicate::eq;
+      fPred = arith::CmpFPredicate::OEQ;
+      break;
+    case ada::AdaRelationalOp::Neq:
+      iPred = arith::CmpIPredicate::ne;
+      fPred = arith::CmpFPredicate::UNE;
+      break;
+    }
+
+    if (isInt)
+      rewriter.replaceOpWithNewOp<arith::CmpIOp>(op, iPred, adaptor.getLhs(),
+                                                 adaptor.getRhs());
+    else
+      rewriter.replaceOpWithNewOp<arith::CmpFOp>(op, fPred, adaptor.getLhs(),
+                                                 adaptor.getRhs());
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: MemRef operations on ada.qual element types
 //===----------------------------------------------------------------------===//
@@ -446,9 +494,9 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
 
   patterns.add<NullOpLowering>(&getContext());
-  patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, SubpOpLowering,
-               ConstantOpLowering, CoerceOpLowering>(typeConverter,
-                                                     &getContext());
+  patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
+               SubpOpLowering, ConstantOpLowering, CoerceOpLowering>(
+      typeConverter, &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));

@@ -20,6 +20,11 @@ EXTENSION_MAPPING = .inc=C++
 
 PREDEFINED = GET_ATTRDEF_CLASSES GET_OP_CLASSES
 
+# mlir-tblgen re-declares the `symbolizeEnum` template once per enum; doxygen
+# cannot match the duplicate declarations. The filter drops the repeats (keeping
+# the first), preserving the docs without an exclusion. See the script header.
+FILTER_PATTERNS = "*/AdaOpsEnums.h.inc=awk -f @PROJECT_SOURCE_DIR@/docs/dedup-symbolize-enum.awk"
+
 # Document all declarations, including private members and anonymous namespaces.
 EXTRACT_ALL          = YES
 EXTRACT_PRIVATE      = YES

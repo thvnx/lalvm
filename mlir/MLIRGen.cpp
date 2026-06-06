@@ -540,6 +540,41 @@ private:
     return builder.create<mlir::ada::BinOp>(callerLoc, kind, lhs, rhs);
   }
 
+  /// Emit the relational operation for two precomputed operands.
+  /// `op` is the ada_op node (ada_op_eq or ada_op_neq); `resultType` is the
+  /// Boolean result type resolved from libadalang.
+  ///
+  /// Only predefined scalar `=`/`/=` are handled, via `ada.cmp`. A Boolean
+  /// `/=` is always the complement of `=` (RM 6.6); for the predefined case
+  /// `ada.cmp` lowers it to the complementary predicate.
+  /// @todo When a type provides a user-defined `"="` (RM 6.6), `/=` must be
+  ///       lowered as `not ("=" (lhs, rhs))` -- a call to the user `=` negated
+  ///       -- rather than as an `ada.cmp`. Needs Boolean `not` support.
+  mlir::Value emitCmpOp(ada_node &op, mlir::Value lhs, mlir::Value rhs,
+                        mlir::ada::QualType resultType) {
+    auto callerLoc = loc(op);
+    mlir::ada::AdaRelationalOp kind;
+    switch (ada_node_kind(&op)) {
+    case ada_op_eq:
+      kind = mlir::ada::AdaRelationalOp::Eq;
+      break;
+    case ada_op_neq:
+      kind = mlir::ada::AdaRelationalOp::Neq;
+      break;
+    default:
+      mlir::emitError(callerLoc, "invalid relational operator '")
+          << libadalang::image(&op) << "'";
+      return nullptr;
+    }
+    if (!resultType) {
+      mlir::emitError(callerLoc,
+                      "failed to resolve Boolean result type of comparison");
+      return nullptr;
+    }
+    return builder.create<mlir::ada::CmpOp>(callerLoc, resultType, kind, lhs,
+                                            rhs);
+  }
+
   /// Emit a binary operation.
   mlir::Value mlirGenBinOp(ada_node &binop) {
     ada_node left;
@@ -553,20 +588,45 @@ private:
     if (!rhs)
       return nullptr;
 
-    // Coerce both operands to the result type so SameOperandsAndResultType
-    // is satisfied when the two sides have different Ada types.
-    ada_node type_decl{};
-    if (ada_expr_p_expression_type(&binop, &type_decl) &&
-        !ada_node_is_null(&type_decl)) {
-      mlir::ada::QualType resultType = getAdaQualType(type_decl, loc(binop));
-      if (resultType) {
-        lhs = coerce(lhs, resultType, loc(binop));
-        rhs = coerce(rhs, resultType, loc(binop));
-      }
-    }
-
     ada_node op;
     ada_bin_op_f_op(&binop, &op);
+
+    // Resolve the operation's result type from libadalang.
+    ada_node type_decl{};
+    mlir::ada::QualType resultType;
+    if (ada_expr_p_expression_type(&binop, &type_decl) &&
+        !ada_node_is_null(&type_decl))
+      resultType = getAdaQualType(type_decl, loc(binop));
+
+    // Relational operators (RM 4.5.2) take operands of a common type and yield
+    // Boolean. Coerce both operands to that operand type; the result is
+    // Boolean, so unlike arithmetic the result type cannot double as the
+    // operand coercion target. `coerce` is a no-op today, but is the eventual
+    // home for each operand's range/constraint check (RM 4.5, Constraint_Error)
+    // -- which is required even when the operand and operator types are
+    // nominally identical, since the static type does not guarantee the value
+    // is in range. The Boolean result is coerced at the assignment/decl-init
+    // site.
+    switch (ada_node_kind(&op)) {
+    case ada_op_eq:
+    case ada_op_neq:
+      if (auto operandType =
+              mlir::dyn_cast<mlir::ada::QualType>(lhs.getType())) {
+        lhs = coerce(lhs, operandType, loc(binop));
+        rhs = coerce(rhs, operandType, loc(binop));
+      }
+      return emitCmpOp(op, lhs, rhs, resultType);
+    default:
+      break;
+    }
+
+    // Arithmetic operators (RM 4.5.3-4.5.5): operands and result share one
+    // type. Coerce both operands to the result type so
+    // SameOperandsAndResultType is satisfied when the sides differ.
+    if (resultType) {
+      lhs = coerce(lhs, resultType, loc(binop));
+      rhs = coerce(rhs, resultType, loc(binop));
+    }
     return emitBinOp(op, lhs, rhs);
   }
 
@@ -1084,6 +1144,10 @@ private:
       return nullptr;
     }
     case ada_bin_op:
+    // RelationOp (the relational operators '=', '/=', '<', ...) derives from
+    // BinOp, so the ada_bin_op_f_* accessors apply; mlirGenBinOp routes the
+    // relational kinds to ada.cmp.
+    case ada_relation_op:
       return mlirGenBinOp(expr);
     case ada_call_expr:
       return mlirGenCallExprValue(expr);

@@ -358,6 +358,70 @@ llvm::LogicalResult BinOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// CmpOp
+//===----------------------------------------------------------------------===//
+
+/// Parses the functional form, since the Boolean result type differs from the
+/// operand type (mirrors `ada.binop`'s functional spelling):
+///   %0 = ada.cmp "=" %a, %b : (i32, i32) -> i1
+mlir::ParseResult CmpOp::parse(mlir::OpAsmParser &parser,
+                               mlir::OperationState &result) {
+  std::string sym;
+  SMLoc symLoc = parser.getCurrentLocation();
+  if (parser.parseString(&sym))
+    return mlir::failure();
+
+  auto kind = ada::symbolizeAdaRelationalOp(sym);
+  if (!kind)
+    return parser.emitError(symLoc, "unknown relational operator '")
+           << sym << "'";
+
+  result.addAttribute(
+      "kind", ada::AdaRelationalOpAttr::get(parser.getContext(), *kind));
+
+  SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
+  SMLoc operandsLoc = parser.getCurrentLocation();
+  FunctionType funcType;
+  if (parser.parseOperandList(operands, /*requiredOperandCount=*/2) ||
+      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+      parser.parseType(funcType))
+    return mlir::failure();
+
+  if (parser.resolveOperands(operands, funcType.getInputs(), operandsLoc,
+                             result.operands))
+    return mlir::failure();
+  result.addTypes(funcType.getResults());
+  return mlir::success();
+}
+
+void CmpOp::print(mlir::OpAsmPrinter &p) {
+  p << " ";
+  p.printString(ada::stringifyAdaRelationalOp(getKind()));
+  p << " " << getOperands();
+  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"kind"});
+  p << " : (" << getLhs().getType() << ", " << getRhs().getType() << ") -> "
+    << getResult().getType();
+}
+
+llvm::LogicalResult CmpOp::verify() {
+  // SameTypeOperands guarantees both operands share this type.
+  mlir::Type operandType = getLhs().getType();
+  if (auto typedType = mlir::dyn_cast<ada::QualType>(operandType))
+    operandType = typedType.getMlirType();
+  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(operandType))
+    return emitOpError() << "unsupported operand type " << operandType
+                         << "; expected integer or float";
+
+  // Relational operators yield the predefined type Boolean (RM 4.5.2).
+  mlir::Type resultType = getResult().getType();
+  if (auto typedType = mlir::dyn_cast<ada::QualType>(resultType))
+    resultType = typedType.getMlirType();
+  if (!resultType.isInteger(1))
+    return emitOpError() << "result must be Boolean (i1), got " << resultType;
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // bareName
 //===----------------------------------------------------------------------===//
 

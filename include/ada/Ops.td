@@ -73,6 +73,16 @@ def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
 }
 
 //===----------------------------------------------------------------------===//
+// AdaRelationalOp
+//===----------------------------------------------------------------------===//
+
+def AdaRelationalOp : I32EnumAttr<"AdaRelationalOp",
+    "Ada predefined relational operator kind",
+    [AdaOp_Eq, AdaOp_Neq]> {
+  let cppNamespace = "::mlir::ada";
+}
+
+//===----------------------------------------------------------------------===//
 // TypeOp
 //===----------------------------------------------------------------------===//
 
@@ -246,6 +256,36 @@ def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
   }];
 
   let arguments = (ins AdaBinaryOp:$kind, AnyType:$lhs, AnyType:$rhs);
+  let results = (outs AnyType);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// CmpOp
+//===----------------------------------------------------------------------===//
+
+// SameTypeOperands constrains both operands to share one type; the result is
+// always Boolean and therefore declared separately. The result type is passed
+// explicitly to the builder rather than inferred.
+def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
+  let summary = "Ada predefined relational operation";
+  let description = [{
+    Represents an Ada predefined relational operation (RM 4.5.2). The operator
+    is encoded as an `AdaRelationalOp` enum attribute.
+
+    Both operands share one type (`SameTypeOperands`); the result is the
+    predefined type `Boolean`, so the result type differs from the operand type
+    and is printed in functional form, matching `ada.binop`'s functional
+    spelling:
+
+    ```mlir
+    %0 = ada.cmp "=" %a, %b : (i32, i32) -> i1
+    ```
+  }];
+
+  let arguments = (ins AdaRelationalOp:$kind, AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;
