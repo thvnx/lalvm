@@ -179,13 +179,16 @@ are not yet implemented.
 **Expressions:**
 - Integer and real literals; named numbers (RM 3.3.2)
 - Binary arithmetic: `+`, `-`, `*`, `/`
+- Relational comparisons: `=`, `/=` (RM 4.5.2)
+- If expressions (RM 4.5.7) and parenthesized expressions (RM 4.4)
 - Variable and parameter references
 - Function calls (including nested)
-- Enum literals
+- Enum and character literals
 
 **Statements:**
 - Assignments, `return`, `null`
 - Procedure calls
+- `if` statements (RM 5.3)
 - Block statements (`begin`/`end` and `declare`/`begin`/`end`)
 
 **Declarations:**
@@ -203,6 +206,7 @@ are not yet implemented.
 - `Integer` (i32), `Short_Integer` (i16), `Long_Integer` (i64)
 - `Float` (f32), `Long_Float` (f64)
 - `Boolean` (i1) and user-defined enum types (i1 for 2 literals, i8 for 3-256)
+- `Character` (i8) and user-defined character types (RM 3.5.2)
 
 **Debug info:** DWARF 5, `DW_LANG_Ada2012`, source locations on all ops,
 `dbg.declare`/`dbg.value` for variables and constants, `DICompositeType`
@@ -214,7 +218,8 @@ The compiler is organized into the Ada dialect plus a sequence of MLIR passes:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`): custom MLIR dialect.
   Operations: `ada.type`, `ada.alloca`, `ada.constant`, `ada.coerce`,
-  `ada.binop`, `ada.null`, `ada.decls`, `ada.call`, `ada.subp`, `ada.return`.
+  `ada.binop`, `ada.cmp`, `ada.unwrap`, `ada.null`, `ada.decls`, `ada.call`,
+  `ada.subp`, `ada.return`.
   The `!ada.qual<T, @sym>` type makes Ada type identity part of the MLIR
   type system: every SSA value's type encodes both its machine representation
   `T` and its Ada declared type `@sym` (a flat symbol reference to the
