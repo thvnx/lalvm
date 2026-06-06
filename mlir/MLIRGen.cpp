@@ -798,6 +798,15 @@ private:
     return emitRealConstant(*value, type, location);
   }
 
+  /// Build the `ada.qual<mlirType, @sym>` type pairing `mlirType` with the
+  /// Ada type identity of `typeOp` (its symbol name).
+  mlir::ada::QualType qualTypeFor(mlir::ada::TypeOp typeOp,
+                                  mlir::Type mlirType) {
+    auto *ctx = builder.getContext();
+    auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
+    return mlir::ada::QualType::get(ctx, mlirType, typeRef);
+  }
+
   /// Build the `ada.qual<mlirType, @adaSym>` type for a type declaration.
   /// Returns a null type if the declaration is not supported.
   mlir::ada::QualType getAdaQualType(ada_node &type_decl,
@@ -811,9 +820,7 @@ private:
                                   "Ada type identity will be lost");
       return {};
     }
-    auto *ctx = builder.getContext();
-    auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
-    return mlir::ada::QualType::get(ctx, mlirType, typeRef);
+    return qualTypeFor(typeOp, mlirType);
   }
 
   /// Build the `ada.qual` type from a type expression (SubtypeIndication).
@@ -918,9 +925,7 @@ private:
 
     auto attr =
         mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(mlirType), *value);
-    auto *ctx = builder.getContext();
-    auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
-    auto typedType = mlir::ada::QualType::get(ctx, mlirType, typeRef);
+    auto typedType = qualTypeFor(typeOp, mlirType);
     auto constOp =
         builder.create<mlir::ada::ConstantOp>(location, typedType, attr);
     setAdaNameLoc(mlir::Value(constOp), builder.getStringAttr(litName));
@@ -1282,10 +1287,7 @@ private:
       mlir::Value constValue;
       if (constAttr && typeOp) {
         auto nameAttr = getNameAttr(&id);
-        auto *ctx = builder.getContext();
-        auto typeRef = mlir::FlatSymbolRefAttr::get(ctx, typeOp.getSymName());
-        auto typedType =
-            mlir::ada::QualType::get(ctx, constAttr.getType(), typeRef);
+        auto typedType = qualTypeFor(typeOp, constAttr.getType());
         auto constOp = builder.create<mlir::ada::ConstantOp>(loc(id), typedType,
                                                              constAttr);
         setAdaNameLoc(mlir::Value(constOp), nameAttr);
