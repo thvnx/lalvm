@@ -4,7 +4,7 @@
 #
 # Steps:
 #   1. gnatmake <file.adb>     — build with GNAT to get a .ali (and discard .o)
-#   2. lalvm | llc             — recompile to .o using lalvm
+#   2. lalvm --emit=obj        — recompile to .o using lalvm
 #   3. gnatbind -x <file.ali>  — generate Ada elaboration binder
 #   4. gnatlink <file.ali>     — link against the GNAT runtime
 
@@ -33,7 +33,7 @@ run gnatmake -q -f "$ADB"
 
 # Step 2 — replace the .o with one produced by lalvm.
 run mv "$OBJ" "${BASE}.gnat.o"
-run sh -c "lalvm --emit=llvm $ADB | llc -filetype=obj -o $OBJ"
+run lalvm --emit=obj "$ADB" -o "$OBJ"
 
 # Step 3 — bind.
 run gnatbind -x "$ALI"
