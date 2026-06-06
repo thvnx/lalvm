@@ -362,10 +362,21 @@ private:
   // everything else is ignored at this level and its children are visited.
   // Returning early (without visiting children) stops descent into a subtree
   // (used when a handler already walked it, e.g. mlirGenSubpBody visits stmts).
-  mlir::LogicalResult visit(ada_node &node) {
+  /// If `node` is an xref entry point that fails name resolution, emit
+  /// libadalang's diagnostics and return failure. The statement walker
+  /// (`visit`) and the declaration walker (`emitDecl`) both route through this,
+  /// so a resolution error is reported once, at the entry point, before codegen
+  /// descends into the unresolved subtree.
+  llvm::LogicalResult checkResolution(ada_node &node) {
     ada_bool isEntryPoint = 0;
     if (ada_ada_node_p_xref_entry_point(&node, &isEntryPoint) && isEntryPoint &&
         libadalang::emitSolverDiagnostics(&node))
+      return mlir::failure();
+    return mlir::success();
+  }
+
+  mlir::LogicalResult visit(ada_node &node) {
+    if (mlir::failed(checkResolution(node)))
       return mlir::failure();
 
     switch (ada_node_kind(&node)) {
@@ -1639,6 +1650,8 @@ private:
     // Emit one declaration at the current insertion point; no-op for kinds we
     // don't handle.
     auto emitDecl = [&](ada_node &decl) -> llvm::LogicalResult {
+      if (mlir::failed(checkResolution(decl)))
+        return mlir::failure();
       switch (ada_node_kind(&decl)) {
       case ada_number_decl:
         return mlirGenNumberDecl(decl);

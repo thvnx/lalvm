@@ -4,12 +4,15 @@
 
 #include "mlir/IR/Diagnostics.h"
 
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace libadalang = frontend::libadalang;
+
+#define DEBUG_TYPE "ada-nameres"
 
 static bool print_exception(bool or_silent) {
   const ada_exception *exc = ada_get_last_exception();
@@ -251,9 +254,31 @@ bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_internal_solver_diagnostic_array diags = nullptr;
   if (ada_ada_node_p_nameres_diagnostics(node, &diags) && diags &&
       diags->n > 0) {
+    // The solver tags each diagnostic with the round that produced it. Earlier
+    // rounds are intermediate exploration the solver later refines, so report
+    // only the last round's diagnostics to cut the noise.
+    int lastRound = 0;
+    for (int i = 0; i < diags->n; ++i)
+      if (diags->items[i].round > lastRound)
+        lastRound = diags->items[i].round;
+
+    LLVM_DEBUG({
+      for (int i = 0; i < diags->n; ++i) {
+        ada_internal_logic_context_array ctxs = diags->items[i].contexts;
+        llvm::dbgs() << "diag " << i << " round=" << diags->items[i].round
+                     << " nctx=" << (ctxs ? ctxs->n : 0) << "\n";
+        for (int j = 0; ctxs && j < ctxs->n; ++j)
+          llvm::dbgs() << "  ref_node="
+                       << libadalang::image(&ctxs->items[j].ref_node)
+                       << " decl_node="
+                       << libadalang::image(&ctxs->items[j].decl_node) << "\n";
+      }
+    });
+
     frontend::DiagnosticPrinter printer;
     for (int i = 0; i < diags->n; ++i)
-      printer.emitDiag(diags->items[i]);
+      if (diags->items[i].round == lastRound)
+        printer.emitDiag(diags->items[i]);
   } else {
     llvm::errs()
         << "error: name resolution failed but no diagnostics to report\n";

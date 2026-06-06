@@ -46,6 +46,18 @@ void frontend::DiagnosticPrinter::emitDiag(llvm::StringRef filename,
   free(msgBuf);
 }
 
+// Render a solver-diagnostic argument. These are usually entities (type or
+// object declarations), whose name lives on the defining name rather than the
+// node itself; `getName` only handles Name/DefiningName nodes. Resolve a
+// declaration to its defining name first, then fall back to `getName`.
+static std::string solverArgImage(ada_node &node) {
+  ada_node defName;
+  if (ada_basic_decl_p_defining_name(&node, &defName) &&
+      !ada_node_is_null(&defName))
+    return libadalang::getName(&defName, /*canonical=*/false);
+  return libadalang::getName(&node, /*canonical=*/false);
+}
+
 // Format a solver diagnostic message by substituting {} holes sequentially
 // with the source-text image of each node argument.
 static std::string
@@ -60,8 +72,7 @@ formatSolverDiag(const ada_internal_solver_diagnostic &diag) {
   // Remap known LAL solver messages to GNAT-style wording.
   // Template comes from @predicate_error annotations in nodes.lkt.
   if (tmpl == "cannot find name {}" && diag.args && diag.args->n >= 1)
-    return '"' + libadalang::getName(&diag.args->items[0], false) +
-           "\" is undefined";
+    return '"' + solverArgImage(diag.args->items[0]) + "\" is undefined";
 
   // General case: substitute {} holes sequentially with the source-text image
   // of each argument (mirrors Python's str.format(*args) used by Langkit).
@@ -71,13 +82,26 @@ formatSolverDiag(const ada_internal_solver_diagnostic &diag) {
   for (size_t i = 0; i < tmpl.size();) {
     if (tmpl[i] == '{' && i + 1 < tmpl.size() && tmpl[i + 1] == '}' &&
         diag.args && nextArg < diag.args->n) {
-      msg += libadalang::getName(&diag.args->items[nextArg++], false);
+      msg += solverArgImage(diag.args->items[nextArg++]);
       i += 2;
     } else {
       msg += tmpl[i++];
     }
   }
   return msg;
+}
+
+// Print "filename:line:col: error: <msg>" for a node's source location.
+static void emitNodeError(ada_node *node, llvm::StringRef msg) {
+  ada_source_location_range sloc = {{0, 0}, {0, 0}};
+  ada_node_sloc_range(node, &sloc);
+  ada_analysis_unit unit = ada_node_unit(node);
+  char *rawFilename = ada_unit_filename(unit);
+  printPrefix(llvm::sys::path::filename(rawFilename), sloc.start.line,
+              sloc.start.column);
+  free(rawFilename);
+  printSeverity(mlir::DiagnosticSeverity::Error);
+  llvm::errs() << msg << "\n";
 }
 
 void frontend::DiagnosticPrinter::emitDiag(
@@ -89,16 +113,22 @@ void frontend::DiagnosticPrinter::emitDiag(
   ada_node locNode;
   ada_create_bare_entity(diag.location, &locNode);
 
-  ada_source_location_range sloc = {{0, 0}, {0, 0}};
-  ada_node_sloc_range(&locNode, &sloc);
-  ada_analysis_unit unit = ada_node_unit(&locNode);
-  char *rawFilename = ada_unit_filename(unit);
-  printPrefix(llvm::sys::path::filename(rawFilename), sloc.start.line,
-              sloc.start.column);
-  free(rawFilename);
+  // When a constraint's reference resolved to no declaration, lead with a
+  // headline at the reference naming the unresolved candidate (e.g. the
+  // operator), then report the type detail at its own location below.
+  for (int i = 0; diag.contexts && i < diag.contexts->n; ++i) {
+    ada_node refNode = diag.contexts->items[i].ref_node;
+    ada_node declNode = diag.contexts->items[i].decl_node;
+    if (!ada_node_is_null(&refNode) && ada_node_is_null(&declNode)) {
+      ada_text text;
+      ada_node_text(&refNode, &text);
+      emitNodeError(&refNode, "no matching candidate for \"" +
+                                  libadalang::textToString(text) + "\"");
+      break;
+    }
+  }
 
-  printSeverity(mlir::DiagnosticSeverity::Error);
-  llvm::errs() << formatSolverDiag(diag) << "\n";
+  emitNodeError(&locNode, formatSolverDiag(diag));
 }
 
 void frontend::DiagnosticPrinter::emitDiag(mlir::Diagnostic &diag) const {
