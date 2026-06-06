@@ -666,6 +666,18 @@ private:
     return type_decl;
   }
 
+  /// Resolve a literal/static expression's concrete `ada.qual` type:
+  /// `resolveLiteralType` (expression type, falling back to the expected type
+  /// for universal types) wrapped via `getAdaQualType`. Returns a null QualType
+  /// (diagnostic already emitted) on failure.
+  mlir::ada::QualType resolveLiteralQualType(ada_node &node,
+                                             mlir::Location location) {
+    ada_node type_decl = resolveLiteralType(node, location);
+    if (ada_node_is_null(&type_decl))
+      return {};
+    return getAdaQualType(type_decl, location);
+  }
+
   /// Emit an ada.constant for an integer value. Range-checks the value against
   /// the target integer width; emits a diagnostic and returns nullptr on
   /// failure.
@@ -737,10 +749,7 @@ private:
     // required by the surrounding context (e.g. the return type of the
     // enclosing function).
     auto location = loc(node);
-    ada_node type_decl = resolveLiteralType(node, location);
-    if (ada_node_is_null(&type_decl))
-      return nullptr;
-    mlir::ada::QualType type = getAdaQualType(type_decl, location);
+    mlir::ada::QualType type = resolveLiteralQualType(node, location);
     if (!type)
       return nullptr;
     return emitIntConstant(*value, type, location);
@@ -783,10 +792,7 @@ private:
     // Real literals have universal_real type; fall back to the expected type
     // to get the concrete type required by the surrounding context.
     auto location = loc(node);
-    ada_node type_decl = resolveLiteralType(node, location);
-    if (ada_node_is_null(&type_decl))
-      return nullptr;
-    mlir::ada::QualType type = getAdaQualType(type_decl, location);
+    mlir::ada::QualType type = resolveLiteralQualType(node, location);
     if (!type)
       return nullptr;
     return emitRealConstant(*value, type, location);
@@ -1056,10 +1062,8 @@ private:
         auto value = evalRealLiteral(staticExpr);
         if (!value)
           return nullptr;
-        ada_node typDecl = resolveLiteralType(typeContext, loc(typeContext));
-        if (ada_node_is_null(&typDecl))
-          return nullptr;
-        mlir::ada::QualType type = getAdaQualType(typDecl, loc(typeContext));
+        mlir::ada::QualType type =
+            resolveLiteralQualType(typeContext, loc(typeContext));
         if (!type)
           return nullptr;
         return emitRealConstant(*value, type, loc(typeContext));
@@ -1104,10 +1108,7 @@ private:
         if (it != numberDecls.end()) {
           if (mlir::Value value = it->second) {
             mlir::Location exprLoc = loc(expr);
-            ada_node typDecl = resolveLiteralType(expr, exprLoc);
-            if (ada_node_is_null(&typDecl))
-              return nullptr;
-            mlir::ada::QualType tgtType = getAdaQualType(typDecl, exprLoc);
+            mlir::ada::QualType tgtType = resolveLiteralQualType(expr, exprLoc);
             if (!tgtType)
               return nullptr;
             return coerce(value, tgtType, exprLoc);
