@@ -1,6 +1,8 @@
 #ifndef FRONTEND_AST_H
 #define FRONTEND_AST_H
 
+#include <cstdint>
+#include <optional>
 #include <string>
 
 #include "llvm/ADT/StringRef.h"
@@ -30,6 +32,14 @@ std::string textToString(ada_text &text);
 
 /// Convert `bigint` to its decimal string representation, consuming it.
 std::string bigIntToString(ada_big_integer bigint);
+
+/// Convert `bigint` to an int64, consuming it. Returns nullopt if its decimal
+/// text does not parse or does not fit in int64.
+std::optional<int64_t> bigIntToInt64(ada_big_integer bigint);
+
+/// Convert `bigint` to a uint64, consuming it. Returns nullopt if its decimal
+/// text does not parse or does not fit in uint64.
+std::optional<uint64_t> bigIntToUInt64(ada_big_integer bigint);
 
 /// Wrapper that enables printing an ada_node via operator<<.
 /// Usage: llvm::errs() << libadalang::print(&node);

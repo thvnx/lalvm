@@ -709,28 +709,21 @@ private:
   /// Extract the integer value of an ada_int_literal node via
   /// `p_denoted_value`. Returns nullopt and emits a diagnostic on failure.
   std::optional<int64_t> evalIntLiteral(ada_node &node) {
-    // p_denoted_value gives us the evaluated integer value as a big integer.
-    // We convert it through its UTF-8 text representation since there is no
-    // direct C API to extract a 64-bit integer from ada_big_integer.
+    // p_denoted_value gives us the evaluated integer value as a big integer,
+    // which bigIntToInt64 narrows to int64.
     ada_big_integer bigint;
     if (!ada_int_literal_p_denoted_value(&node, &bigint)) {
       mlir::emitError(loc(node), "failed to evaluate integer literal");
       return std::nullopt;
     }
-    std::string literal = libadalang::bigIntToString(bigint);
-    errno = 0;
-    char *endptr;
-    int64_t value =
-        static_cast<int64_t>(std::strtoll(literal.c_str(), &endptr, 10));
-    if (endptr == literal.c_str()) {
-      mlir::emitError(loc(node), "failed to parse integer literal '")
-          << literal << "'";
-      return std::nullopt;
-    }
-    if (errno == ERANGE) {
+    auto value = libadalang::bigIntToInt64(bigint);
+    if (!value) {
+      // bigIntToInt64 consumed the big integer; render the offending value
+      // from the literal's source text.
+      ada_text text;
+      ada_node_text(&node, &text);
       mlir::emitError(loc(node), "integer literal ")
-          << literal << " out of range for i64";
-      return std::nullopt;
+          << libadalang::textToString(text) << " out of range for i64";
     }
     return value;
   }
@@ -1248,14 +1241,10 @@ private:
     case UniversalKind::Int: {
       ada_big_integer bigint;
       if (ada_expr_p_eval_as_int(&expr, &bigint)) {
-        std::string s = libadalang::bigIntToString(bigint);
-        errno = 0;
-        char *end;
-        int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
-        if (end != s.c_str() && errno != ERANGE) {
+        if (auto value = libadalang::bigIntToInt64(bigint)) {
           typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
           if (typeOp)
-            constAttr = mlir::IntegerAttr::get(builder.getI64Type(), value);
+            constAttr = mlir::IntegerAttr::get(builder.getI64Type(), *value);
         }
       }
       break;
@@ -1327,14 +1316,9 @@ private:
       mlir::emitError(location, "failed to get enum literal rep value");
       return std::nullopt;
     }
-    std::string s = libadalang::bigIntToString(bigint);
-    errno = 0;
-    char *end;
-    int64_t val = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
-    if (end == s.c_str() || errno == ERANGE) {
-      mlir::emitError(location, "enum rep value out of range: ") << s;
-      return std::nullopt;
-    }
+    auto val = libadalang::bigIntToInt64(bigint);
+    if (!val)
+      mlir::emitError(location, "enum rep value out of range");
     return val;
   }
 
@@ -1412,18 +1396,10 @@ private:
         if (!ada_expr_p_eval_as_int(&expr, &bigint))
           return mlir::emitError(location,
                                  "failed to evaluate modular type modulus");
-        std::string s = libadalang::bigIntToString(bigint);
-        errno = 0;
-        char *end;
-        modulus = std::strtoull(s.c_str(), &end, 10);
-        if (end == s.c_str())
-          return mlir::emitError(location,
-                                 "failed to parse modular type modulus '")
-                 << s << "'";
-        if (errno == ERANGE)
-          return mlir::emitError(location,
-                                 "modular type modulus out of range: ")
-                 << s;
+        auto modulusOpt = libadalang::bigIntToUInt64(bigint);
+        if (!modulusOpt)
+          return mlir::emitError(location, "modular type modulus out of range");
+        modulus = *modulusOpt;
         unsigned width = modulus <= (1ULL << 8)    ? 8
                          : modulus <= (1ULL << 16) ? 16
                          : modulus <= (1ULL << 32) ? 32
