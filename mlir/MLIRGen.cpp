@@ -35,6 +35,7 @@ namespace libadalang = frontend::libadalang;
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/ADT/bit.h"
 #include <cassert>
 #include <cerrno>
 #include <cstdint>
@@ -2256,9 +2257,13 @@ private:
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
-    // Enumeration types (@rm{3-5-1}): choose the smallest integer width that
-    // can hold the largest representation value (GNAT convention: up to 255 ->
-    // i8, up to 65535 -> i16, else i32).
+    // Enumeration types (@rm{3-5-1}): an ordinary enum uses the smallest
+    // integer width that holds its representation values as non-negative
+    // signed integers (see the width computation below). A character
+    // type is sized to its kind instead (Latin-1 -> i8, wider -> i16/i32): only
+    // the referenced character literals are materialized (see charLiteralRep),
+    // so maxRep is the max referenced code point, not the type's true upper
+    // bound.
     // TODO: negative representation values (@rm{13-4}) are not yet handled; the
     // width assumes a non-negative range.
     ada_node type_def;
@@ -2302,13 +2307,22 @@ private:
           return {};
         maxRep = std::max(maxRep, *rep);
       }
+      if (isChar) {
+        // Sized to the character kind, not the literals seen (see above).
+        if (maxRep <= 255)
+          return builder.getIntegerType(8);
+        if (maxRep <= 65535)
+          return builder.getIntegerType(16);
+        return builder.getIntegerType(32);
+      }
+      // Ordinary enum: smallest width holding 0 .. maxRep as non-negative
+      // *signed* values. MLIR prints and extends signless integers as signed,
+      // so the top rep must not set the sign bit. Boolean and single-literal
+      // enums stay i1, MLIR's special-cased bool.
       if (maxRep <= 1)
         return builder.getIntegerType(1);
-      if (maxRep <= 255)
-        return builder.getIntegerType(8);
-      if (maxRep <= 65535)
-        return builder.getIntegerType(16);
-      return builder.getIntegerType(32);
+      return builder.getIntegerType(
+          llvm::bit_width(static_cast<uint64_t>(maxRep)) + 1);
     }
 
     // f_name gives the defining identifier of the type declaration, whose

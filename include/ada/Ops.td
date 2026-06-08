@@ -105,7 +105,7 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
     Syntax example:
 
     ```mlir
-    ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
+    ada.type @color : i3 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
     ada.type @integer : i32 = #ada.numeric_info
     ```
   }];
@@ -354,7 +354,7 @@ def DeclsOp : Ada_Op<"decls", [NoTerminator, SingleBlock, SymbolTable]> {
     ada.subp @foo() {
       ada.decls {
         ada.subp @"foo.bar"() { ada.return }
-        ada.type @"foo.color" : i8 = #ada.enum_info<"red" = 0, "green" = 1>
+        ada.type @"foo.color" : i1 = #ada.enum_info<"red" = 0, "green" = 1>
       }
       ada.return
     }
