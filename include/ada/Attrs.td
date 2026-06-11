@@ -51,14 +51,24 @@ def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
   let hasCustomAssemblyFormat = 1;
 }
 
-// Marker attribute for numeric types. Reserved for future range-check metadata.
-def NumericTypeInfoAttr : AttrDef<Ada_Dialect, "NumericTypeInfo"> {
-  let mnemonic = "numeric_info";
-  let summary = "Numeric type metadata (integer or float)";
+// Metadata for integer types. A non-zero modulus marks a modular type
+// (@rm{3-5-4}), whose arithmetic wraps; signed integer types leave it at 0.
+// Reserved for future static bound metadata. The `mod` syntax mirrors the
+// Ada source (`mod 256`).
+def IntegerTypeInfoAttr : AttrDef<Ada_Dialect, "IntegerTypeInfo"> {
+  let mnemonic = "int_info";
+  let summary = "Integer type metadata";
   let parameters = (ins
     OptionalParameter<"uint64_t">:$modulus
   );
-  let assemblyFormat = "(`<` `mod` `=` $modulus^ `>`)?";
+  let assemblyFormat = "(`<` `mod` $modulus^ `>`)?";
+}
+
+// Marker attribute for floating-point types. Reserved for future digits and
+// static bound metadata.
+def FloatTypeInfoAttr : AttrDef<Ada_Dialect, "FloatTypeInfo"> {
+  let mnemonic = "float_info";
+  let summary = "Floating-point type metadata";
 }
 
 // Reference to an ada.type op by sym_name, for use as FusedLoc metadata in

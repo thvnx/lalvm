@@ -1350,7 +1350,7 @@ private:
   /// qualified Ada name (e.g. `standard.boolean`). In-place declarations get a
   /// local qualified symbol built from the enclosing scope (see declareSymbol).
   ///
-  /// @todo IntegerTypeInfoAttr, FloatTypeInfoAttr, RecordTypeInfoAttr, etc.
+  /// @todo FixedTypeInfoAttr, RecordTypeInfoAttr, etc.
   llvm::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
                                       bool external = false) {
     auto location = loc(type_decl);
@@ -1409,8 +1409,12 @@ private:
           return mlir::failure();
       }
 
-      auto typeInfo =
-          mlir::ada::NumericTypeInfoAttr::get(builder.getContext(), modulus);
+      mlir::Attribute typeInfo;
+      if (mlir::isa<mlir::FloatType>(mlirType))
+        typeInfo = mlir::ada::FloatTypeInfoAttr::get(builder.getContext());
+      else
+        typeInfo =
+            mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(), modulus);
       auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
                                                       mlirType, typeInfo);
       typeDecls[type_decl.node] = typeOp;

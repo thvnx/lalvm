@@ -88,8 +88,8 @@ static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
 static LLVM::DIBasicTypeAttr makeDINamedType(MLIRContext *ctx,
                                              ada::TypeOp typeOp) {
   // Modular types use DW_ATE_unsigned instead of DW_ATE_signed.
-  if (auto numInfo = dyn_cast<ada::NumericTypeInfoAttr>(typeOp.getTypeInfo()))
-    if (numInfo.getModulus())
+  if (auto intInfo = dyn_cast<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfo()))
+    if (intInfo.getModulus())
       return LLVM::DIBasicTypeAttr::get(
           ctx, llvm::dwarf::DW_TAG_base_type,
           ada::bareName(typeOp.getSymName()),
@@ -123,11 +123,12 @@ static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
 
 /// Dispatch to the appropriate DI type for a given ada.type op.
 /// Returns a DICompositeTypeAttr stub for enum types, a DIBasicTypeAttr for
-/// numeric types, and null for unsupported type info kinds.
+/// integer and float types, and null for unsupported type info kinds.
 static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   if (isa<ada::EnumTypeInfoAttr>(typeOp.getTypeInfo()))
     return makeDIEnumStub(ctx, typeOp);
-  if (!isa<ada::NumericTypeInfoAttr>(typeOp.getTypeInfo()))
+  if (!isa<ada::IntegerTypeInfoAttr, ada::FloatTypeInfoAttr>(
+          typeOp.getTypeInfo()))
     return {};
   return makeDINamedType(ctx, typeOp);
 }

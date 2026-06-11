@@ -106,7 +106,7 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 
     ```mlir
     ada.type @color : i3 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
-    ada.type @integer : i32 = #ada.numeric_info
+    ada.type @integer : i32 = #ada.int_info
     ```
   }];
   let arguments = (ins

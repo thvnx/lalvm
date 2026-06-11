@@ -173,8 +173,14 @@ void TypeOp::print(mlir::OpAsmPrinter &p) {
 }
 
 llvm::LogicalResult TypeOp::verify() {
-  if (!mlir::isa<EnumTypeInfoAttr, NumericTypeInfoAttr>(getTypeInfo()))
+  if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr>(
+          getTypeInfo()))
     return emitOpError() << "unsupported type_info attribute kind";
+  bool kindMatches = mlir::isa<FloatTypeInfoAttr>(getTypeInfo())
+                         ? mlir::isa<mlir::FloatType>(getMlirType())
+                         : mlir::isa<mlir::IntegerType>(getMlirType());
+  if (!kindMatches)
+    return emitOpError() << "type_info kind does not match mlir_type";
   return mlir::success();
 }
 

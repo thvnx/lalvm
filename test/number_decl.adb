@@ -5,8 +5,8 @@
 -- DWARF debug info (universal type). At each use site, the value is re-emitted
 -- in the concrete MLIR type resolved from the use context.
 
--- MLIR: ada.type @standard.universal_real_type_ : f64 = #ada.numeric_info
--- MLIR: ada.type @standard.universal_int_type_ : i64 = #ada.numeric_info
+-- MLIR: ada.type @standard.universal_real_type_ : f64 = #ada.float_info
+-- MLIR: ada.type @standard.universal_int_type_ : i64 = #ada.int_info
 -- MLIR-LABEL: ada.subp @number_decl()
 -- MLIR:         ada.subp private @number_decl.f() -> !ada.qual<i32, @standard.integer>
 -- MLIR:           %[[UMAX:.*]] = ada.constant : !ada.qual<i64, @standard.universal_int_type_> = 200

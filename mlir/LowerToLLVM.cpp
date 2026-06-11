@@ -134,9 +134,9 @@ struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
           if (auto *sym = mlir::SymbolTable::lookupNearestSymbolFrom(
                   op, inTyped.getAdaType().getRootReference()))
             if (auto typeOp = mlir::dyn_cast<ada::TypeOp>(sym))
-              if (auto numInfo = mlir::dyn_cast<ada::NumericTypeInfoAttr>(
+              if (auto intInfo = mlir::dyn_cast<ada::IntegerTypeInfoAttr>(
                       typeOp.getTypeInfo()))
-                isModular = numInfo.getModulus() != 0;
+                isModular = intInfo.getModulus() != 0;
           newOp = isModular
                       ? rewriter.create<arith::ExtUIOp>(loc, resultType, input)
                       : rewriter.create<arith::ExtSIOp>(loc, resultType, input);

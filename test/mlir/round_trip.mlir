@@ -10,11 +10,14 @@ module {
   // CHECK: ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
   ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
 
-  // CHECK: ada.type @integer : i32 = #ada.numeric_info
-  ada.type @integer : i32 = #ada.numeric_info
+  // CHECK: ada.type @integer : i32 = #ada.int_info
+  ada.type @integer : i32 = #ada.int_info
 
-  // CHECK: ada.type @byte : i32 = #ada.numeric_info<mod = 256>
-  ada.type @byte : i32 = #ada.numeric_info<mod = 256>
+  // CHECK: ada.type @byte : i32 = #ada.int_info<mod 256>
+  ada.type @byte : i32 = #ada.int_info<mod 256>
+
+  // CHECK: ada.type @float : f32 = #ada.float_info
+  ada.type @float : f32 = #ada.float_info
 
   // CHECK-LABEL: ada.subp @ops
   ada.subp @ops(%a: !ada.qual<i32, @integer>, %b: !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer> {
