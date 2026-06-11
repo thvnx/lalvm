@@ -16,8 +16,11 @@ module {
   // CHECK: ada.type @byte : i32 = #ada.int_info<mod 256>
   ada.type @byte : i32 = #ada.int_info<mod 256>
 
-  // CHECK: ada.type @float : f32 = #ada.float_info
-  ada.type @float : f32 = #ada.float_info
+  // CHECK: ada.type @float : f32 = #ada.float_info<digits 6>
+  ada.type @float : f32 = #ada.float_info<digits 6>
+
+  // CHECK: ada.type @universal_real : f64 = #ada.float_info
+  ada.type @universal_real : f64 = #ada.float_info
 
   // CHECK-LABEL: ada.subp @ops
   ada.subp @ops(%a: !ada.qual<i32, @integer>, %b: !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer> {

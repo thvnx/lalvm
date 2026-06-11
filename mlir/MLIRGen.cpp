@@ -1410,11 +1410,35 @@ private:
       }
 
       mlir::Attribute typeInfo;
-      if (mlir::isa<mlir::FloatType>(mlirType))
-        typeInfo = mlir::ada::FloatTypeInfoAttr::get(builder.getContext());
-      else
+      if (mlir::isa<mlir::FloatType>(mlirType)) {
+        // The C API exposes no semantic digits property; evaluate the
+        // floating_point_def's num_digits expression, which is static by
+        // definition (@rm{3-5-7}). Universal real has no type_def and keeps
+        // digits at 0 (not printed, like a 0 modulus).
+        uint32_t digits = 0;
+        ada_node float_def{};
+        if (ada_type_decl_f_type_def(&type_decl, &float_def) &&
+            !ada_node_is_null(&float_def) &&
+            ada_node_kind(&float_def) == ada_floating_point_def) {
+          ada_node digits_expr;
+          ada_big_integer bigint;
+          if (!ada_floating_point_def_f_num_digits(&float_def, &digits_expr) ||
+              ada_node_is_null(&digits_expr) ||
+              !ada_expr_p_eval_as_int(&digits_expr, &bigint))
+            return mlir::emitError(
+                location, "failed to evaluate floating-point type digits");
+          auto value = libadalang::bigIntToUInt64(bigint);
+          if (!value)
+            return mlir::emitError(location,
+                                   "floating-point type digits out of range");
+          digits = static_cast<uint32_t>(*value);
+        }
+        typeInfo =
+            mlir::ada::FloatTypeInfoAttr::get(builder.getContext(), digits);
+      } else {
         typeInfo =
             mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(), modulus);
+      }
       auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
                                                       mlirType, typeInfo);
       typeDecls[type_decl.node] = typeOp;

@@ -64,11 +64,17 @@ def IntegerTypeInfoAttr : AttrDef<Ada_Dialect, "IntegerTypeInfo"> {
   let assemblyFormat = "(`<` `mod` $modulus^ `>`)?";
 }
 
-// Marker attribute for floating-point types. Reserved for future digits and
-// static bound metadata.
+// Metadata for floating-point types. `digits` is the requested decimal
+// precision (@rm{3-5-7}); 0 when the type has none (universal_real). The
+// syntax mirrors the Ada source (`digits 6`). Reserved for future static
+// bound metadata.
 def FloatTypeInfoAttr : AttrDef<Ada_Dialect, "FloatTypeInfo"> {
   let mnemonic = "float_info";
   let summary = "Floating-point type metadata";
+  let parameters = (ins
+    OptionalParameter<"uint32_t">:$digits
+  );
+  let assemblyFormat = "(`<` `digits` $digits^ `>`)?";
 }
 
 // Reference to an ada.type op by sym_name, for use as FusedLoc metadata in
