@@ -12,6 +12,8 @@
 -- MLIR-NEXT:      ada.type @subtype_decl.int base @standard.integer : i32
 -- MLIR-NEXT:      ada.type @subtype_decl.e6 : i4 = #ada.enum_info<"a" = 0, "b" = 1, "c" = 2, "d" = 3, "e" = 4, "f" = 5>
 -- MLIR-NEXT:      ada.type @subtype_decl.mid base @subtype_decl.e6 : i4 = #ada.enum_info<range 1 to 3>
+-- MLIR-NEXT:      ada.type @subtype_decl.b8 : i8 = #ada.int_info<mod 256>
+-- MLIR-NEXT:      ada.type @subtype_decl.half base @subtype_decl.b8 : i8 = #ada.int_info<range 0 to 127>
 
 -- LLVM-LABEL: define void @_ada_subtype_decl(
 
@@ -21,6 +23,8 @@ procedure Subtype_Decl is
    subtype Int is Integer;
    type E6 is (A, B, C, D, E, F);
    subtype Mid is E6 range B .. D;
+   type B8 is mod 256;
+   subtype Half is B8 range 0 .. 127;
    X : Small := 42;
 begin
    null;
