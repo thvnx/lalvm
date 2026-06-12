@@ -85,36 +85,91 @@ std::optional<int64_t> EnumTypeInfoAttr::enumRep(llvm::StringRef name) const {
   return std::nullopt;
 }
 
-/// Assembly format: <"name1" = val1, "name2" = val2>
+/// Shared `LO to HI` bounds syntax of the type info attributes (see
+/// IntegerTypeInfoAttr for the encoding). The minimal-width storage must
+/// match MLIRGen's rangeBoundAttr.
+static mlir::ParseResult parseRangeBounds(mlir::AsmParser &parser,
+                                          mlir::Attribute &lower,
+                                          mlir::Attribute &upper) {
+  auto parseBound = [&](mlir::Attribute &bound) -> mlir::ParseResult {
+    if (succeeded(parser.parseOptionalQuestion())) {
+      bound = mlir::UnitAttr::get(parser.getContext());
+      return mlir::success();
+    }
+    llvm::APInt value;
+    mlir::OptionalParseResult res = parser.parseOptionalInteger(value);
+    if (!res.has_value() || failed(*res))
+      return parser.emitError(parser.getCurrentLocation(),
+                              "expected integer or `?` range bound");
+    unsigned bits = value.getSignificantBits();
+    bound = mlir::IntegerAttr::get(
+        mlir::IntegerType::get(parser.getContext(), bits),
+        value.sextOrTrunc(bits));
+    return mlir::success();
+  };
+  if (parseBound(lower) || parser.parseKeyword("to") || parseBound(upper))
+    return mlir::failure();
+  return mlir::success();
+}
+
+static void printRangeBounds(mlir::AsmPrinter &p, mlir::IntegerAttr lower,
+                             mlir::IntegerAttr upper) {
+  auto printBound = [&](mlir::IntegerAttr bound) {
+    if (bound)
+      bound.getValue().print(p.getStream(), /*isSigned=*/true);
+    else
+      p << '?';
+  };
+  p << "range ";
+  printBound(lower);
+  p << " to ";
+  printBound(upper);
+}
+
+/// Assembly format: `<"name1" = val1, "name2" = val2>` for an enumeration
+/// declaration; `<range LO to HI>` for a constrained enum subtype (bounds
+/// are representation values).
 mlir::Attribute EnumTypeInfoAttr::parse(mlir::AsmParser &parser, mlir::Type) {
   llvm::SmallVector<mlir::Attribute> names;
   llvm::SmallVector<int64_t> values;
+  mlir::Attribute lower, upper;
 
-  if (parser.parseCommaSeparatedList(
-          mlir::AsmParser::Delimiter::LessGreater, [&]() -> mlir::ParseResult {
-            std::string s;
-            int64_t val;
-            if (parser.parseString(&s) || parser.parseEqual() ||
-                parser.parseInteger(val))
-              return mlir::failure();
-            names.push_back(mlir::StringAttr::get(parser.getContext(), s));
-            values.push_back(val);
-            return mlir::success();
-          }))
+  if (parser.parseLess())
+    return {};
+  if (succeeded(parser.parseOptionalKeyword("range"))) {
+    if (parseRangeBounds(parser, lower, upper))
+      return {};
+  } else if (parser.parseCommaSeparatedList([&]() -> mlir::ParseResult {
+               std::string s;
+               int64_t val;
+               if (parser.parseString(&s) || parser.parseEqual() ||
+                   parser.parseInteger(val))
+                 return mlir::failure();
+               names.push_back(mlir::StringAttr::get(parser.getContext(), s));
+               values.push_back(val);
+               return mlir::success();
+             })) {
+    return {};
+  }
+  if (parser.parseGreater())
     return {};
 
   return EnumTypeInfoAttr::get(parser.getContext(),
                                mlir::ArrayAttr::get(parser.getContext(), names),
-                               values);
+                               values, lower, upper);
 }
 
 void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
   p << '<';
-  llvm::interleaveComma(literals(), p.getStream(), [&](auto pair) {
-    auto [name, val] = pair;
-    p.printString(name);
-    p << " = " << val;
-  });
+  if (hasRange()) {
+    printRangeBounds(p, staticLower(), staticUpper());
+  } else {
+    llvm::interleaveComma(literals(), p.getStream(), [&](auto pair) {
+      auto [name, val] = pair;
+      p.printString(name);
+      p << " = " << val;
+    });
+  }
   p << '>';
 }
 
@@ -136,27 +191,7 @@ mlir::Attribute IntegerTypeInfoAttr::parse(mlir::AsmParser &parser,
   }
 
   if (expectRange) {
-    // Static bounds are stored at minimal signed width, the canonical form
-    // shared with emission (see staticBoundAttr in MLIRGen); dynamic bounds
-    // are UnitAttr.
-    auto parseBound = [&](mlir::Attribute &bound) -> mlir::ParseResult {
-      if (succeeded(parser.parseOptionalQuestion())) {
-        bound = mlir::UnitAttr::get(parser.getContext());
-        return mlir::success();
-      }
-      llvm::APInt value;
-      mlir::OptionalParseResult res = parser.parseOptionalInteger(value);
-      if (!res.has_value() || failed(*res))
-        return parser.emitError(parser.getCurrentLocation(),
-                                "expected integer or `?` range bound");
-      unsigned bits = value.getSignificantBits();
-      bound = mlir::IntegerAttr::get(
-          mlir::IntegerType::get(parser.getContext(), bits),
-          value.sextOrTrunc(bits));
-      return mlir::success();
-    };
-    if (parser.parseKeyword("range") || parseBound(lower) ||
-        parser.parseKeyword("to") || parseBound(upper))
+    if (parser.parseKeyword("range") || parseRangeBounds(parser, lower, upper))
       return {};
   }
 
@@ -175,18 +210,8 @@ void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
     if (hasRange())
       p << ", ";
   }
-  if (hasRange()) {
-    auto printBound = [&](mlir::IntegerAttr bound) {
-      if (bound)
-        bound.getValue().print(p.getStream(), /*isSigned=*/true);
-      else
-        p << '?';
-    };
-    p << "range ";
-    printBound(staticLower());
-    p << " to ";
-    printBound(staticUpper());
-  }
+  if (hasRange())
+    printRangeBounds(p, staticLower(), staticUpper());
   p << '>';
 }
 
@@ -200,7 +225,7 @@ void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
 /// @param name       Ada type declaration name.
 /// @param mlirType   Corresponding MLIR type; wrapped in a `TypeAttr`.
 /// @param typeInfo   Kind-specific metadata; one of the Ada dialect type info
-///                   attributes.
+///                   attributes, or null (unconstrained subtype).
 /// @param base       Canonical base type symbol; null when the type is its
 ///                   own base.
 void TypeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
@@ -210,7 +235,8 @@ void TypeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                      builder.getStringAttr(name));
   state.addAttribute(getMlirTypeAttrName(state.name),
                      mlir::TypeAttr::get(mlirType));
-  state.addAttribute(getTypeInfoAttrName(state.name), typeInfo);
+  if (typeInfo)
+    state.addAttribute(getTypeInfoAttrName(state.name), typeInfo);
   if (base)
     state.addAttribute(getBaseAttrName(state.name), base);
 }
@@ -237,12 +263,12 @@ mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
   result.addAttribute(getMlirTypeAttrName(result.name),
                       mlir::TypeAttr::get(mlirType));
 
-  if (parser.parseEqual())
-    return mlir::failure();
-  mlir::Attribute typeInfo;
-  if (parser.parseAttribute(typeInfo, getTypeInfoAttrName(result.name),
-                            result.attributes))
-    return mlir::failure();
+  if (succeeded(parser.parseOptionalEqual())) {
+    mlir::Attribute typeInfo;
+    if (parser.parseAttribute(typeInfo, getTypeInfoAttrName(result.name),
+                              result.attributes))
+      return mlir::failure();
+  }
 
   return mlir::success();
 }
@@ -256,19 +282,26 @@ void TypeOp::print(mlir::OpAsmPrinter &p) {
   }
   p << " : ";
   p.printType(getMlirType());
-  p << " = ";
-  p.printAttribute(getTypeInfo());
+  if (auto typeInfo = getTypeInfoAttr()) {
+    p << " = ";
+    p.printAttribute(typeInfo);
+  }
 }
 
 llvm::LogicalResult TypeOp::verify() {
-  if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr>(
-          getTypeInfo()))
-    return emitOpError() << "unsupported type_info attribute kind";
-  bool kindMatches = mlir::isa<FloatTypeInfoAttr>(getTypeInfo())
-                         ? mlir::isa<mlir::FloatType>(getMlirType())
-                         : mlir::isa<mlir::IntegerType>(getMlirType());
-  if (!kindMatches)
-    return emitOpError() << "type_info kind does not match mlir_type";
+  if (mlir::Attribute info = getTypeInfoAttr()) {
+    if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr>(
+            info))
+      return emitOpError() << "unsupported type_info attribute kind";
+    bool kindMatches = mlir::isa<FloatTypeInfoAttr>(info)
+                           ? mlir::isa<mlir::FloatType>(getMlirType())
+                           : mlir::isa<mlir::IntegerType>(getMlirType());
+    if (!kindMatches)
+      return emitOpError() << "type_info kind does not match mlir_type";
+  } else if (!getBaseAttr()) {
+    return emitOpError()
+           << "type without a base must carry a type_info attribute";
+  }
   if (auto base = getBaseAttr()) {
     // Best-effort cross-check: hoisting moves type symbols across scopes
     // mid-pipeline, so an unresolved base is not an error here.

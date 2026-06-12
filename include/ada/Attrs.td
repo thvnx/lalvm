@@ -21,13 +21,19 @@ include "Dialect.td"
 // Ada Type Info Attributes
 //===----------------------------------------------------------------------===//
 
-// Carries enumerator names and representation values for an enumeration type.
+// Carries enumerator names and representation values for an enumeration
+// type, or, on a constrained enum subtype, the constraint's representation
+// range instead (bound encoding as in int_info). Literals and range are
+// mutually exclusive: literals belong to the declaring type, constraints to
+// subtypes.
 def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
   let mnemonic = "enum_info";
   let summary = "Enumeration type metadata";
   let parameters = (ins
     AttrOrTypeParameter<"::mlir::ArrayAttr", "enumerator names, lowercased">:$names,
-    ArrayRefParameter<"int64_t", "integer representation values">:$values
+    ArrayRefParameter<"int64_t", "integer representation values">:$values,
+    OptionalParameter<"mlir::Attribute">:$lower,
+    OptionalParameter<"mlir::Attribute">:$upper
   );
   let extraClassDeclaration = [{
     /// Returns the integer representation value for the given enumerator name,
@@ -38,15 +44,27 @@ def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
       return llvm::zip_equal(getNames().getAsValueRange<::mlir::StringAttr>(),
                              getValues());
     }
+    /// Whether a range constraint is recorded (its bounds may be dynamic).
+    bool hasRange() const { return getLower() || getUpper(); }
+    /// The static value of a bound, or null when it is dynamic or absent.
+    mlir::IntegerAttr staticLower() const {
+      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getLower());
+    }
+    mlir::IntegerAttr staticUpper() const {
+      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpper());
+    }
   }];
   let description = [{
     Carries the enumerator names and their integer representation values for
     an Ada enumeration type. Names are stored lowercased to match Ada's
-    case-insensitivity rules.
+    case-insensitivity rules. On a constrained enum subtype it carries the
+    constraint's representation range instead.
 
     Syntax:
 
         <"name1" = val1, "name2" = val2, ...>
+        <range 1 to 3>
+        <range 1 to ?>
   }];
   let hasCustomAssemblyFormat = 1;
 }

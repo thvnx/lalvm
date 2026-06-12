@@ -909,7 +909,7 @@ private:
     // than querying Libadalang again: ada.type is the single source of truth
     // for enum type information within the pipeline.
     auto typeInfo =
-        mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
+        mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
     auto value = typeInfo.enumRep(litName);
     if (!value) {
       mlir::emitError(location, "enum literal '")
@@ -1343,9 +1343,112 @@ private:
     return codePoint;
   }
 
-  /// Emit an ada.type op for an Ada type declaration (@rm{3-1}). Currently only
-  /// enumeration types (@rm{3-5-1}) are handled; other kinds are silently
-  /// skipped and will be added as support for each kind is implemented.
+  /// Whether mlirGenTypeDecl handles this declaration: numeric, universal,
+  /// or enumeration types, or subtypes thereof (by canonical type). The
+  /// declarative-part walk skips the rest; they fail only when referenced.
+  bool isSupportedTypeDecl(ada_node &decl) {
+    ada_node canon = decl;
+    if (ada_node_kind(&decl) == ada_subtype_decl &&
+        (!ada_base_type_decl_p_canonical_type(&decl, &libadalang::kNullOrigin,
+                                              &canon) ||
+         ada_node_is_null(&canon)))
+      return false;
+    return libadalang::isUniversalTypeDecl(canon) ||
+           libadalang::isNumericTypeDecl(canon) ||
+           libadalang::isEnumTypeDecl(canon);
+  }
+
+  /// Build a type declaration's unique dialect symbol (see declareSymbol).
+  /// Emits a diagnostic and fails when the declaration has no name.
+  llvm::FailureOr<std::string> resolveTypeDeclName(ada_node &type_decl,
+                                                   bool external) {
+    ada_node nameNode;
+    if (!ada_base_type_decl_f_name(&type_decl, &nameNode) ||
+        ada_node_is_null(&nameNode)) {
+      mlir::emitError(loc(type_decl), "failed to get type name");
+      return mlir::failure();
+    }
+    return declareSymbol(canonicalDefName(nameNode),
+                         libadalang::getName(&nameNode, /*canonical=*/true),
+                         external);
+  }
+
+  /// Emit the ada.type for a subtype declaration (@rm{3-2-2}): representation
+  /// and `base` link come from the canonical type; type_info records only the
+  /// declaration's own constraint. Enum bounds resolve via the base metadata,
+  /// never eval_as_int (which yields positions; rep order equals position
+  /// order, @rm{13-4}); an unresolvable bound is dynamic (`?`).
+  /// @todo Record float subtype constraints once float_info models bounds.
+  llvm::LogicalResult mlirGenSubtypeDecl(ada_node &type_decl, bool external) {
+    auto location = loc(type_decl);
+    ada_node canon;
+    if (!ada_base_type_decl_p_canonical_type(
+            &type_decl, &libadalang::kNullOrigin, &canon) ||
+        ada_node_is_null(&canon))
+      return mlir::emitError(location,
+                             "failed to resolve the subtype's base type");
+    mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon, location);
+    if (!baseOp)
+      return mlir::failure();
+
+    auto typeName = resolveTypeDeclName(type_decl, external);
+    if (mlir::failed(typeName))
+      return mlir::failure();
+
+    mlir::Attribute typeInfo;
+    ada_node indication{}, constraint{};
+    ada_internal_discrete_range range{};
+    bool constrained =
+        ada_subtype_decl_f_subtype(&type_decl, &indication) &&
+        !ada_node_is_null(&indication) &&
+        ada_subtype_indication_f_constraint(&indication, &constraint) &&
+        !ada_node_is_null(&constraint) &&
+        ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
+        !ada_node_is_null(&range.low_bound) &&
+        !ada_node_is_null(&range.high_bound);
+    mlir::Attribute baseInfo =
+        constrained ? baseOp.getTypeInfoAttr() : mlir::Attribute();
+    if (mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(baseInfo)) {
+      typeInfo = mlir::ada::IntegerTypeInfoAttr::get(
+          builder.getContext(), /*modulus=*/0, rangeBoundAttr(range.low_bound),
+          rangeBoundAttr(range.high_bound));
+    } else if (auto enumInfo =
+                   mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
+                       baseInfo)) {
+      auto repOf = [&](ada_node &bound) -> std::optional<int64_t> {
+        ada_node lit{};
+        if (!ada_name_p_referenced_decl(&bound, /*imprecise_fallback=*/0,
+                                        &lit) ||
+            ada_node_is_null(&lit) ||
+            ada_node_kind(&lit) != ada_enum_literal_decl)
+          return std::nullopt;
+        ada_node litName{};
+        if (!ada_enum_literal_decl_f_name(&lit, &litName) ||
+            ada_node_is_null(&litName))
+          return std::nullopt;
+        return enumInfo.enumRep(libadalang::getName(&litName));
+      };
+      auto boundAttr = [&](ada_node &bound) -> mlir::Attribute {
+        if (std::optional<int64_t> rep = repOf(bound))
+          return minimalWidthIntAttr(llvm::APInt(64, *rep, /*isSigned=*/true));
+        return mlir::UnitAttr::get(builder.getContext());
+      };
+      typeInfo = mlir::ada::EnumTypeInfoAttr::get(
+          builder.getContext(), builder.getArrayAttr({}), /*values=*/{},
+          boundAttr(range.low_bound), boundAttr(range.high_bound));
+    }
+
+    auto typeOp = builder.create<mlir::ada::TypeOp>(
+        location, *typeName, baseOp.getMlirType(), typeInfo,
+        mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
+    typeDecls[type_decl.node] = typeOp;
+    return mlir::success();
+  }
+
+  /// Emit an ada.type op for an Ada type declaration (@rm{3-1}): enumeration
+  /// (@rm{3-5-1}), numeric and universal types, and subtype declarations
+  /// (@rm{3-2-2}, see mlirGenSubtypeDecl). Other kinds are silently skipped
+  /// and will be added as support for each kind is implemented.
   ///
   /// `external` is set by lookupOrEmitTypeOp's lazy path (predefined/Standard
   /// types, emitted at module level): the symbol name uses the canonical fully
@@ -1357,24 +1460,14 @@ private:
                                       bool external = false) {
     auto location = loc(type_decl);
 
-    // Build the type's unique dialect symbol (see declareSymbol).
-    auto resolveTypeName = [&]() -> llvm::FailureOr<std::string> {
-      ada_node nameNode;
-      if (!ada_base_type_decl_f_name(&type_decl, &nameNode) ||
-          ada_node_is_null(&nameNode)) {
-        mlir::emitError(location, "failed to get type name");
-        return mlir::failure();
-      }
-      return declareSymbol(canonicalDefName(nameNode),
-                           libadalang::getName(&nameNode, /*canonical=*/true),
-                           external);
-    };
+    if (ada_node_kind(&type_decl) == ada_subtype_decl)
+      return mlirGenSubtypeDecl(type_decl, external);
 
     // Universal types (@rm{3-4-1}) and numeric types
     // (@rm{3-5-4}, @rm{3.5.6}, @rm{3.5.7}).
     if (libadalang::isUniversalTypeDecl(type_decl) ||
         libadalang::isNumericTypeDecl(type_decl)) {
-      auto typeName = resolveTypeName();
+      auto typeName = resolveTypeDeclName(type_decl, external);
       if (mlir::failed(typeName))
         return mlir::failure();
 
@@ -1430,13 +1523,8 @@ private:
           if (ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
               !ada_node_is_null(&range.low_bound) &&
               !ada_node_is_null(&range.high_bound)) {
-            auto boundAttr = [&](ada_node &bound) -> mlir::Attribute {
-              if (mlir::IntegerAttr attr = staticBoundAttr(bound))
-                return attr;
-              return mlir::UnitAttr::get(builder.getContext());
-            };
-            lower = boundAttr(range.low_bound);
-            upper = boundAttr(range.high_bound);
+            lower = rangeBoundAttr(range.low_bound);
+            upper = rangeBoundAttr(range.high_bound);
           }
         }
         typeInfo = mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(),
@@ -1471,7 +1559,7 @@ private:
     if (!mlirType)
       return mlir::failure();
 
-    auto typeName = resolveTypeName();
+    auto typeName = resolveTypeDeclName(type_decl, external);
     if (mlir::failed(typeName))
       return mlir::failure();
 
@@ -1512,7 +1600,8 @@ private:
 
     auto typeInfo = mlir::ada::EnumTypeInfoAttr::get(
         builder.getContext(),
-        mlir::ArrayAttr::get(builder.getContext(), nameAttrs), values);
+        mlir::ArrayAttr::get(builder.getContext(), nameAttrs), values,
+        /*lower=*/{}, /*upper=*/{});
     auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
                                                     mlirType, typeInfo);
     typeDecls[type_decl.node] = typeOp;
@@ -1688,7 +1777,10 @@ private:
       case ada_object_decl:
         return mlirGenObjectDecl(decl);
       case ada_concrete_type_decl:
-        return mlirGenTypeDecl(decl);
+      case ada_subtype_decl:
+        if (isSupportedTypeDecl(decl))
+          return mlirGenTypeDecl(decl);
+        return mlir::success();
       case ada_subp_body:
         return mlirGenSubpBody(decl) ? mlir::success() : mlir::failure();
       default:
@@ -1697,9 +1789,11 @@ private:
     };
     // ada.subp/ada.type are symbols routed into the interior ada.decls; locals
     // (objects, numbers) stay inline in the region.
-    auto isSymbol = [](ada_node &decl) {
+    auto isSymbol = [&](ada_node &decl) {
       auto kind = ada_node_kind(&decl);
-      return kind == ada_concrete_type_decl || kind == ada_subp_body;
+      return ((kind == ada_concrete_type_decl || kind == ada_subtype_decl) &&
+              isSupportedTypeDecl(decl)) ||
+             kind == ada_subp_body;
     };
 
     bool hasSymbols = false;
@@ -2019,8 +2113,8 @@ private:
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(bool_decl, location);
     if (!typeOp)
       return nullptr;
-    auto enumInfo =
-        mlir::dyn_cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
+    auto enumInfo = mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
     if (!enumInfo) {
       mlir::emitError(location, "Boolean type missing enum metadata");
       return nullptr;
@@ -2289,20 +2383,22 @@ private:
     return mlir::success();
   }
 
-  /// Evaluate one bound expression of a discrete range to an IntegerAttr of
-  /// minimal signed width, the canonical form shared with the int_info
-  /// parser. Returns null (the dynamic bound, printed `?`) when the bound is
-  /// missing or not static.
-  mlir::IntegerAttr staticBoundAttr(ada_node &bound) {
-    ada_big_integer bigint;
-    if (ada_node_is_null(&bound) || !ada_expr_p_eval_as_int(&bound, &bigint))
-      return {};
-    auto value = libadalang::bigIntToAPInt(bigint);
-    if (!value)
-      return {};
-    unsigned bits = value->getSignificantBits();
+  /// Minimal-signed-width IntegerAttr, the canonical bound form shared with
+  /// the info attr parsers.
+  mlir::IntegerAttr minimalWidthIntAttr(const llvm::APInt &value) {
+    unsigned bits = value.getSignificantBits();
     return mlir::IntegerAttr::get(builder.getIntegerType(bits),
-                                  value->sextOrTrunc(bits));
+                                  value.sextOrTrunc(bits));
+  }
+
+  /// One range bound as type info metadata: minimalWidthIntAttr of its
+  /// static value, or UnitAttr (`?`) when it is missing or not static.
+  mlir::Attribute rangeBoundAttr(ada_node &bound) {
+    ada_big_integer bigint;
+    if (!ada_node_is_null(&bound) && ada_expr_p_eval_as_int(&bound, &bigint))
+      if (auto value = libadalang::bigIntToAPInt(bigint))
+        return minimalWidthIntAttr(*value);
+    return mlir::UnitAttr::get(builder.getContext());
   }
 
   /// Evaluate the decimal digits of a floating-point type declaration

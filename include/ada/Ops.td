@@ -102,7 +102,10 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 
     `type_info` is one of the Ada dialect type info attributes. `base` names
     the canonical base type when the declaration is a subtype; absent when
-    the type is its own base.
+    the type is its own base. An op records only what its own declaration
+    says: a subtype that adds no constraint is a pure renaming and carries no
+    `type_info` at all; consumers follow `base` for inherited metadata
+    (DWARF's typedef-vs-subrange distinction depends on this).
 
     Syntax example:
 
@@ -110,12 +113,13 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
     ada.type @color : i3 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
     ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
     ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
+    ada.type @int base @integer : i32
     ```
   }];
   let arguments = (ins
     SymbolNameAttr:$sym_name,                 // Ada type declaration name
     TypeAttr:$mlir_type,                      // Corresponding MLIR type
-    AnyAttr:$type_info,                       // Kind-specific metadata
+    OptionalAttr<AnyAttr>:$type_info,         // Declaration-own metadata
     OptionalAttr<FlatSymbolRefAttr>:$base     // Canonical base type, if any
   );
 

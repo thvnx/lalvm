@@ -128,15 +128,28 @@ struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
         if (dstInt.getWidth() < srcInt.getWidth()) {
           newOp = rewriter.create<arith::TruncIOp>(loc, resultType, input);
         } else {
-          // Modular (unsigned) source types need zero-extension.
+          // Modular (unsigned) source types need zero-extension. The modulus
+          // is a base type property (a subtype's int_info records only its
+          // range), so walk `base` links until a nonzero modulus or the
+          // chain ends.
           auto inTyped = mlir::cast<ada::QualType>(op.getInput().getType());
           bool isModular = false;
-          if (auto *sym = mlir::SymbolTable::lookupNearestSymbolFrom(
-                  op, inTyped.getAdaType().getRootReference()))
-            if (auto typeOp = mlir::dyn_cast<ada::TypeOp>(sym))
-              if (auto intInfo = mlir::dyn_cast<ada::IntegerTypeInfoAttr>(
-                      typeOp.getTypeInfo()))
-                isModular = intInfo.getModulus() != 0;
+          auto *sym = mlir::SymbolTable::lookupNearestSymbolFrom(
+              op, inTyped.getAdaType().getRootReference());
+          auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(sym);
+          while (typeOp) {
+            auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
+                typeOp.getTypeInfoAttr());
+            if (intInfo && intInfo.getModulus() != 0) {
+              isModular = true;
+              break;
+            }
+            auto baseAttr = typeOp.getBaseAttr();
+            if (!baseAttr)
+              break;
+            typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
+                mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
+          }
           newOp = isModular
                       ? rewriter.create<arith::ExtUIOp>(loc, resultType, input)
                       : rewriter.create<arith::ExtSIOp>(loc, resultType, input);

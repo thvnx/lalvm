@@ -88,7 +88,8 @@ static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
 static LLVM::DIBasicTypeAttr makeDINamedType(MLIRContext *ctx,
                                              ada::TypeOp typeOp) {
   // Modular types use DW_ATE_unsigned instead of DW_ATE_signed.
-  if (auto intInfo = dyn_cast<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfo()))
+  if (auto intInfo =
+          dyn_cast_or_null<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
     if (intInfo.getModulus())
       return LLVM::DIBasicTypeAttr::get(
           ctx, llvm::dwarf::DW_TAG_base_type,
@@ -125,10 +126,23 @@ static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
 /// Returns a DICompositeTypeAttr stub for enum types, a DIBasicTypeAttr for
 /// integer and float types, and null for unsupported type info kinds.
 static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
-  if (isa<ada::EnumTypeInfoAttr>(typeOp.getTypeInfo()))
+  auto enumInfo =
+      dyn_cast_or_null<ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
+  // Subtypes carry no literals/representation of their own: describe them as
+  // their base type until subtype DWARF (typedef/subrange DIEs) lands. Base
+  // links are acyclic by construction.
+  if (!typeOp.getTypeInfoAttr() || (enumInfo && enumInfo.getNames().empty())) {
+    auto baseAttr = typeOp.getBaseAttr();
+    if (!baseAttr)
+      return {};
+    auto baseOp = dyn_cast_or_null<ada::TypeOp>(
+        SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
+    return baseOp ? makeDITypeAttr(ctx, baseOp) : LLVM::DITypeAttr();
+  }
+  if (enumInfo)
     return makeDIEnumStub(ctx, typeOp);
   if (!isa<ada::IntegerTypeInfoAttr, ada::FloatTypeInfoAttr>(
-          typeOp.getTypeInfo()))
+          typeOp.getTypeInfoAttr()))
     return {};
   return makeDINamedType(ctx, typeOp);
 }

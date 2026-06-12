@@ -31,7 +31,10 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
   // Collect surviving enum ada.type ops; skip the IR scan if none exist.
   llvm::SmallVector<mlir::ada::TypeOp> enumTypeOps;
   module.walk([&](mlir::ada::TypeOp typeOp) {
-    if (mlir::isa<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo()) &&
+    // Constraint-only enum subtype infos carry no literals to describe.
+    auto enumInfo = mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (enumInfo && !enumInfo.getNames().empty() &&
         mlir::isa<mlir::IntegerType>(typeOp.getMlirType()))
       enumTypeOps.push_back(typeOp);
   });
@@ -53,7 +56,7 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
   llvm::StringMap<llvm::DICompositeType *> enumTypeByName;
   for (mlir::ada::TypeOp typeOp : enumTypeOps) {
     auto enumInfo =
-        mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfo());
+        mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
     auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
 
     // HoistNestedSymbolOperations fused the enclosing subprogram (DWARF scope)
