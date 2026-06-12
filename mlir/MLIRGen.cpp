@@ -27,6 +27,7 @@ namespace libadalang = frontend::libadalang;
 
 #define DEBUG_TYPE "ada-mlirgen"
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -1245,7 +1246,7 @@ private:
         if (auto value = libadalang::bigIntToInt64(bigint)) {
           typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
           if (typeOp)
-            constAttr = mlir::IntegerAttr::get(builder.getI64Type(), *value);
+            constAttr = mlir::IntegerAttr::get(typeOp.getMlirType(), *value);
         }
       }
       break;
@@ -1256,7 +1257,8 @@ private:
         if (value) {
           typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
           if (typeOp)
-            constAttr = mlir::FloatAttr::get(builder.getF64Type(), *value);
+            constAttr = mlir::FloatAttr::get(
+                mlir::cast<mlir::FloatType>(typeOp.getMlirType()), *value);
         }
       }
       break;
@@ -2274,7 +2276,8 @@ private:
   }
 
   /// Map a type declaration node to an MLIR type. Follows the subtype chain
-  /// to the canonical base type, then matches its name against known Ada types.
+  /// to the canonical base type, derives integer widths from its range, and
+  /// matches the remaining (float and universal) types by name.
   /// diagLoc is used only for the "unsupported type" warning.
   mlir::Type getMLIRTypeFromDecl(ada_node &type_decl, mlir::Location diagLoc) {
     // Follow the subtype chain to the canonical (base) type so that subtypes
@@ -2353,6 +2356,47 @@ private:
           llvm::bit_width(static_cast<uint64_t>(maxRep)) + 1);
     }
 
+    // Signed integer types (@rm{3-5-4}): the width derives from the base
+    // type's range instead of matching predefined type names. The bounds are
+    // static by definition; the smallest signed width holding both is rounded
+    // up to a power-of-two byte width (i8 .. i128; only enums get tight
+    // widths). Modular types are handled above. Universal types must skip
+    // the derivation: Libadalang's synthetic Standard gives
+    // universal_int_type_ a placeholder range of -1 .. 1 (it stands for an
+    // infinite range and only serves name resolution); they take their
+    // carrier type from the name table instead.
+    ada_bool is_int = false;
+    if (!libadalang::isUniversalTypeDecl(canon_type) &&
+        ada_base_type_decl_p_is_int_type(&canon_type, &libadalang::kNullOrigin,
+                                         &is_int) &&
+        is_int) {
+      ada_internal_discrete_range range;
+      if (ada_base_type_decl_p_discrete_range(&canon_type, &range) &&
+          !ada_node_is_null(&range.low_bound) &&
+          !ada_node_is_null(&range.high_bound)) {
+        auto evalBound = [](ada_node &bound) -> std::optional<llvm::APInt> {
+          ada_big_integer bigint;
+          if (!ada_expr_p_eval_as_int(&bound, &bigint))
+            return std::nullopt;
+          return libadalang::bigIntToAPInt(bigint);
+        };
+        std::optional<llvm::APInt> lo = evalBound(range.low_bound);
+        std::optional<llvm::APInt> hi = evalBound(range.high_bound);
+        if (!lo || !hi) {
+          mlir::emitError(diagLoc, "failed to evaluate integer type bounds");
+          return {};
+        }
+        unsigned bits =
+            std::max(lo->getSignificantBits(), hi->getSignificantBits());
+        if (bits > 128) {
+          mlir::emitError(diagLoc,
+                          "unsupported integer type wider than 128 bits");
+          return {};
+        }
+        return builder.getIntegerType(llvm::bit_ceil(std::max(bits, 8u)));
+      }
+    }
+
     // f_name gives the defining identifier of the type declaration, whose
     // lower-cased text we use to drive the mapping below.
     ada_node type_name;
@@ -2363,18 +2407,16 @@ private:
     }
 
     std::string name = libadalang::getName(&type_name);
-    if (name == "integer")
-      return builder.getI32Type();
-    if (name == "long_integer")
-      return builder.getI64Type();
-    if (name == "short_integer")
-      return builder.getIntegerType(16);
     if (name == "float")
       return builder.getF32Type();
     if (name == "long_float")
       return builder.getF64Type();
+    // Universal integer is conceptually unbounded; the carrier just needs to
+    // be wide enough for any practical named-number value (and to not read
+    // like a machine type). Values are still int64-limited by the literal
+    // path; revisit alongside the APInt literal effort.
     if (name == libadalang::kUniversalIntTypeName)
-      return builder.getI64Type();
+      return builder.getIntegerType(512);
     if (name == libadalang::kUniversalRealTypeName)
       return builder.getF64Type();
 

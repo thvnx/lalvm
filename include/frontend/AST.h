@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 
+#include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -40,6 +41,12 @@ std::optional<int64_t> bigIntToInt64(ada_big_integer bigint);
 /// Convert `bigint` to a uint64, consuming it. Returns nullopt if its decimal
 /// text does not parse or does not fit in uint64.
 std::optional<uint64_t> bigIntToUInt64(ada_big_integer bigint);
+
+/// Convert `bigint` to a signed arbitrary-precision APInt, consuming it.
+/// The result is wide enough to hold the value under signed interpretation
+/// (`getSignificantBits()` gives the exact need). Returns nullopt if its
+/// decimal text does not parse.
+std::optional<llvm::APInt> bigIntToAPInt(ada_big_integer bigint);
 
 /// Wrapper that enables printing an ada_node via operator<<.
 /// Usage: llvm::errs() << libadalang::print(&node);

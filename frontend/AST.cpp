@@ -196,6 +196,22 @@ std::optional<uint64_t> libadalang::bigIntToUInt64(ada_big_integer bigint) {
   return value;
 }
 
+std::optional<llvm::APInt> libadalang::bigIntToAPInt(ada_big_integer bigint) {
+  std::string s = bigIntToString(bigint);
+  // Validate before handing to APInt, whose string constructor asserts on
+  // malformed input instead of failing.
+  llvm::StringRef str(s);
+  llvm::StringRef digits = str;
+  digits.consume_front("-");
+  if (digits.empty() ||
+      digits.find_first_not_of("0123456789") != llvm::StringRef::npos)
+    return std::nullopt;
+  // getBitsNeeded is the unsigned magnitude width for non-negative values;
+  // one more bit keeps the sign clear under signed interpretation.
+  unsigned bits = llvm::APInt::getBitsNeeded(str, /*radix=*/10) + 1;
+  return llvm::APInt(bits, str, /*radix=*/10);
+}
+
 ada_node libadalang::parent(ada_node *node) {
   ada_node par = {};
   ada_ada_node_parent(node, &par);
