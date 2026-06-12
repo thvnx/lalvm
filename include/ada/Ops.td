@@ -100,27 +100,35 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
     consumers (e.g. DWARF debug info generation). Not erased during lowering;
     survives the full pipeline.
 
-    `type_info` is one of the Ada dialect type info attributes.
+    `type_info` is one of the Ada dialect type info attributes. `base` names
+    the canonical base type when the declaration is a subtype; absent when
+    the type is its own base.
 
     Syntax example:
 
     ```mlir
     ada.type @color : i3 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
-    ada.type @integer : i32 = #ada.int_info
+    ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
+    ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
     ```
   }];
   let arguments = (ins
-    SymbolNameAttr:$sym_name,  // Ada type declaration name
-    TypeAttr:$mlir_type,       // Corresponding MLIR type
-    AnyAttr:$type_info         // Kind-specific metadata
+    SymbolNameAttr:$sym_name,                 // Ada type declaration name
+    TypeAttr:$mlir_type,                      // Corresponding MLIR type
+    AnyAttr:$type_info,                       // Kind-specific metadata
+    OptionalAttr<FlatSymbolRefAttr>:$base     // Canonical base type, if any
   );
 
   let skipDefaultBuilders = 1;
   let builders = [
+    // `CArg` gives `base` a C++ default argument (null = no base type) in
+    // the generated declaration, keeping the many base-less call sites
+    // unchanged within the single builder Dialect.cpp's doxygen note allows.
     OpBuilder<(ins
       "llvm::StringRef":$name,
       "mlir::Type":$mlirType,
-      "mlir::Attribute":$typeInfo)>
+      "mlir::Attribute":$typeInfo,
+      CArg<"mlir::FlatSymbolRefAttr", "{}">:$base)>
   ];
 
   let hasCustomAssemblyFormat = 1;

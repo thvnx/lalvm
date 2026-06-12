@@ -201,23 +201,35 @@ void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
 /// @param mlirType   Corresponding MLIR type; wrapped in a `TypeAttr`.
 /// @param typeInfo   Kind-specific metadata; one of the Ada dialect type info
 ///                   attributes.
+/// @param base       Canonical base type symbol; null when the type is its
+///                   own base.
 void TypeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    llvm::StringRef name, mlir::Type mlirType,
-                   mlir::Attribute typeInfo) {
+                   mlir::Attribute typeInfo, mlir::FlatSymbolRefAttr base) {
   state.addAttribute(getSymNameAttrName(state.name),
                      builder.getStringAttr(name));
   state.addAttribute(getMlirTypeAttrName(state.name),
                      mlir::TypeAttr::get(mlirType));
   state.addAttribute(getTypeInfoAttrName(state.name), typeInfo);
+  if (base)
+    state.addAttribute(getBaseAttrName(state.name), base);
 }
 
-/// Assembly format: `@sym_name : mlir_type = type_info_attr`
+/// Assembly format: `@sym_name (base @ref)? : mlir_type = type_info_attr`
 mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
                                 mlir::OperationState &result) {
   mlir::StringAttr symName;
   if (parser.parseSymbolName(symName, getSymNameAttrName(result.name),
                              result.attributes))
     return mlir::failure();
+
+  if (succeeded(parser.parseOptionalKeyword("base"))) {
+    mlir::StringAttr baseName;
+    if (parser.parseSymbolName(baseName))
+      return mlir::failure();
+    result.addAttribute(getBaseAttrName(result.name),
+                        mlir::FlatSymbolRefAttr::get(baseName));
+  }
 
   mlir::Type mlirType;
   if (parser.parseColon() || parser.parseType(mlirType))
@@ -238,6 +250,10 @@ mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
 void TypeOp::print(mlir::OpAsmPrinter &p) {
   p << ' ';
   p.printSymbolName(getSymName());
+  if (auto base = getBaseAttr()) {
+    p << " base ";
+    p.printSymbolName(base.getValue());
+  }
   p << " : ";
   p.printType(getMlirType());
   p << " = ";
@@ -253,6 +269,22 @@ llvm::LogicalResult TypeOp::verify() {
                          : mlir::isa<mlir::IntegerType>(getMlirType());
   if (!kindMatches)
     return emitOpError() << "type_info kind does not match mlir_type";
+  if (auto base = getBaseAttr()) {
+    // Best-effort cross-check: hoisting moves type symbols across scopes
+    // mid-pipeline, so an unresolved base is not an error here.
+    auto *sym =
+        mlir::SymbolTable::lookupNearestSymbolFrom(getOperation(), base);
+    if (auto baseOp = mlir::dyn_cast_or_null<TypeOp>(sym)) {
+      if (baseOp.getMlirType() != getMlirType())
+        return emitOpError()
+               << "base type '" << base.getValue()
+               << "' has different mlir_type (" << baseOp.getMlirType()
+               << " vs " << getMlirType() << ")";
+    } else if (sym) {
+      return emitOpError() << "base symbol '" << base.getValue()
+                           << "' is not an ada.type";
+    }
+  }
   return mlir::success();
 }
 

@@ -31,6 +31,9 @@ module {
   // CHECK: ada.type @dyn_both : i32 = #ada.int_info<range ? to ?>
   ada.type @dyn_both : i32 = #ada.int_info<range ? to ?>
 
+  // CHECK: ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
+  ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
+
   // CHECK: ada.type @float : f32 = #ada.float_info<digits 6>
   ada.type @float : f32 = #ada.float_info<digits 6>
 

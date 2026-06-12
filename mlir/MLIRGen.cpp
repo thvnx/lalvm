@@ -1442,8 +1442,21 @@ private:
         typeInfo = mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(),
                                                        modulus, lower, upper);
       }
+
+      // Link the canonical base type when this declaration is not its own
+      // (subtypes, @rm{3-2-2}). Looking the base up emits it first, so the
+      // reference always resolves.
+      mlir::FlatSymbolRefAttr base;
+      ada_node canon_type;
+      if (ada_base_type_decl_p_canonical_type(
+              &type_decl, &libadalang::kNullOrigin, &canon_type) &&
+          !ada_node_is_null(&canon_type) && canon_type.node != type_decl.node) {
+        if (mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon_type, location))
+          base = mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr());
+      }
+
       auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
-                                                      mlirType, typeInfo);
+                                                      mlirType, typeInfo, base);
       typeDecls[type_decl.node] = typeOp;
       return mlir::success();
     }
