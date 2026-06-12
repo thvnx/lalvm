@@ -1413,30 +1413,11 @@ private:
 
       mlir::Attribute typeInfo;
       if (mlir::isa<mlir::FloatType>(mlirType)) {
-        // The C API exposes no semantic digits property; evaluate the
-        // floating_point_def's num_digits expression, which is static by
-        // definition (@rm{3-5-7}). Universal real has no type_def and keeps
-        // digits at 0 (not printed, like a 0 modulus).
-        uint32_t digits = 0;
-        ada_node float_def{};
-        if (ada_type_decl_f_type_def(&type_decl, &float_def) &&
-            !ada_node_is_null(&float_def) &&
-            ada_node_kind(&float_def) == ada_floating_point_def) {
-          ada_node digits_expr;
-          ada_big_integer bigint;
-          if (!ada_floating_point_def_f_num_digits(&float_def, &digits_expr) ||
-              ada_node_is_null(&digits_expr) ||
-              !ada_expr_p_eval_as_int(&digits_expr, &bigint))
-            return mlir::emitError(
-                location, "failed to evaluate floating-point type digits");
-          auto value = libadalang::bigIntToUInt64(bigint);
-          if (!value)
-            return mlir::emitError(location,
-                                   "floating-point type digits out of range");
-          digits = static_cast<uint32_t>(*value);
-        }
+        std::optional<uint32_t> digits = evalFloatDigits(type_decl, location);
+        if (!digits)
+          return mlir::failure();
         typeInfo =
-            mlir::ada::FloatTypeInfoAttr::get(builder.getContext(), digits);
+            mlir::ada::FloatTypeInfoAttr::get(builder.getContext(), *digits);
       } else {
         typeInfo =
             mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(), modulus);
@@ -2275,9 +2256,45 @@ private:
     return mlir::success();
   }
 
+  /// Evaluate the decimal digits of a floating-point type declaration
+  /// (@rm{3-5-7}). The C API exposes no semantic digits property, so the
+  /// floating_point_def's num_digits expression is evaluated (static by
+  /// definition). Returns 0 when the declaration has no floating_point_def
+  /// (universal_real); nullopt, after emitting a diagnostic, on evaluation
+  /// failure or when the value exceeds 18 (System.Max_Digits on x86-64).
+  std::optional<uint32_t> evalFloatDigits(ada_node &type_decl,
+                                          mlir::Location location) {
+    ada_node float_def{};
+    if (!ada_type_decl_f_type_def(&type_decl, &float_def) ||
+        ada_node_is_null(&float_def) ||
+        ada_node_kind(&float_def) != ada_floating_point_def)
+      return 0;
+    ada_node digits_expr;
+    ada_big_integer bigint;
+    if (!ada_floating_point_def_f_num_digits(&float_def, &digits_expr) ||
+        ada_node_is_null(&digits_expr) ||
+        !ada_expr_p_eval_as_int(&digits_expr, &bigint)) {
+      mlir::emitError(location,
+                      "failed to evaluate floating-point type digits");
+      return std::nullopt;
+    }
+    auto value = libadalang::bigIntToUInt64(bigint);
+    // 18 is System.Max_Digits for x86-64 (the 80-bit extended type); GNAT
+    // emits the same error, located at the digits expression.
+    // @todo Retrieve the maximum from the System package (System.Max_Digits)
+    //       through Libadalang instead of hardcoding the x86-64 value.
+    if (!value || *value > 18) {
+      mlir::emitError(loc(digits_expr),
+                      "digits value out of range, maximum is 18");
+      return std::nullopt;
+    }
+    return static_cast<uint32_t>(*value);
+  }
+
   /// Map a type declaration node to an MLIR type. Follows the subtype chain
-  /// to the canonical base type, derives integer widths from its range, and
-  /// matches the remaining (float and universal) types by name.
+  /// to the canonical base type, derives integer widths from its range and
+  /// float widths from its digits, and matches the remaining (universal)
+  /// types by name.
   /// diagLoc is used only for the "unsupported type" warning.
   mlir::Type getMLIRTypeFromDecl(ada_node &type_decl, mlir::Location diagLoc) {
     // Follow the subtype chain to the canonical (base) type so that subtypes
@@ -2397,6 +2414,33 @@ private:
       }
     }
 
+    // Floating-point types (@rm{3-5-7}): the representation derives from the
+    // declared decimal precision instead of matching predefined type names:
+    // digits <= 6 -> f32, <= 15 -> f64, <= 18 -> f80 (x86 extended), else
+    // f128 (unreachable while evalFloatDigits caps digits at 18; kept for
+    // targets with a larger System.Max_Digits). Universal real keeps its
+    // name-table carrier.
+    ada_bool is_float = false;
+    if (!libadalang::isUniversalTypeDecl(canon_type) &&
+        ada_base_type_decl_p_is_float_type(
+            &canon_type, &libadalang::kNullOrigin, &is_float) &&
+        is_float) {
+      std::optional<uint32_t> digits = evalFloatDigits(canon_type, diagLoc);
+      if (!digits)
+        return {};
+      if (*digits == 0) {
+        mlir::emitError(diagLoc, "floating-point type without digits");
+        return {};
+      }
+      if (*digits <= 6)
+        return builder.getF32Type();
+      if (*digits <= 15)
+        return builder.getF64Type();
+      if (*digits <= 18)
+        return mlir::Float80Type::get(builder.getContext());
+      return mlir::Float128Type::get(builder.getContext());
+    }
+
     // f_name gives the defining identifier of the type declaration, whose
     // lower-cased text we use to drive the mapping below.
     ada_node type_name;
@@ -2407,18 +2451,14 @@ private:
     }
 
     std::string name = libadalang::getName(&type_name);
-    if (name == "float")
-      return builder.getF32Type();
-    if (name == "long_float")
-      return builder.getF64Type();
-    // Universal integer is conceptually unbounded; the carrier just needs to
-    // be wide enough for any practical named-number value (and to not read
-    // like a machine type). Values are still int64-limited by the literal
-    // path; revisit alongside the APInt literal effort.
+    // Universal types are conceptually unbounded/exact; the carriers just
+    // need to be wide (and to not read like machine types). Values are still
+    // limited by the literal path (int64; reals text-parsed to double);
+    // revisit alongside the APInt literal effort.
     if (name == libadalang::kUniversalIntTypeName)
       return builder.getIntegerType(512);
     if (name == libadalang::kUniversalRealTypeName)
-      return builder.getF64Type();
+      return mlir::Float128Type::get(builder.getContext());
 
     mlir::emitError(diagLoc, "unsupported Ada type '") << name << "'";
     return {};
