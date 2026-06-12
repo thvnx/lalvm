@@ -118,6 +118,78 @@ void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
   p << '>';
 }
 
+/// Assembly format: `<mod N>`, `<range LO to HI>`, `<mod N, range LO to HI>`,
+/// or empty. LO/HI are integers, or `?` for a dynamic bound.
+mlir::Attribute IntegerTypeInfoAttr::parse(mlir::AsmParser &parser,
+                                           mlir::Type) {
+  uint64_t modulus = 0;
+  mlir::Attribute lower, upper;
+
+  if (failed(parser.parseOptionalLess()))
+    return IntegerTypeInfoAttr::get(parser.getContext(), modulus, lower, upper);
+
+  bool expectRange = true;
+  if (succeeded(parser.parseOptionalKeyword("mod"))) {
+    if (parser.parseInteger(modulus))
+      return {};
+    expectRange = succeeded(parser.parseOptionalComma());
+  }
+
+  if (expectRange) {
+    // Static bounds are stored at minimal signed width, the canonical form
+    // shared with emission (see staticBoundAttr in MLIRGen); dynamic bounds
+    // are UnitAttr.
+    auto parseBound = [&](mlir::Attribute &bound) -> mlir::ParseResult {
+      if (succeeded(parser.parseOptionalQuestion())) {
+        bound = mlir::UnitAttr::get(parser.getContext());
+        return mlir::success();
+      }
+      llvm::APInt value;
+      mlir::OptionalParseResult res = parser.parseOptionalInteger(value);
+      if (!res.has_value() || failed(*res))
+        return parser.emitError(parser.getCurrentLocation(),
+                                "expected integer or `?` range bound");
+      unsigned bits = value.getSignificantBits();
+      bound = mlir::IntegerAttr::get(
+          mlir::IntegerType::get(parser.getContext(), bits),
+          value.sextOrTrunc(bits));
+      return mlir::success();
+    };
+    if (parser.parseKeyword("range") || parseBound(lower) ||
+        parser.parseKeyword("to") || parseBound(upper))
+      return {};
+  }
+
+  if (parser.parseGreater())
+    return {};
+  return IntegerTypeInfoAttr::get(parser.getContext(), modulus, lower, upper);
+}
+
+void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
+  bool hasMod = getModulus() != 0;
+  if (!hasMod && !hasRange())
+    return;
+  p << '<';
+  if (hasMod) {
+    p << "mod " << getModulus();
+    if (hasRange())
+      p << ", ";
+  }
+  if (hasRange()) {
+    auto printBound = [&](mlir::IntegerAttr bound) {
+      if (bound)
+        bound.getValue().print(p.getStream(), /*isSigned=*/true);
+      else
+        p << '?';
+    };
+    p << "range ";
+    printBound(staticLower());
+    p << " to ";
+    printBound(staticUpper());
+  }
+  p << '>';
+}
+
 //===----------------------------------------------------------------------===//
 // TypeOp
 //===----------------------------------------------------------------------===//

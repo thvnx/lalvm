@@ -53,15 +53,38 @@ def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
 
 // Metadata for integer types. A non-zero modulus marks a modular type
 // (@rm{3-5-4}), whose arithmetic wraps; signed integer types leave it at 0.
-// Reserved for future static bound metadata. The `mod` syntax mirrors the
-// Ada source (`mod 256`).
+// `lower`/`upper` record the declared range: an IntegerAttr of minimal
+// signed width (canonical and exact at any width) for a static bound, a
+// UnitAttr for a dynamic bound (printed `?`), or both null together when the
+// type has no range constraint (universal_integer). The syntax mirrors the
+// Ada source, with `to` standing in for `..` (not an MLIR token):
+//
+//   #ada.int_info
+//   #ada.int_info<mod 256>
+//   #ada.int_info<range -2147483648 to 2147483647>
+//   #ada.int_info<mod 256, range 0 to 255>
+//   #ada.int_info<range 1 to ?>
+//   #ada.int_info<range ? to ?>
 def IntegerTypeInfoAttr : AttrDef<Ada_Dialect, "IntegerTypeInfo"> {
   let mnemonic = "int_info";
   let summary = "Integer type metadata";
   let parameters = (ins
-    OptionalParameter<"uint64_t">:$modulus
+    OptionalParameter<"uint64_t">:$modulus,
+    OptionalParameter<"mlir::Attribute">:$lower,
+    OptionalParameter<"mlir::Attribute">:$upper
   );
-  let assemblyFormat = "(`<` `mod` $modulus^ `>`)?";
+  let extraClassDeclaration = [{
+    /// Whether a range constraint is recorded (its bounds may be dynamic).
+    bool hasRange() const { return getLower() || getUpper(); }
+    /// The static value of a bound, or null when it is dynamic or absent.
+    mlir::IntegerAttr staticLower() const {
+      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getLower());
+    }
+    mlir::IntegerAttr staticUpper() const {
+      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpper());
+    }
+  }];
+  let hasCustomAssemblyFormat = 1;
 }
 
 // Metadata for floating-point types. `digits` is the requested decimal

@@ -1419,8 +1419,28 @@ private:
         typeInfo =
             mlir::ada::FloatTypeInfoAttr::get(builder.getContext(), *digits);
       } else {
-        typeInfo =
-            mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(), modulus);
+        // Record the declared range as metadata: static bounds as values,
+        // dynamic bounds as UnitAttr (printed `?`). Universal integer is
+        // unconstrained and keeps the bare attribute: its placeholder range
+        // in LAL's Standard (-1 .. 1 standing for an infinite range) must
+        // not be recorded.
+        mlir::Attribute lower, upper;
+        if (!libadalang::isUniversalTypeDecl(type_decl)) {
+          ada_internal_discrete_range range;
+          if (ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
+              !ada_node_is_null(&range.low_bound) &&
+              !ada_node_is_null(&range.high_bound)) {
+            auto boundAttr = [&](ada_node &bound) -> mlir::Attribute {
+              if (mlir::IntegerAttr attr = staticBoundAttr(bound))
+                return attr;
+              return mlir::UnitAttr::get(builder.getContext());
+            };
+            lower = boundAttr(range.low_bound);
+            upper = boundAttr(range.high_bound);
+          }
+        }
+        typeInfo = mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(),
+                                                       modulus, lower, upper);
       }
       auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
                                                       mlirType, typeInfo);
@@ -2254,6 +2274,22 @@ private:
 
     builder.create<mlir::ada::ReturnOp>(location, expr);
     return mlir::success();
+  }
+
+  /// Evaluate one bound expression of a discrete range to an IntegerAttr of
+  /// minimal signed width, the canonical form shared with the int_info
+  /// parser. Returns null (the dynamic bound, printed `?`) when the bound is
+  /// missing or not static.
+  mlir::IntegerAttr staticBoundAttr(ada_node &bound) {
+    ada_big_integer bigint;
+    if (ada_node_is_null(&bound) || !ada_expr_p_eval_as_int(&bound, &bigint))
+      return {};
+    auto value = libadalang::bigIntToAPInt(bigint);
+    if (!value)
+      return {};
+    unsigned bits = value->getSignificantBits();
+    return mlir::IntegerAttr::get(builder.getIntegerType(bits),
+                                  value->sextOrTrunc(bits));
   }
 
   /// Evaluate the decimal digits of a floating-point type declaration

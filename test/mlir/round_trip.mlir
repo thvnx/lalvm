@@ -10,11 +10,26 @@ module {
   // CHECK: ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
   ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
 
-  // CHECK: ada.type @integer : i32 = #ada.int_info
-  ada.type @integer : i32 = #ada.int_info
+  // CHECK: ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
+  ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
+
+  // CHECK: ada.type @unbounded : i512 = #ada.int_info
+  ada.type @unbounded : i512 = #ada.int_info
 
   // CHECK: ada.type @byte : i32 = #ada.int_info<mod 256>
   ada.type @byte : i32 = #ada.int_info<mod 256>
+
+  // CHECK: ada.type @byte_ranged : i32 = #ada.int_info<mod 256, range 0 to 255>
+  ada.type @byte_ranged : i32 = #ada.int_info<mod 256, range 0 to 255>
+
+  // CHECK: ada.type @dyn_upper : i32 = #ada.int_info<range 1 to ?>
+  ada.type @dyn_upper : i32 = #ada.int_info<range 1 to ?>
+
+  // CHECK: ada.type @dyn_lower : i32 = #ada.int_info<range ? to 100>
+  ada.type @dyn_lower : i32 = #ada.int_info<range ? to 100>
+
+  // CHECK: ada.type @dyn_both : i32 = #ada.int_info<range ? to ?>
+  ada.type @dyn_both : i32 = #ada.int_info<range ? to ?>
 
   // CHECK: ada.type @float : f32 = #ada.float_info<digits 6>
   ada.type @float : f32 = #ada.float_info<digits 6>
