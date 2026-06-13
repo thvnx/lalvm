@@ -87,9 +87,17 @@ std::optional<int64_t> EnumTypeInfoAttr::enumRep(llvm::StringRef name) const {
   return std::nullopt;
 }
 
+/// `value` as an IntegerAttr of minimal signed width (canonical at any width).
+/// The encoding must match MLIRGen's `minimalWidthIntAttr`.
+static mlir::IntegerAttr minWidthIntAttr(mlir::MLIRContext *ctx,
+                                         const llvm::APInt &value) {
+  unsigned bits = value.getSignificantBits();
+  return mlir::IntegerAttr::get(mlir::IntegerType::get(ctx, bits),
+                                value.sextOrTrunc(bits));
+}
+
 /// Shared `LO to HI` bounds syntax of the type info attributes (see
-/// IntegerTypeInfoAttr for the encoding). The minimal-width storage must
-/// match MLIRGen's rangeBoundAttr.
+/// IntegerTypeInfoAttr for the encoding).
 static mlir::ParseResult parseRangeBounds(mlir::AsmParser &parser,
                                           mlir::Attribute &lower,
                                           mlir::Attribute &upper) {
@@ -103,10 +111,7 @@ static mlir::ParseResult parseRangeBounds(mlir::AsmParser &parser,
     if (!res.has_value() || failed(*res))
       return parser.emitError(parser.getCurrentLocation(),
                               "expected integer or `?` range bound");
-    unsigned bits = value.getSignificantBits();
-    bound = mlir::IntegerAttr::get(
-        mlir::IntegerType::get(parser.getContext(), bits),
-        value.sextOrTrunc(bits));
+    bound = minWidthIntAttr(parser.getContext(), value);
     return mlir::success();
   };
   if (parseBound(lower) || parser.parseKeyword("to") || parseBound(upper))
@@ -179,7 +184,7 @@ void EnumTypeInfoAttr::print(mlir::AsmPrinter &p) const {
 /// or empty. LO/HI are integers, or `?` for a dynamic bound.
 mlir::Attribute IntegerTypeInfoAttr::parse(mlir::AsmParser &parser,
                                            mlir::Type) {
-  uint64_t modulus = 0;
+  mlir::IntegerAttr modulus;
   mlir::Attribute lower, upper;
 
   if (failed(parser.parseOptionalLess()))
@@ -187,8 +192,11 @@ mlir::Attribute IntegerTypeInfoAttr::parse(mlir::AsmParser &parser,
 
   bool expectRange = true;
   if (succeeded(parser.parseOptionalKeyword("mod"))) {
-    if (parser.parseInteger(modulus))
+    llvm::APInt value;
+    mlir::OptionalParseResult res = parser.parseOptionalInteger(value);
+    if (!res.has_value() || failed(*res))
       return {};
+    modulus = minWidthIntAttr(parser.getContext(), value);
     expectRange = succeeded(parser.parseOptionalComma());
   }
 
@@ -203,12 +211,13 @@ mlir::Attribute IntegerTypeInfoAttr::parse(mlir::AsmParser &parser,
 }
 
 void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
-  bool hasMod = getModulus() != 0;
-  if (!hasMod && !hasRange())
+  mlir::IntegerAttr modulus = getModulus();
+  if (!modulus && !hasRange())
     return;
   p << '<';
-  if (hasMod) {
-    p << "mod " << getModulus();
+  if (modulus) {
+    p << "mod ";
+    modulus.getValue().print(p.getStream(), /*isSigned=*/false);
     if (hasRange())
       p << ", ";
   }

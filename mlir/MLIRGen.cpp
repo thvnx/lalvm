@@ -28,6 +28,7 @@ namespace libadalang = frontend::libadalang;
 #define DEBUG_TYPE "ada-mlirgen"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -674,30 +675,16 @@ private:
     return getAdaQualType(type_decl, location);
   }
 
-  /// Emit an ada.constant for an integer value. Range-checks the value against
-  /// the target integer width; emits a diagnostic and returns nullptr on
-  /// failure.
-  mlir::Value emitIntConstant(int64_t value, mlir::ada::QualType type,
+  /// Emit an `ada.constant` for an integer value already range-checked by the
+  /// caller against its target type. The value is fit to the target width
+  /// (`sextOrTrunc`); the bounds check guarantees the value is representable.
+  mlir::Value emitIntConstant(const llvm::APInt &value,
+                              mlir::ada::QualType type,
                               mlir::Location location) {
     auto intType = mlir::cast<mlir::IntegerType>(type.getMlirType());
-    unsigned width = intType.getWidth();
-    if (width == 1) {
-      if (value < 0 || value > 1) {
-        mlir::emitError(location, "integer constant ")
-            << value << " out of range for i1";
-        return nullptr;
-      }
-    } else if (width < 64) {
-      int64_t maxVal = (1LL << (width - 1)) - 1;
-      int64_t minVal = -(1LL << (width - 1));
-      if (value < minVal || value > maxVal) {
-        mlir::emitError(location, "integer constant ")
-            << value << " out of range for i" << width;
-        return nullptr;
-      }
-    }
     return builder.create<mlir::ada::ConstantOp>(
-        location, type, mlir::IntegerAttr::get(intType, value));
+        location, type,
+        mlir::IntegerAttr::get(intType, value.sextOrTrunc(intType.getWidth())));
   }
 
   /// Emit an ada.constant for a floating-point value. Checks for f32 overflow;
@@ -714,38 +701,101 @@ private:
         location, type, mlir::FloatAttr::get(floatType, value));
   }
 
-  /// Extract the integer value of an ada_int_literal node via
-  /// `p_denoted_value`. Returns nullopt and emits a diagnostic on failure.
-  std::optional<int64_t> evalIntLiteral(ada_node &node) {
-    // p_denoted_value gives us the evaluated integer value as a big integer,
-    // which bigIntToInt64 narrows to int64.
+  /// Extract the value of an ada_int_literal node via `p_denoted_value`, as an
+  /// APInt (exact at any width). Returns nullopt and emits a diagnostic on
+  /// failure.
+  std::optional<llvm::APInt> evalIntLiteral(ada_node &node) {
     ada_big_integer bigint;
     if (!ada_int_literal_p_denoted_value(&node, &bigint)) {
       mlir::emitError(loc(node), "failed to evaluate integer literal");
       return std::nullopt;
     }
-    auto value = libadalang::bigIntToInt64(bigint);
+    auto value = libadalang::bigIntToAPInt(bigint);
     if (!value) {
-      // bigIntToInt64 consumed the big integer; render the offending value
-      // from the literal's source text.
       ada_text text;
       ada_node_text(&node, &text);
-      mlir::emitError(loc(node), "integer literal ")
-          << libadalang::textToString(text) << " out of range for i64";
+      mlir::emitError(loc(node), "invalid integer literal '")
+          << libadalang::textToString(text) << "'";
     }
     return value;
+  }
+
+  /// Both static bounds recorded in a type's `int_info`, or nullopt when the
+  /// type has no integer info or a bound is dynamic. Bounds are kept as APInts
+  /// so they stay exact at any integer width.
+  std::optional<std::pair<llvm::APInt, llvm::APInt>>
+  ownStaticBounds(ada_node &type_decl, mlir::Location location) {
+    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
+    if (!typeOp)
+      return std::nullopt;
+    auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (!info)
+      return std::nullopt;
+    mlir::IntegerAttr lo = info.staticLower(), hi = info.staticUpper();
+    if (!lo || !hi)
+      return std::nullopt;
+    return std::make_pair(lo.getValue(), hi.getValue());
+  }
+
+  /// The static range an integer literal of type `type_decl` must satisfy at
+  /// compile time, with the (sub)type whose `int_info` it came from (for
+  /// diagnostics): the subtype's own bounds when static, else its canonical
+  /// base type's. Empty for a universal type or a fully dynamic subtype, whose
+  /// check is left to run time.
+  struct StaticRange {
+    llvm::APInt lo, hi;
+    ada_node type_decl;
+  };
+  std::optional<StaticRange> staticIntCheckRange(ada_node type_decl,
+                                                 mlir::Location location) {
+    if (libadalang::isUniversalTypeDecl(type_decl))
+      return std::nullopt;
+    if (auto b = ownStaticBounds(type_decl, location))
+      return StaticRange{b->first, b->second, type_decl};
+    ada_node canon;
+    if (ada_base_type_decl_p_canonical_type(&type_decl,
+                                            &libadalang::kNullOrigin, &canon) &&
+        !ada_node_is_null(&canon) && !libadalang::isUniversalTypeDecl(canon))
+      if (auto b = ownStaticBounds(canon, location))
+        return StaticRange{b->first, b->second, canon};
+    return std::nullopt;
   }
 
   mlir::Value mlirGenIntLiteral(ada_node &node) {
     auto value = evalIntLiteral(node);
     if (!value)
       return nullptr;
-    // p_expression_type on an integer literal returns universal_integer,
-    // not the concrete type. p_expected_expression_type gives the type
-    // required by the surrounding context (e.g. the return type of the
-    // enclosing function).
+    // p_expression_type on an integer literal returns universal_integer, not
+    // the concrete type; resolveLiteralType falls back to the expected type
+    // from the surrounding context (e.g. the enclosing function's return type).
     auto location = loc(node);
-    mlir::ada::QualType type = resolveLiteralQualType(node, location);
+    ada_node type_decl = resolveLiteralType(node, location);
+    if (ada_node_is_null(&type_decl))
+      return nullptr;
+    // Static Constraint_Check (@rm{11-5}), resolved at emission like GNAT's
+    // front end: a literal outside its target subtype's static range fails at
+    // compile time. A dynamic-bound subtype falls through to the run-time
+    // check. The value and bounds compare via `APSInt`, which spans operands
+    // of differing width and signedness.
+    if (auto sr = staticIntCheckRange(type_decl, location)) {
+      llvm::APSInt v(*value, /*isUnsigned=*/false);
+      llvm::APSInt lo(sr->lo, /*isUnsigned=*/false);
+      llvm::APSInt hi(sr->hi, /*isUnsigned=*/false);
+      if (llvm::APSInt::compareValues(v, lo) < 0 ||
+          llvm::APSInt::compareValues(v, hi) > 0) {
+        ada_node defName;
+        std::string name =
+            ada_basic_decl_p_defining_name(&sr->type_decl, &defName)
+                ? canonicalFqn(defName)
+                : libadalang::getName(&sr->type_decl);
+        mlir::emitError(location, "value not in range of type \"")
+            << name << "\"";
+        mlir::emitError(location, "static expression fails Constraint_Check");
+        return nullptr;
+      }
+    }
+    mlir::ada::QualType type = getAdaQualType(type_decl, location);
     if (!type)
       return nullptr;
     return emitIntConstant(*value, type, location);
@@ -1410,8 +1460,8 @@ private:
         constrained ? baseOp.getTypeInfoAttr() : mlir::Attribute();
     if (mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(baseInfo)) {
       typeInfo = mlir::ada::IntegerTypeInfoAttr::get(
-          builder.getContext(), /*modulus=*/0, rangeBoundAttr(range.low_bound),
-          rangeBoundAttr(range.high_bound));
+          builder.getContext(), /*modulus=*/mlir::IntegerAttr(),
+          rangeBoundAttr(range.low_bound), rangeBoundAttr(range.high_bound));
     } else if (auto enumInfo =
                    mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
                        baseInfo)) {
@@ -1472,7 +1522,7 @@ private:
         return mlir::failure();
 
       mlir::Type mlirType;
-      uint64_t modulus = 0;
+      mlir::IntegerAttr modulus;
       ada_node type_def;
       if (ada_type_decl_f_type_def(&type_decl, &type_def) &&
           !ada_node_is_null(&type_def) &&
@@ -1489,14 +1539,18 @@ private:
         if (!ada_expr_p_eval_as_int(&expr, &bigint))
           return mlir::emitError(location,
                                  "failed to evaluate modular type modulus");
-        auto modulusOpt = libadalang::bigIntToUInt64(bigint);
-        if (!modulusOpt)
-          return mlir::emitError(location, "modular type modulus out of range");
-        modulus = *modulusOpt;
-        unsigned width = modulus <= (1ULL << 8)    ? 8
-                         : modulus <= (1ULL << 16) ? 16
-                         : modulus <= (1ULL << 32) ? 32
-                                                   : 64;
+        auto modulusAP = libadalang::bigIntToAPInt(bigint);
+        if (!modulusAP)
+          return mlir::emitError(location, "invalid modular type modulus");
+        modulus = minimalWidthIntAttr(*modulusAP);
+        // Width holds 0 .. modulus-1, byte-rounded to a power of two (up to
+        // i128: GNAT's System.Max_Binary_Modulus is 2**128 with 128-bit ints).
+        unsigned need = modulusAP->ceilLogBase2();
+        unsigned width = need <= 8    ? 8
+                         : need <= 16 ? 16
+                         : need <= 32 ? 32
+                         : need <= 64 ? 64
+                                      : 128;
         mlirType = builder.getIntegerType(width);
       } else {
         mlirType = getMLIRTypeFromDecl(type_decl, location);

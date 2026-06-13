@@ -95,7 +95,7 @@ static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
   while (typeOp) {
     auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
         typeOp.getTypeInfoAttr());
-    if (intInfo && intInfo.getModulus() != 0)
+    if (intInfo && intInfo.getModulus())
       return true;
     auto baseAttr = typeOp.getBaseAttr();
     if (!baseAttr)

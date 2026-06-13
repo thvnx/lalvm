@@ -69,13 +69,14 @@ def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
   let hasCustomAssemblyFormat = 1;
 }
 
-// Metadata for integer types. A non-zero modulus marks a modular type
-// (@rm{3-5-4}), whose arithmetic wraps; signed integer types leave it at 0.
-// `lower`/`upper` record the declared range: an IntegerAttr of minimal
-// signed width (canonical and exact at any width) for a static bound, a
-// UnitAttr for a dynamic bound (printed `?`), or both null together when the
-// type has no range constraint (universal_integer). The syntax mirrors the
-// Ada source, with `to` standing in for `..` (not an MLIR token):
+// Metadata for integer types. A non-null modulus marks a modular type
+// (@rm{3-5-4}), whose arithmetic wraps; signed integer types leave it null.
+// `modulus`, `lower`, and `upper` are each an IntegerAttr of minimal signed
+// width (canonical and exact at any width, so `mod 2**64` is representable);
+// `lower`/`upper` may instead be a UnitAttr for a dynamic bound (printed `?`),
+// or both null together when the type has no range constraint
+// (universal_integer). The syntax mirrors the Ada source, with `to` standing
+// in for `..` (not an MLIR token):
 //
 //   #ada.int_info
 //   #ada.int_info<mod 256>
@@ -87,19 +88,34 @@ def IntegerTypeInfoAttr : AttrDef<Ada_Dialect, "IntegerTypeInfo"> {
   let mnemonic = "int_info";
   let summary = "Integer type metadata";
   let parameters = (ins
-    OptionalParameter<"uint64_t">:$modulus,
+    OptionalParameter<"mlir::IntegerAttr">:$modulus,
     OptionalParameter<"mlir::Attribute">:$lower,
     OptionalParameter<"mlir::Attribute">:$upper
   );
   let extraClassDeclaration = [{
-    /// Whether a range constraint is recorded (its bounds may be dynamic).
+    /// Whether an explicit range constraint is recorded (its bounds may be
+    /// dynamic). A modular type's implied `0 .. modulus-1` range is not
+    /// "recorded" in this sense, so this stays false and the printer keeps
+    /// `<mod N>`; `staticLower`/`staticUpper` still report those bounds.
     bool hasRange() const { return getLower() || getUpper(); }
-    /// The static value of a bound, or null when it is dynamic or absent.
+    /// The static value of the lower bound: the recorded bound, or 0 for a
+    /// modular type (implied range `0 to modulus-1`), or null when the bound is
+    /// dynamic or absent.
     mlir::IntegerAttr staticLower() const {
-      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getLower());
+      if (auto attr = llvm::dyn_cast_or_null<mlir::IntegerAttr>(getLower()))
+        return attr;
+      if (mlir::IntegerAttr mod = getModulus())
+        return mlir::IntegerAttr::get(mod.getType(), 0);
+      return {};
     }
+    /// The static value of the upper bound: the recorded bound, or `modulus-1`
+    /// for a modular type, or null when the bound is dynamic or absent.
     mlir::IntegerAttr staticUpper() const {
-      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpper());
+      if (auto attr = llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpper()))
+        return attr;
+      if (mlir::IntegerAttr mod = getModulus())
+        return mlir::IntegerAttr::get(mod.getType(), mod.getValue() - 1);
+      return {};
     }
   }];
   let hasCustomAssemblyFormat = 1;
