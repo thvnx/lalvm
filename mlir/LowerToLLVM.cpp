@@ -173,6 +173,30 @@ struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
   }
 };
 
+// OpConversionPattern: the `!ada.range` result lowers to an LLVM struct, built
+// `undef` + one `insertvalue` per bound. The adaptor gives the bounds already
+// converted to bare machine types.
+struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
+  using OpConversionPattern<ada::RangeOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::RangeOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    mlir::Type structTy =
+        getTypeConverter()->convertType(op.getResult().getType());
+    if (!structTy)
+      return rewriter.notifyMatchFailure(op, "could not convert !ada.range");
+    mlir::Location loc = op.getLoc();
+    mlir::Value agg = rewriter.create<LLVM::UndefOp>(loc, structTy);
+    agg = rewriter.create<LLVM::InsertValueOp>(loc, agg, adaptor.getLow(),
+                                               llvm::ArrayRef<int64_t>{0});
+    agg = rewriter.create<LLVM::InsertValueOp>(loc, agg, adaptor.getHigh(),
+                                               llvm::ArrayRef<int64_t>{1});
+    rewriter.replaceOp(op, agg);
+    return success();
+  }
+};
+
 // OpRewritePattern: no ada.qual operands or results; plain erasure needs no
 // type converter.
 struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
@@ -512,6 +536,14 @@ void AdaToLLVMLoweringPass::runOnOperation() {
           return std::nullopt;
         return LLVM::LLVMPointerType::get(t.getContext());
       });
+  // !ada.range<T, @s> is a bound descriptor: a struct of two machine-typed
+  // bounds. The subtype symbol is representation-only and drops here.
+  typeConverter.addConversion([&](ada::RangeType t) -> mlir::Type {
+    mlir::Type bound = typeConverter.convertType(t.getBoundType());
+    if (!bound)
+      return {};
+    return LLVM::LLVMStructType::getLiteral(t.getContext(), {bound, bound});
+  });
 
   // Provide the patterns used for lowering.
   RewritePatternSet patterns(&getContext());
@@ -526,7 +558,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
                UnwrapOpLowering, SubpOpLowering, ConstantOpLowering,
-               CoerceOpLowering>(typeConverter, &getContext());
+               CoerceOpLowering, RangeOpLowering>(typeConverter, &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));
