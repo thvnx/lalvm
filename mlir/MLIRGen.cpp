@@ -1612,17 +1612,22 @@ private:
   }
 
   /// Find the `ada.range` elaborated for the subtype `sym` (by
-  /// mlirGenSubtypeDecl) in the enclosing subprogram's entry block, or null.
+  /// mlirGenSubtypeDecl) in the entry block of an enclosing subprogram, or
+  /// null. Outer subprograms are searched too: a nested subprogram may
+  /// reference an outer dynamic subtype, and the descriptor is then an up-level
+  /// reference that ClosureConversion lifts into a parameter.
   mlir::Value findDynamicRange(mlir::Operation *from,
                                mlir::FlatSymbolRefAttr sym) {
-    auto subp = from->getParentOfType<mlir::ada::SubpOp>();
-    if (!subp || subp.getBody().empty())
-      return {};
-    for (mlir::Operation &op : subp.getBody().front())
-      if (auto rangeOp = mlir::dyn_cast<mlir::ada::RangeOp>(&op))
-        if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
-                .getConstrainedType() == sym)
-          return rangeOp.getResult();
+    for (auto subp = from->getParentOfType<mlir::ada::SubpOp>(); subp;
+         subp = subp->getParentOfType<mlir::ada::SubpOp>()) {
+      if (subp.getBody().empty())
+        continue;
+      for (mlir::Operation &op : subp.getBody().front())
+        if (auto rangeOp = mlir::dyn_cast<mlir::ada::RangeOp>(&op))
+          if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
+                  .getConstrainedType() == sym)
+            return rangeOp.getResult();
+    }
     return {};
   }
 
