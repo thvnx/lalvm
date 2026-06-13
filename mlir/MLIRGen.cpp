@@ -1293,10 +1293,13 @@ private:
     case UniversalKind::Int: {
       ada_big_integer bigint;
       if (ada_expr_p_eval_as_int(&expr, &bigint)) {
-        if (auto value = libadalang::bigIntToInt64(bigint)) {
+        if (auto value = libadalang::bigIntToAPInt(bigint)) {
           typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
-          if (typeOp)
-            constAttr = mlir::IntegerAttr::get(typeOp.getMlirType(), *value);
+          if (typeOp) {
+            auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
+            constAttr = mlir::IntegerAttr::get(
+                intType, value->sextOrTrunc(intType.getWidth()));
+          }
         }
       }
       break;
@@ -1366,10 +1369,14 @@ private:
       mlir::emitError(location, "failed to get enum literal rep value");
       return std::nullopt;
     }
-    auto val = libadalang::bigIntToInt64(bigint);
-    if (!val)
+    auto val = libadalang::bigIntToAPInt(bigint);
+    // Enum rep values are stored as int64 in EnumTypeInfoAttr, which covers any
+    // normally-sized enum (i8..i64); reject the rare value that would not fit.
+    if (!val || val->getSignificantBits() > 64) {
       mlir::emitError(location, "enum rep value out of range");
-    return val;
+      return std::nullopt;
+    }
+    return val->getSExtValue();
   }
 
   /// Representation value of a character enum literal (@rm{3-5-2}): the Latin-1
@@ -2477,17 +2484,17 @@ private:
                       "failed to evaluate floating-point type digits");
       return std::nullopt;
     }
-    auto value = libadalang::bigIntToUInt64(bigint);
+    auto value = libadalang::bigIntToAPInt(bigint);
     // 18 is System.Max_Digits for x86-64 (the 80-bit extended type); GNAT
     // emits the same error, located at the digits expression.
     // @todo Retrieve the maximum from the System package (System.Max_Digits)
     //       through Libadalang instead of hardcoding the x86-64 value.
-    if (!value || *value > 18) {
+    if (!value || value->ugt(18)) {
       mlir::emitError(loc(digits_expr),
                       "digits value out of range, maximum is 18");
       return std::nullopt;
     }
-    return static_cast<uint32_t>(*value);
+    return static_cast<uint32_t>(value->getZExtValue());
   }
 
   /// Map a type declaration node to an MLIR type. Follows the subtype chain

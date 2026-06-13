@@ -10,7 +10,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <cerrno>
 #include <cstdlib>
 
 namespace libadalang = frontend::libadalang;
@@ -174,26 +173,6 @@ std::string libadalang::bigIntToString(ada_big_integer bigint) {
   std::string s = textToString(text);
   ada_big_integer_decref(bigint);
   return s;
-}
-
-std::optional<int64_t> libadalang::bigIntToInt64(ada_big_integer bigint) {
-  std::string s = bigIntToString(bigint);
-  errno = 0;
-  char *end;
-  int64_t value = static_cast<int64_t>(std::strtoll(s.c_str(), &end, 10));
-  if (end == s.c_str() || errno == ERANGE)
-    return std::nullopt;
-  return value;
-}
-
-std::optional<uint64_t> libadalang::bigIntToUInt64(ada_big_integer bigint) {
-  std::string s = bigIntToString(bigint);
-  errno = 0;
-  char *end;
-  uint64_t value = std::strtoull(s.c_str(), &end, 10);
-  if (end == s.c_str() || errno == ERANGE)
-    return std::nullopt;
-  return value;
 }
 
 std::optional<llvm::APInt> libadalang::bigIntToAPInt(ada_big_integer bigint) {
