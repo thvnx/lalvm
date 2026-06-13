@@ -243,6 +243,56 @@ def CoerceOp : Ada_Op<"coerce", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// RangeOp
+//===----------------------------------------------------------------------===//
+
+// A subtype's constraint as a first-class value: the (low, high) bound pair.
+// Static bounds are constant operands; dynamic bounds (@rm{3-2-2}) are runtime
+// SSA values evaluated once at subtype elaboration. The bounds are bare
+// machine values (`iN`/`fN`); the Ada subtype identity lives on the result
+// `!ada.range` type, not on the operands. No folder: there is no attribute
+// form of a range to fold to (static bound metadata lives on `ada.type`'s
+// `int_info` instead); `staticBounds()` exposes the constant operands for the
+// `ada.range_check` folder and future `'First`/`'Last`.
+// The two `TypesMatchWith` constraints fix each bound operand's type to the
+// range's `boundType`. They double as the assembly-format type inference: the
+// printed form carries only the result type, and the operand types are derived
+// from it, so no custom parser/printer is needed.
+def RangeOp : Ada_Op<"range", [Pure,
+    TypesMatchWith<"low bound type is the range bound type", "result", "low",
+                   "::mlir::cast<::mlir::ada::RangeType>($_self).getBoundType()">,
+    TypesMatchWith<"high bound type is the range bound type", "result", "high",
+                   "::mlir::cast<::mlir::ada::RangeType>($_self).getBoundType()">]> {
+  let summary = "Ada subtype constraint value (a low/high bound pair)";
+  let description = [{
+    Builds the runtime descriptor of a scalar subtype's range constraint: a
+    pair of bound values, packaged as an `!ada.range`. The bounds are bare
+    machine values; the constrained Ada subtype is named once on the result
+    type. Static bounds are constant operands, dynamic bounds (@rm{3-2-2}) are
+    runtime SSA values.
+
+    ```mlir
+    %r = ada.range %low, %high : !ada.range<i32, @standard.positive>
+    ```
+  }];
+
+  let arguments = (ins AnyType:$low, AnyType:$high);
+  let results = (outs Ada_RangeType:$result);
+  // `qualified` keeps the `!ada.range` prefix: an `ada` op printing an `ada`
+  // type would otherwise elide the same-dialect prefix to a bare `<...>`.
+  let assemblyFormat = "$low `,` $high attr-dict `:` qualified(type($result))";
+
+  let extraClassDeclaration = [{
+    /// The constant values of the two bounds, each null when its operand is
+    /// not a compile-time constant. Returned independently so a per-bound
+    /// consumer (e.g. folding `'First` alone) can use one side.
+    std::pair<mlir::TypedAttr, mlir::TypedAttr> staticBounds();
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
 

@@ -24,6 +24,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
@@ -434,6 +435,33 @@ llvm::LogicalResult CoerceOp::verify() {
     return emitOpError() << "unsupported conversion: " << inTyped.getMlirType()
                          << " to " << outTyped.getMlirType();
   return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// RangeOp
+//===----------------------------------------------------------------------===//
+
+// The bound-operand types are pinned to the range's `boundType` by the op's
+// `TypesMatchWith` constraints; this verifier only restricts that bound type
+// to a scalar machine kind (matching `BinOp`/`CmpOp`).
+llvm::LogicalResult RangeOp::verify() {
+  mlir::Type boundType =
+      mlir::cast<ada::RangeType>(getResult().getType()).getBoundType();
+  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(boundType))
+    return emitOpError() << "range bound type must be integer or float, got "
+                         << boundType;
+  return mlir::success();
+}
+
+std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
+  // `m_Constant` matches a `ConstantLike` defining op and binds its folded
+  // value; it leaves `attr` null for a dynamic (runtime) bound.
+  auto constOf = [](mlir::Value v) -> mlir::TypedAttr {
+    mlir::TypedAttr attr;
+    matchPattern(v, mlir::m_Constant(&attr));
+    return attr;
+  };
+  return {constOf(getLow()), constOf(getHigh())};
 }
 
 //===----------------------------------------------------------------------===//

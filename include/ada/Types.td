@@ -40,4 +40,21 @@ def Ada_QualType : Ada_Type<"Qual", "qual"> {
   let assemblyFormat = "`<` $mlirType `,` $adaType `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// RangeType
+//===----------------------------------------------------------------------===//
+
+// The type of an `ada.range` value: a subtype's constraint made first-class.
+// `boundType` is the bare machine type of the bounds (`iN`/`fN`); the Ada type
+// identity appears once, in `@constrainedType`, the subtype the range
+// constrains. Unlike `ada.qual`, the bounds carry no per-value Ada identity:
+// a range *is* the descriptor of one subtype. Lowers to
+// `!llvm.struct<(boundType, boundType)>`.
+def Ada_RangeType : Ada_Type<"Range", "range"> {
+  let summary = "Ada subtype constraint descriptor: a (low, high) bound pair";
+  let parameters = (ins "::mlir::Type":$boundType,
+                        "::mlir::FlatSymbolRefAttr":$constrainedType);
+  let assemblyFormat = "`<` $boundType `,` $constrainedType `>`";
+}
+
 #endif // ADA_TYPES
