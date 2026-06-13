@@ -1,8 +1,12 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- A non-static bound is recorded as `?`; the static lower bound stays exact.
+-- A dynamic subtype's range is elaborated once at its declaration (RM 3.2.2):
+-- the bounds become an `ada.range` in the entry block (here even though the
+-- subtype is unreferenced). The non-static bound is still recorded as `?`.
 -- MLIR-LABEL: ada.subp @subtype_dynamic
+-- MLIR:         %[[LO:.*]] = arith.constant 1 : i32
+-- MLIR:         ada.range %[[LO]], %{{.*}} : !ada.range<i32, @subtype_dynamic.s>
 -- MLIR:         ada.decls {
 -- MLIR-NEXT:      ada.type @subtype_dynamic.s base @standard.integer : i32 = #ada.int_info<range 1 to ?>
 

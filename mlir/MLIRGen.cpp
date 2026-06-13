@@ -901,13 +901,31 @@ private:
     return constrainToSubtype(val, coerced, expected, location);
   }
 
+  /// `value` as a bare machine constant of `intType`, an `ada.range` bound.
+  mlir::Value constBound(mlir::IntegerType intType, const llvm::APInt &value,
+                         mlir::Location location) {
+    return builder.create<mlir::arith::ConstantOp>(
+        location,
+        mlir::IntegerAttr::get(intType, value.sextOrTrunc(intType.getWidth())));
+  }
+
+  /// Build an `ada.range` descriptor of subtype `sym` from its bare machine
+  /// bounds (`lo` and `hi` share the bound type).
+  mlir::Value emitRange(mlir::Value lo, mlir::Value hi,
+                        mlir::FlatSymbolRefAttr sym, mlir::Location location) {
+    auto rangeType =
+        mlir::ada::RangeType::get(builder.getContext(), lo.getType(), sym);
+    return builder.create<mlir::ada::RangeOp>(location, rangeType, lo, hi);
+  }
+
   /// Emit a Constraint_Check (@rm{11-5}) when `coerced` flows into a
   /// constrained scalar subtype `target`. A static source value (`src` an
   /// `ada.constant`) is resolved at emission like a literal site: in range ->
-  /// no check, out of range -> diagnostics. A dynamic source gets
-  /// `ada.range` + `ada.range_check` (lowered to a run-time compare + raise).
-  /// Returns `coerced` unchanged when no static integer range applies (base
-  /// types, unconstrained subtypes, dynamic-bound subtypes [E1], floats).
+  /// no check, out of range -> diagnostics. A dynamic source is checked at run
+  /// time against a descriptor: constant bounds for a static-bound subtype, or
+  /// the one elaborated at the subtype declaration for a dynamic-bound one.
+  /// Returns `coerced` unchanged when no integer range applies (base types,
+  /// unconstrained subtypes, floats).
   mlir::Value constrainToSubtype(mlir::Value src, mlir::Value coerced,
                                  mlir::ada::QualType target,
                                  mlir::Location location) {
@@ -920,33 +938,28 @@ private:
         typeOp.getTypeInfoAttr());
     if (!info)
       return coerced; // unconstrained subtype (pure renaming)
+
+    mlir::Value range;
     mlir::IntegerAttr loAttr = info.staticLower(), hiAttr = info.staticUpper();
-    if (!loAttr || !hiAttr)
-      return coerced; // dynamic bounds: left to elaboration (E1)
-
-    auto intType = mlir::cast<mlir::IntegerType>(target.getMlirType());
-    unsigned width = intType.getWidth();
-    llvm::APInt lo = loAttr.getValue().sextOrTrunc(width);
-    llvm::APInt hi = hiAttr.getValue().sextOrTrunc(width);
-
-    // Static source: resolve here, like a literal site, on the exact value.
-    if (auto cst = src.getDefiningOp<mlir::ada::ConstantOp>()) {
-      if (auto valAttr = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
-        diagnoseOutOfRange(valAttr.getValue(), lo, hi, typeOp.getSymName(),
-                           location);
+    if (!loAttr || !hiAttr) {
+      // Dynamic bounds: the descriptor elaborated once at the subtype decl.
+      range = findDynamicRange(coerced.getDefiningOp(), target.getAdaType());
+      if (!range)
         return coerced;
-      }
+    } else {
+      // Static bounds: resolve a static source value here like a literal site
+      // (on the exact value); a dynamic one checks against constant bounds.
+      if (auto cst = src.getDefiningOp<mlir::ada::ConstantOp>())
+        if (auto valAttr = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
+          diagnoseOutOfRange(valAttr.getValue(), loAttr.getValue(),
+                             hiAttr.getValue(), typeOp.getSymName(), location);
+          return coerced;
+        }
+      auto intType = mlir::cast<mlir::IntegerType>(target.getMlirType());
+      range = emitRange(constBound(intType, loAttr.getValue(), location),
+                        constBound(intType, hiAttr.getValue(), location),
+                        target.getAdaType(), location);
     }
-
-    // Dynamic source: emit the descriptor and the run-time check.
-    auto loV = builder.create<mlir::arith::ConstantOp>(
-        location, mlir::IntegerAttr::get(intType, lo));
-    auto hiV = builder.create<mlir::arith::ConstantOp>(
-        location, mlir::IntegerAttr::get(intType, hi));
-    auto rangeType = mlir::ada::RangeType::get(builder.getContext(), intType,
-                                               target.getAdaType());
-    mlir::Value range =
-        builder.create<mlir::ada::RangeOp>(location, rangeType, loV, hiV);
     return builder.create<mlir::ada::RangeCheckOp>(location, target, coerced,
                                                    range);
   }
@@ -1562,7 +1575,55 @@ private:
         location, *typeName, baseOp.getMlirType(), typeInfo,
         mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
     typeDecls[type_decl.node] = typeOp;
+
+    // Elaborate a dynamic subtype's range once (@rm{3-2-2}): evaluate its
+    // bounds here and emit the `ada.range`, which `findDynamicRange` recovers
+    // at each check site. The bound values go in the body's entry block (before
+    // this `ada.decls`) so they dominate the checks, while the `ada.type`
+    // symbol stays in `ada.decls`. Evaluating the bounds here also runs their
+    // side effects exactly once, even if the subtype is never referenced.
+    auto intInfo =
+        mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(typeInfo);
+    if (intInfo && intInfo.hasRange() &&
+        (!intInfo.staticLower() || !intInfo.staticUpper())) {
+      mlir::Operation *declsOp = builder.getInsertionBlock()->getParentOp();
+      if (mlir::isa<mlir::ada::DeclsOp>(declsOp)) {
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPoint(declsOp);
+        auto intType = mlir::cast<mlir::IntegerType>(baseOp.getMlirType());
+        // A static bound is a bare constant; a dynamic one is its evaluated
+        // expression, unwrapped to the machine type.
+        auto boundValue = [&](ada_node &expr,
+                              mlir::IntegerAttr stat) -> mlir::Value {
+          if (stat)
+            return constBound(intType, stat.getValue(), location);
+          mlir::Value v = visit_expr(expr);
+          return v ? unwrap(v, loc(expr)) : mlir::Value();
+        };
+        mlir::Value lo = boundValue(range.low_bound, intInfo.staticLower());
+        mlir::Value hi = boundValue(range.high_bound, intInfo.staticUpper());
+        if (lo && hi)
+          emitRange(lo, hi,
+                    mlir::FlatSymbolRefAttr::get(typeOp.getSymNameAttr()),
+                    location);
+      }
+    }
     return mlir::success();
+  }
+
+  /// Find the `ada.range` elaborated for the subtype `sym` (by
+  /// mlirGenSubtypeDecl) in the enclosing subprogram's entry block, or null.
+  mlir::Value findDynamicRange(mlir::Operation *from,
+                               mlir::FlatSymbolRefAttr sym) {
+    auto subp = from->getParentOfType<mlir::ada::SubpOp>();
+    if (!subp || subp.getBody().empty())
+      return {};
+    for (mlir::Operation &op : subp.getBody().front())
+      if (auto rangeOp = mlir::dyn_cast<mlir::ada::RangeOp>(&op))
+        if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
+                .getConstrainedType() == sym)
+          return rangeOp.getResult();
+    return {};
   }
 
   /// Emit an ada.type op for an Ada type declaration (@rm{3-1}): enumeration
