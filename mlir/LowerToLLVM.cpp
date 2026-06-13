@@ -31,6 +31,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/FunctionCallUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Pass/Pass.h"
@@ -83,6 +84,56 @@ static mlir::Location attachAdaTypeRef(MLIRContext *ctx, mlir::Location loc,
                                         ada::DITypeRefAttr::get(ctx, adaType)));
 }
 
+/// Whether the Ada type named by `qual` is modular (its arithmetic wraps,
+/// @rm{3-5-4}), so values are unsigned. The modulus is a base-type property (a
+/// subtype's `int_info` records only its range), so walk `base` links from
+/// `from` until a nonzero modulus or the chain ends.
+static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
+  auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
+      mlir::SymbolTable::lookupNearestSymbolFrom(
+          from, qual.getAdaType().getRootReference()));
+  while (typeOp) {
+    auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (intInfo && intInfo.getModulus() != 0)
+      return true;
+    auto baseAttr = typeOp.getBaseAttr();
+    if (!baseAttr)
+      break;
+    typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
+        mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
+  }
+  return false;
+}
+
+/// Address of a private, NUL-terminated constant holding `fileName`, for the
+/// `file` argument of the runtime raise. lalvm compiles one source unit per
+/// run, so all checks share a single `@lalvm.file` global, created on first
+/// use and reused after.
+static mlir::Value emitFileNamePtr(mlir::ConversionPatternRewriter &rewriter,
+                                   mlir::Location loc, mlir::ModuleOp module,
+                                   llvm::StringRef fileName) {
+  MLIRContext *ctx = rewriter.getContext();
+  auto ptrTy = LLVM::LLVMPointerType::get(ctx);
+
+  auto global = module.lookupSymbol<LLVM::GlobalOp>("lalvm.file");
+  if (!global) {
+    std::string data = fileName.str();
+    data.push_back('\0');
+    auto arrTy =
+        LLVM::LLVMArrayType::get(mlir::IntegerType::get(ctx, 8), data.size());
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointToStart(module.getBody());
+    global = rewriter.create<LLVM::GlobalOp>(
+        loc, arrTy, /*isConstant=*/true, LLVM::Linkage::Private, "lalvm.file",
+        rewriter.getStringAttr(data), /*alignment=*/0);
+  }
+  mlir::Value base =
+      rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, global.getSymNameAttr());
+  return rewriter.create<LLVM::GEPOp>(loc, ptrTy, global.getGlobalType(), base,
+                                      llvm::ArrayRef<LLVM::GEPArg>{0, 0});
+}
+
 // OpConversionPattern: the result type changes from !ada.qual to a bare MLIR
 // type; the conversion framework must track that mapping for downstream uses.
 struct ConstantOpLowering : public OpConversionPattern<ada::ConstantOp> {
@@ -128,29 +179,10 @@ struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
         if (dstInt.getWidth() < srcInt.getWidth()) {
           newOp = rewriter.create<arith::TruncIOp>(loc, resultType, input);
         } else {
-          // Modular (unsigned) source types need zero-extension. The modulus
-          // is a base type property (a subtype's int_info records only its
-          // range), so walk `base` links until a nonzero modulus or the
-          // chain ends.
+          // Modular (unsigned) source types need zero-extension; signed types
+          // need sign-extension.
           auto inTyped = mlir::cast<ada::QualType>(op.getInput().getType());
-          bool isModular = false;
-          auto *sym = mlir::SymbolTable::lookupNearestSymbolFrom(
-              op, inTyped.getAdaType().getRootReference());
-          auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(sym);
-          while (typeOp) {
-            auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
-                typeOp.getTypeInfoAttr());
-            if (intInfo && intInfo.getModulus() != 0) {
-              isModular = true;
-              break;
-            }
-            auto baseAttr = typeOp.getBaseAttr();
-            if (!baseAttr)
-              break;
-            typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
-                mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
-          }
-          newOp = isModular
+          newOp = isModularQualType(op, inTyped)
                       ? rewriter.create<arith::ExtUIOp>(loc, resultType, input)
                       : rewriter.create<arith::ExtSIOp>(loc, resultType, input);
         }
@@ -193,6 +225,83 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
     agg = rewriter.create<LLVM::InsertValueOp>(loc, agg, adaptor.getHigh(),
                                                llvm::ArrayRef<int64_t>{1});
     rewriter.replaceOp(op, agg);
+    return success();
+  }
+};
+
+// OpConversionPattern: lowers the Constraint_Check (@rm{11-5}) to a compare
+// against the bound pair and a conditional branch to a raise block that calls
+// the GNAT runtime and is unreachable. Type-preserving: the checked value
+// flows through unchanged into the continuation.
+struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
+  using OpConversionPattern<ada::RangeCheckOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::RangeCheckOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    mlir::Location loc = op.getLoc();
+    auto module = op->getParentOfType<mlir::ModuleOp>();
+    mlir::Value value = adaptor.getValue();
+
+    // Bounds: read the two fields of the lowered descriptor. `extractvalue` of
+    // the producing `insertvalue` folds away under optimization.
+    mlir::Value desc = adaptor.getRange();
+    mlir::Value lo = rewriter.create<LLVM::ExtractValueOp>(
+        loc, desc, llvm::ArrayRef<int64_t>{0});
+    mlir::Value hi = rewriter.create<LLVM::ExtractValueOp>(
+        loc, desc, llvm::ArrayRef<int64_t>{1});
+
+    // Split the block at the check; later uses of the value move to `cont`.
+    mlir::Block *opBlock = rewriter.getInsertionBlock();
+    mlir::Block *cont =
+        rewriter.splitBlock(opBlock, rewriter.getInsertionPoint());
+
+    // Raise block: __gnat_rcheck_CE_Range_Check(file, line); unreachable.
+    auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
+    mlir::Type i32Ty = rewriter.getI32Type();
+    auto fn = LLVM::lookupOrCreateFn(
+        rewriter, module, "__gnat_rcheck_CE_Range_Check", {ptrTy, i32Ty},
+        LLVM::LLVMVoidType::get(rewriter.getContext()));
+    if (mlir::failed(fn))
+      return mlir::failure();
+
+    mlir::Block *raise = rewriter.createBlock(cont);
+    llvm::StringRef fileName;
+    unsigned line = 0;
+    if (auto flc = mlir::dyn_cast<mlir::FileLineColLoc>(loc)) {
+      fileName = flc.getFilename();
+      line = flc.getLine();
+    }
+    mlir::Value file = emitFileNamePtr(rewriter, loc, module, fileName);
+    mlir::Value lineVal = rewriter.create<LLVM::ConstantOp>(
+        loc, i32Ty, rewriter.getI32IntegerAttr(line));
+    rewriter.create<LLVM::CallOp>(loc, *fn, mlir::ValueRange{file, lineVal});
+    rewriter.create<LLVM::UnreachableOp>(loc);
+
+    // Test in the original block: out of range -> raise, else -> continue.
+    rewriter.setInsertionPointToEnd(opBlock);
+    mlir::Value below, above;
+    if (mlir::isa<mlir::FloatType>(value.getType())) {
+      // Unordered predicates so a NaN value (in no range) raises: `NaN ult lo`
+      // is true, whereas the ordered `olt` would let it pass.
+      below = rewriter.create<LLVM::FCmpOp>(loc, LLVM::FCmpPredicate::ult,
+                                            value, lo);
+      above = rewriter.create<LLVM::FCmpOp>(loc, LLVM::FCmpPredicate::ugt,
+                                            value, hi);
+    } else {
+      bool mod = isModularQualType(
+          op, mlir::cast<ada::QualType>(op.getValue().getType()));
+      below = rewriter.create<LLVM::ICmpOp>(
+          loc, mod ? LLVM::ICmpPredicate::ult : LLVM::ICmpPredicate::slt, value,
+          lo);
+      above = rewriter.create<LLVM::ICmpOp>(
+          loc, mod ? LLVM::ICmpPredicate::ugt : LLVM::ICmpPredicate::sgt, value,
+          hi);
+    }
+    mlir::Value bad = rewriter.create<LLVM::OrOp>(loc, below, above);
+    rewriter.create<LLVM::CondBrOp>(loc, bad, raise, cont);
+
+    rewriter.replaceOp(op, value);
     return success();
   }
 };
@@ -558,7 +667,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
                UnwrapOpLowering, SubpOpLowering, ConstantOpLowering,
-               CoerceOpLowering, RangeOpLowering>(typeConverter, &getContext());
+               CoerceOpLowering, RangeOpLowering, RangeCheckOpLowering>(
+      typeConverter, &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));
