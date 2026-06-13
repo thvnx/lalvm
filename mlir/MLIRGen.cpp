@@ -16,6 +16,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -762,6 +763,24 @@ private:
     return std::nullopt;
   }
 
+  /// Emit the two static Constraint_Check (@rm{11-5}) diagnostics when `value`
+  /// lies outside the static range `[lo, hi]` of type `typeName`; returns true
+  /// when out of range. `APSInt` spans the operands' differing widths and
+  /// signedness, so `value` is compared exactly, never width-truncated first.
+  bool diagnoseOutOfRange(const llvm::APInt &value, const llvm::APInt &lo,
+                          const llvm::APInt &hi, llvm::StringRef typeName,
+                          mlir::Location location) {
+    llvm::APSInt v(value, /*isUnsigned=*/false);
+    if (llvm::APSInt::compareValues(v, llvm::APSInt(lo, false)) < 0 ||
+        llvm::APSInt::compareValues(v, llvm::APSInt(hi, false)) > 0) {
+      mlir::emitError(location, "value not in range of type \"")
+          << typeName << "\"";
+      mlir::emitError(location, "static expression fails Constraint_Check");
+      return true;
+    }
+    return false;
+  }
+
   mlir::Value mlirGenIntLiteral(ada_node &node) {
     auto value = evalIntLiteral(node);
     if (!value)
@@ -776,24 +795,15 @@ private:
     // Static Constraint_Check (@rm{11-5}), resolved at emission like GNAT's
     // front end: a literal outside its target subtype's static range fails at
     // compile time. A dynamic-bound subtype falls through to the run-time
-    // check. The value and bounds compare via `APSInt`, which spans operands
-    // of differing width and signedness.
+    // check.
     if (auto sr = staticIntCheckRange(type_decl, location)) {
-      llvm::APSInt v(*value, /*isUnsigned=*/false);
-      llvm::APSInt lo(sr->lo, /*isUnsigned=*/false);
-      llvm::APSInt hi(sr->hi, /*isUnsigned=*/false);
-      if (llvm::APSInt::compareValues(v, lo) < 0 ||
-          llvm::APSInt::compareValues(v, hi) > 0) {
-        ada_node defName;
-        std::string name =
-            ada_basic_decl_p_defining_name(&sr->type_decl, &defName)
-                ? canonicalFqn(defName)
-                : libadalang::getName(&sr->type_decl);
-        mlir::emitError(location, "value not in range of type \"")
-            << name << "\"";
-        mlir::emitError(location, "static expression fails Constraint_Check");
+      ada_node defName;
+      std::string name =
+          ada_basic_decl_p_defining_name(&sr->type_decl, &defName)
+              ? canonicalFqn(defName)
+              : libadalang::getName(&sr->type_decl);
+      if (diagnoseOutOfRange(*value, sr->lo, sr->hi, name, location))
         return nullptr;
-      }
     }
     mlir::ada::QualType type = getAdaQualType(type_decl, location);
     if (!type)
@@ -880,12 +890,65 @@ private:
     return getAdaQualType(type_decl, loc(type_expr));
   }
 
-  /// Insert `ada.coerce` if `val` does not already have type `expected`.
+  /// Insert `ada.coerce` if `val` does not already have type `expected`, then
+  /// a Constraint_Check (@rm{11-5}) when `expected` is a constrained subtype.
   mlir::Value coerce(mlir::Value val, mlir::ada::QualType expected,
                      mlir::Location location) {
     if (val.getType() == expected)
       return val;
-    return builder.create<mlir::ada::CoerceOp>(location, expected, val);
+    mlir::Value coerced =
+        builder.create<mlir::ada::CoerceOp>(location, expected, val);
+    return constrainToSubtype(val, coerced, expected, location);
+  }
+
+  /// Emit a Constraint_Check (@rm{11-5}) when `coerced` flows into a
+  /// constrained scalar subtype `target`. A static source value (`src` an
+  /// `ada.constant`) is resolved at emission like a literal site: in range ->
+  /// no check, out of range -> diagnostics. A dynamic source gets
+  /// `ada.range` + `ada.range_check` (lowered to a run-time compare + raise).
+  /// Returns `coerced` unchanged when no static integer range applies (base
+  /// types, unconstrained subtypes, dynamic-bound subtypes [E1], floats).
+  mlir::Value constrainToSubtype(mlir::Value src, mlir::Value coerced,
+                                 mlir::ada::QualType target,
+                                 mlir::Location location) {
+    auto typeOp =
+        mlir::dyn_cast_or_null<mlir::ada::TypeOp>(mlir::ada::lookupSymbolFrom(
+            coerced.getDefiningOp(), target.getAdaType().getValue()));
+    if (!typeOp || !typeOp.getBaseAttr())
+      return coerced; // base types are unconstrained at this layer
+    auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (!info)
+      return coerced; // unconstrained subtype (pure renaming)
+    mlir::IntegerAttr loAttr = info.staticLower(), hiAttr = info.staticUpper();
+    if (!loAttr || !hiAttr)
+      return coerced; // dynamic bounds: left to elaboration (E1)
+
+    auto intType = mlir::cast<mlir::IntegerType>(target.getMlirType());
+    unsigned width = intType.getWidth();
+    llvm::APInt lo = loAttr.getValue().sextOrTrunc(width);
+    llvm::APInt hi = hiAttr.getValue().sextOrTrunc(width);
+
+    // Static source: resolve here, like a literal site, on the exact value.
+    if (auto cst = src.getDefiningOp<mlir::ada::ConstantOp>()) {
+      if (auto valAttr = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
+        diagnoseOutOfRange(valAttr.getValue(), lo, hi, typeOp.getSymName(),
+                           location);
+        return coerced;
+      }
+    }
+
+    // Dynamic source: emit the descriptor and the run-time check.
+    auto loV = builder.create<mlir::arith::ConstantOp>(
+        location, mlir::IntegerAttr::get(intType, lo));
+    auto hiV = builder.create<mlir::arith::ConstantOp>(
+        location, mlir::IntegerAttr::get(intType, hi));
+    auto rangeType = mlir::ada::RangeType::get(builder.getContext(), intType,
+                                               target.getAdaType());
+    mlir::Value range =
+        builder.create<mlir::ada::RangeOp>(location, rangeType, loV, hiV);
+    return builder.create<mlir::ada::RangeCheckOp>(location, target, coerced,
+                                                   range);
   }
 
   /// Return the `ada.type` op for a type declaration, emitting it lazily at

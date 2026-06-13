@@ -785,17 +785,15 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-/// Resolve a callee symbol by walking the enclosing scopes from `from` up to
-/// the module. Used only by `verifySymbolUses` for a best-effort
-/// procedure-vs-function check; MLIRGen resolves calls by node identity, not
-/// through this. `lookupNearestSymbolFrom` cannot be used because the scope
-/// boundary here (`DeclsOp`) is an opaque SymbolTable, so the walk visits each
-/// explicitly. `SubpOp` is not itself a SymbolTable: its nested subprograms
-/// live in an interior `ada.decls`, so at each enclosing `SubpOp` the walk
-/// searches that subprogram's `ada.decls` children too (the decls op is a
-/// sibling of a call in the subprogram's statements, not an ancestor).
-mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
-                                      llvm::StringRef name) {
+/// Resolve the nested symbol `name` visible from `from`, walking enclosing
+/// scopes up to the module. `lookupNearestSymbolFrom` cannot be used because
+/// `SubpOp` is not itself a SymbolTable: its nested symbols (`ada.subp`,
+/// `ada.type`) live in an interior `ada.decls`, a sibling of the statements
+/// rather than an ancestor, so at each enclosing `SubpOp` the walk searches
+/// that subprogram's `ada.decls` children too. Used for both call and target
+/// type resolution during MLIRGen.
+mlir::Operation *mlir::ada::lookupSymbolFrom(mlir::Operation *from,
+                                             llvm::StringRef name) {
   for (mlir::Operation *scope = from; scope; scope = scope->getParentOp()) {
     if (mlir::isa<DeclsOp, mlir::ModuleOp>(scope))
       if (auto *sym = mlir::SymbolTable::lookupSymbolIn(scope, name))
@@ -808,6 +806,14 @@ mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
               return sym;
   }
   return nullptr;
+}
+
+/// Callee resolution for `verifySymbolUses`'s best-effort
+/// procedure-vs-function check; MLIRGen resolves calls by node identity, not
+/// through this.
+mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
+                                      llvm::StringRef name) {
+  return mlir::ada::lookupSymbolFrom(from, name);
 }
 
 llvm::LogicalResult CallOp::verifySymbolUses(mlir::SymbolTableCollection &) {

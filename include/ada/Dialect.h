@@ -37,6 +37,13 @@ namespace ada {
 /// human-facing names (DWARF DW_AT_name) where the simple source name is wanted
 /// rather than the qualified, collision-disambiguated symbol.
 llvm::StringRef bareName(llvm::StringRef qualified);
+
+/// Resolve the nested symbol `name` visible from `from`, honoring Ada scoping:
+/// walk the enclosing scopes and, at each `ada.subp`, search its `ada.decls`
+/// SymbolTable children (which `lookupNearestSymbolFrom` cannot reach, since
+/// `ada.subp` is not a SymbolTable and `ada.decls` is a sibling of statements).
+/// Returns the symbol op, or null.
+mlir::Operation *lookupSymbolFrom(mlir::Operation *from, llvm::StringRef name);
 } // namespace ada
 } // namespace mlir
 
