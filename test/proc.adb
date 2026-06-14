@@ -8,7 +8,7 @@
 -- MLIR-SAME:    %arg0: memref<!ada.qual<i32, @standard.integer>>, %arg1: memref<!ada.qual<i32, @standard.integer>>, %arg2: memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         %[[J:.*]] = memref.load %arg1[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         %[[K:.*]] = memref.load %arg2[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         %[[R:.*]] = ada.binop "+" %[[J]], %[[K]] : !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %[[J]], %[[K]] checks<overflow> : !ada.qual<i32, @standard.integer>
 -- MLIR:         memref.store %[[R]], %arg0[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         ada.return
 

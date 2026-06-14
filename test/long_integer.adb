@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @long_integer
 -- MLIR-SAME:    (%arg0: !ada.qual<i64, @standard.long_integer>, %arg1: !ada.qual<i64, @standard.long_integer>) -> !ada.qual<i64, @standard.long_integer>
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<i64, @standard.long_integer>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 checks<overflow> : !ada.qual<i64, @standard.long_integer>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i64, @standard.long_integer>
 
 -- LLVM-LABEL: define i64 @_ada_long_integer(

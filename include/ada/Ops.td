@@ -83,6 +83,23 @@ def AdaRelationalOp : I32EnumAttr<"AdaRelationalOp",
 }
 
 //===----------------------------------------------------------------------===//
+// AdaChecks
+//===----------------------------------------------------------------------===//
+
+// Run-time checks an arithmetic operation must perform. `overflow` (@rm{4-5},
+// @rm{3-5-4}) is set on signed-integer base-type `+`/`-`/`*`; modular
+// arithmetic wraps and is never flagged. `division` (@rm{11-5}) is set on
+// integer `/` for both signed and modular types. Absent (no bits) means no
+// check is required.
+def AdaCheck_Overflow : I32BitEnumAttrCaseBit<"Overflow", 0, "overflow">;
+def AdaCheck_Division : I32BitEnumAttrCaseBit<"Division", 1, "division">;
+
+def AdaChecks : I32BitEnumAttr<"AdaChecks", "Ada arithmetic run-time checks",
+    [AdaCheck_Overflow, AdaCheck_Division]> {
+  let cppNamespace = "::mlir::ada";
+}
+
+//===----------------------------------------------------------------------===//
 // TypeOp
 //===----------------------------------------------------------------------===//
 
@@ -350,15 +367,19 @@ def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
     result share one type (integer or float). The constraint also auto-generates
     a builder that infers the result type from the operands.
 
-    Two assembly formats are accepted:
+    An optional `checks<...>` group lists the run-time checks the operation
+    must perform (`overflow` for signed-integer `+`/`-`/`*`); it is printed only
+    when nonempty. Two assembly formats are accepted:
 
     ```mlir
-    %0 = ada.binop "+" %a, %b : i32              // all types identical
-    %0 = ada.binop "+" %a, %b : (i32, i32) -> i32  // functional form
+    %0 = ada.binop "+" %a, %b : i32                       // all types identical
+    %0 = ada.binop "+" %a, %b checks<overflow> : i32      // with a check
+    %0 = ada.binop "+" %a, %b : (i32, i32) -> i32         // functional form
     ```
   }];
 
-  let arguments = (ins AdaBinaryOp:$kind, AnyType:$lhs, AnyType:$rhs);
+  let arguments = (ins AdaBinaryOp:$kind, AnyType:$lhs, AnyType:$rhs,
+                       OptionalAttr<AdaChecks>:$checks);
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;

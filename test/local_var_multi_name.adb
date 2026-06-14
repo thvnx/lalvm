@@ -7,8 +7,8 @@
 -- MLIR:         %[[X:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
 -- MLIR-NEXT:    %[[Y:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
 -- MLIR-NEXT:    %[[Z:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
--- MLIR-NEXT:    %[[R1:.*]] = ada.binop "+" %[[X]], %[[Y]] : !ada.qual<i32, @standard.integer>
--- MLIR-NEXT:    %[[R2:.*]] = ada.binop "+" %[[R1]], %[[Z]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[R1:.*]] = ada.binop "+" %[[X]], %[[Y]] checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[R2:.*]] = ada.binop "+" %[[R1]], %[[Z]] checks<overflow> : !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[R2]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_local_var_multi_name(

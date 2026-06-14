@@ -2,8 +2,8 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @add
--- MLIR:         %[[AB:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @standard.integer>
--- MLIR-NEXT:    %[[ABC:.*]] = ada.binop "+" %[[AB]], %arg2 : !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[AB:.*]] = ada.binop "+" %arg0, %arg1 checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[ABC:.*]] = ada.binop "+" %[[AB]], %arg2 checks<overflow> : !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[ABC]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_add(

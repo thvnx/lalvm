@@ -529,28 +529,48 @@ private:
 
   /// Emit the arithmetic operation for two precomputed operands.
   /// `op` is the ada_op node (ada_op_plus, ada_op_minus, etc.).
-  mlir::Value emitBinOp(ada_node &op, mlir::Value lhs, mlir::Value rhs) {
+  mlir::Value emitBinOp(ada_node &op, mlir::Value lhs, mlir::Value rhs,
+                        bool isInteger = false, bool modular = false) {
     auto callerLoc = loc(op);
+    bool signedInt = isInteger && !modular;
     mlir::ada::AdaBinaryOp kind;
+    auto checks = mlir::ada::AdaChecks{};
     switch (ada_node_kind(&op)) {
     case ada_op_plus:
       kind = mlir::ada::AdaBinaryOp::Plus;
+      if (signedInt)
+        checks = mlir::ada::AdaChecks::Overflow;
       break;
     case ada_op_minus:
       kind = mlir::ada::AdaBinaryOp::Minus;
+      if (signedInt)
+        checks = mlir::ada::AdaChecks::Overflow;
       break;
     case ada_op_mult:
       kind = mlir::ada::AdaBinaryOp::Mult;
+      if (signedInt)
+        checks = mlir::ada::AdaChecks::Overflow;
       break;
     case ada_op_div:
       kind = mlir::ada::AdaBinaryOp::Div;
+      if (isInteger)
+        checks = mlir::ada::AdaChecks::Division;
       break;
     default:
       mlir::emitError(callerLoc, "invalid binary operator '")
           << libadalang::image(&op) << "'";
       return nullptr;
     }
-    return builder.create<mlir::ada::BinOp>(callerLoc, kind, lhs, rhs);
+    // Overflow on signed-integer +/-/* (@rm{4-5}, @rm{3-5-4}); the division
+    // check on any integer / (@rm{11-5}, zero divisor, and Integer'First / -1
+    // for signed). Modular arithmetic wraps, so it carries only the divisor
+    // check. A null attr means no checks.
+    auto checksAttr =
+        checks != mlir::ada::AdaChecks{}
+            ? mlir::ada::AdaChecksAttr::get(builder.getContext(), checks)
+            : mlir::ada::AdaChecksAttr{};
+    return builder.create<mlir::ada::BinOp>(callerLoc, kind, lhs, rhs,
+                                            checksAttr);
   }
 
   /// Emit the relational operation for two precomputed operands.
@@ -641,7 +661,17 @@ private:
       lhs = coerce(lhs, resultType, loc(binop));
       rhs = coerce(rhs, resultType, loc(binop));
     }
-    return emitBinOp(op, lhs, rhs);
+    // Read the arithmetic kind from the result type's `int_info`: present iff
+    // an integer type, with a modulus iff modular. Floats and enums have no
+    // `int_info`, so they are flagged neither.
+    bool isInteger = false, modular = false;
+    if (mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, loc(binop)))
+      if (auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+              typeOp.getTypeInfoAttr())) {
+        isInteger = true;
+        modular = static_cast<bool>(info.getModulus());
+      }
+    return emitBinOp(op, lhs, rhs, isInteger, modular);
   }
 
   /// Resolve the type of a literal expression. For universal types

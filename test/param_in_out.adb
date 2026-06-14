@@ -9,7 +9,7 @@
 -- MLIR:         ada.decls {
 -- MLIR:           ada.subp private @param_in_out.increment(%arg0: memref<!ada.qual<i32, @standard.integer>>)
 -- MLIR:             %[[V:.*]] = memref.load %arg0[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:             %[[R:.*]] = ada.binop "+" %[[V]], {{.*}} : !ada.qual<i32, @standard.integer>
+-- MLIR:             %[[R:.*]] = ada.binop "+" %[[V]], {{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
 -- MLIR:             memref.store %[[R]], %arg0[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:             ada.return
 -- MLIR:         ada.call @param_in_out.increment(%[[N_PTR]]) : (memref<!ada.qual<i32, @standard.integer>>) -> ()

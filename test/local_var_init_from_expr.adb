@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @local_var_init_from_expr
 -- MLIR-SAME:    (%arg0: !ada.qual<i32, @standard.integer>, %arg1: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR:         %[[X:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[X:.*]] = ada.binop "+" %arg0, %arg1 checks<overflow> : !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_local_var_init_from_expr(

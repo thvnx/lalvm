@@ -3,7 +3,7 @@
 
 -- MLIR-LABEL: ada.subp @short_integer
 -- MLIR-SAME:    (%arg0: !ada.qual<i16, @standard.short_integer>, %arg1: !ada.qual<i16, @standard.short_integer>) -> !ada.qual<i16, @standard.short_integer>
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<i16, @standard.short_integer>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 checks<overflow> : !ada.qual<i16, @standard.short_integer>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i16, @standard.short_integer>
 
 -- LLVM-LABEL: define i16 @_ada_short_integer(

@@ -36,6 +36,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -546,9 +547,33 @@ mlir::ParseResult BinOp::parse(mlir::OpAsmParser &parser,
 
   SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
   SMLoc operandsLoc = parser.getCurrentLocation();
+  if (parser.parseOperandList(operands, /*requiredOperandCount=*/2))
+    return mlir::failure();
+
+  // Optional `checks<overflow|...>` group (the run-time checks to perform),
+  // `|`-separated to match the bit enum's own spelling.
+  if (succeeded(parser.parseOptionalKeyword("checks"))) {
+    auto checks = ada::AdaChecks{};
+    if (parser.parseLess())
+      return mlir::failure();
+    do {
+      llvm::StringRef flag;
+      SMLoc flagLoc = parser.getCurrentLocation();
+      if (parser.parseKeyword(&flag))
+        return mlir::failure();
+      auto bit = ada::symbolizeAdaChecks(flag);
+      if (!bit)
+        return parser.emitError(flagLoc, "unknown check '") << flag << "'";
+      checks = checks | *bit;
+    } while (succeeded(parser.parseOptionalVerticalBar()));
+    if (parser.parseGreater())
+      return mlir::failure();
+    result.addAttribute("checks",
+                        ada::AdaChecksAttr::get(parser.getContext(), checks));
+  }
+
   Type type;
-  if (parser.parseOperandList(operands, /*requiredOperandCount=*/2) ||
-      parser.parseOptionalAttrDict(result.attributes) ||
+  if (parser.parseOptionalAttrDict(result.attributes) ||
       parser.parseColonType(type))
     return mlir::failure();
 
@@ -572,7 +597,11 @@ void BinOp::print(mlir::OpAsmPrinter &p) {
   p << " ";
   p.printString(ada::stringifyAdaBinaryOp(getKind()));
   p << " " << getOperands();
-  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"kind"});
+  if (ada::AdaChecksAttr checksAttr = getChecksAttr();
+      checksAttr && checksAttr.getValue() != ada::AdaChecks{})
+    p << " checks<" << ada::stringifyAdaChecks(checksAttr.getValue()) << ">";
+  p.printOptionalAttrDict((*this)->getAttrs(),
+                          /*elidedAttrs=*/{"kind", "checks"});
   p << " : " << getResult().getType();
 }
 

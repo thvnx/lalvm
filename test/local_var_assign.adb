@@ -5,7 +5,7 @@
 -- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[INIT:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 4
 -- MLIR-NEXT:    %[[ONE:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
--- MLIR-NEXT:    %[[X:.*]] = ada.binop "+" %[[INIT]], %[[ONE]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[X:.*]] = ada.binop "+" %[[INIT]], %[[ONE]] checks<overflow> : !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_local_var_assign(
