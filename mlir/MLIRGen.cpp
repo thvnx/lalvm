@@ -608,8 +608,44 @@ private:
                                             rhs);
   }
 
+  /// If `expr` is a static expression (@rm{4-9}) of an integer type, evaluate
+  /// it in full via `eval_as_int` and emit one range-checked `ada.constant`: a
+  /// static expression is computed at compile time, so it carries no run-time
+  /// check and no arithmetic op. Returns nullopt when `expr` is not a static
+  /// integer expression (the caller emits it normally); returns a value (null
+  /// on a failed static Constraint_Check, @rm{11-5}) when handled. Enumeration
+  /// types (including Boolean and Character) are static too but are emitted via
+  /// their representation, not `eval_as_int`, so they are left to the caller.
+  std::optional<mlir::Value> tryEmitStaticIntExpr(ada_node &expr) {
+    ada_bool isStatic = false;
+    if (!ada_expr_p_is_static_expr(&expr, /*imprecise_fallback=*/false,
+                                   &isStatic) ||
+        !isStatic)
+      return std::nullopt;
+    mlir::Location location = loc(expr);
+    ada_node type_decl = resolveLiteralType(expr, location);
+    if (ada_node_is_null(&type_decl))
+      return std::nullopt;
+    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
+    if (!typeOp || !mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
+                       typeOp.getTypeInfoAttr()))
+      return std::nullopt;
+    ada_big_integer bigint;
+    if (!ada_expr_p_eval_as_int(&expr, &bigint))
+      return std::nullopt;
+    auto value = libadalang::bigIntToAPInt(bigint);
+    if (!value) {
+      mlir::emitError(location, "failed to evaluate static integer expression");
+      return mlir::Value(nullptr);
+    }
+    return mlir::Value(emitCheckedIntConstant(*value, type_decl, location));
+  }
+
   /// Emit a binary operation.
   mlir::Value mlirGenBinOp(ada_node &binop) {
+    if (auto folded = tryEmitStaticIntExpr(binop))
+      return *folded;
+
     ada_node left;
     ada_bin_op_f_left(&binop, &left);
     mlir::Value lhs = visit_expr(left);
@@ -811,6 +847,30 @@ private:
     return false;
   }
 
+  /// Emit a range-checked `ada.constant` for integer `value` of type
+  /// `type_decl`: the static Constraint_Check (@rm{11-5}), resolved at emission
+  /// like GNAT's front end (a value outside the target subtype's static range
+  /// fails at compile time; a dynamic-bound subtype falls through to the
+  /// run-time check), then the constant. Returns null on a failed check (a
+  /// diagnostic is emitted).
+  mlir::Value emitCheckedIntConstant(const llvm::APInt &value,
+                                     ada_node type_decl,
+                                     mlir::Location location) {
+    if (auto sr = staticIntCheckRange(type_decl, location)) {
+      ada_node defName;
+      std::string name =
+          ada_basic_decl_p_defining_name(&sr->type_decl, &defName)
+              ? canonicalFqn(defName)
+              : libadalang::getName(&sr->type_decl);
+      if (diagnoseOutOfRange(value, sr->lo, sr->hi, name, location))
+        return nullptr;
+    }
+    mlir::ada::QualType type = getAdaQualType(type_decl, location);
+    if (!type)
+      return nullptr;
+    return emitIntConstant(value, type, location);
+  }
+
   mlir::Value mlirGenIntLiteral(ada_node &node) {
     auto value = evalIntLiteral(node);
     if (!value)
@@ -822,23 +882,7 @@ private:
     ada_node type_decl = resolveLiteralType(node, location);
     if (ada_node_is_null(&type_decl))
       return nullptr;
-    // Static Constraint_Check (@rm{11-5}), resolved at emission like GNAT's
-    // front end: a literal outside its target subtype's static range fails at
-    // compile time. A dynamic-bound subtype falls through to the run-time
-    // check.
-    if (auto sr = staticIntCheckRange(type_decl, location)) {
-      ada_node defName;
-      std::string name =
-          ada_basic_decl_p_defining_name(&sr->type_decl, &defName)
-              ? canonicalFqn(defName)
-              : libadalang::getName(&sr->type_decl);
-      if (diagnoseOutOfRange(*value, sr->lo, sr->hi, name, location))
-        return nullptr;
-    }
-    mlir::ada::QualType type = getAdaQualType(type_decl, location);
-    if (!type)
-      return nullptr;
-    return emitIntConstant(*value, type, location);
+    return emitCheckedIntConstant(*value, type_decl, location);
   }
 
   /// Extract the floating-point value of an ada_real_literal node via its
