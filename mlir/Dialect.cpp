@@ -525,6 +525,19 @@ mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// AttrOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult AttrOp::verify() {
+  // The only bound-reading attributes modelled so far (@rm{3-5}); names are
+  // lowercased, as Ada identifiers are normalized elsewhere.
+  if (getName() != "first" && getName() != "last")
+    return emitOpError() << "unsupported attribute '" << getName()
+                         << "'; expected \"first\" or \"last\"";
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
 

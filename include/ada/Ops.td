@@ -351,6 +351,45 @@ def RangeCheckOp : Ada_Op<"range_check", [
 }
 
 //===----------------------------------------------------------------------===//
+// AttrOp
+//===----------------------------------------------------------------------===//
+
+// A scalar attribute that reads a bound from a subtype's range descriptor
+// (@rm{3-5}): `'First` selects the low bound, `'Last` the high bound. The
+// operand is the `!ada.range` descriptor, never the type symbol -- the symbol
+// is static representation metadata with no bounds to read, while the
+// descriptor carries them (static or dynamic, @rm{3-2-2}). The result is the
+// bound as a value of the subtype, so a dynamic bound is read at run time
+// (lowered to an `extractvalue`) and a static one folds to a constant.
+// The `TypesMatchWith` pins the range to the result subtype's `!ada.range`
+// (same machine type and subtype symbol), mirroring `RangeCheckOp`; it also
+// drives assembly inference, so only the result `!ada.qual` is printed.
+def AttrOp : Ada_Op<"attr", [Pure,
+    TypesMatchWith<"range matches the result subtype", "result", "range",
+                   "::mlir::ada::RangeType::get($_self.getContext(), "
+                   "::mlir::cast<::mlir::ada::QualType>($_self).getMlirType(), "
+                   "::mlir::cast<::mlir::ada::QualType>($_self).getAdaType())">]> {
+  let summary = "Ada scalar attribute reading a subtype bound (`'First`/`'Last`)";
+  let description = [{
+    Reads a bound of a scalar subtype's range descriptor (@rm{3-5}): `"first"`
+    yields the low bound, `"last"` the high bound, as a value of the subtype.
+    The bound may be static or dynamic (@rm{3-2-2}); a dynamic bound is read
+    from the descriptor at run time.
+
+    ```mlir
+    %last = ada.attr "last", %r : !ada.qual<i32, @dyn.s>
+    ```
+  }];
+
+  let arguments = (ins StrAttr:$name, Ada_RangeType:$range);
+  let results = (outs Ada_QualType:$result);
+  let assemblyFormat =
+      "$name `,` $range attr-dict `:` qualified(type($result))";
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
 
