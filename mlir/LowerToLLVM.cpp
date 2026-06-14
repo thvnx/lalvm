@@ -324,6 +324,24 @@ struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
   }
 };
 
+// Lowers ada.attr (`'First`/`'Last`) to an `extractvalue` of the lowered range
+// descriptor: field 0 is the low bound (`'First`), field 1 the high
+// (`'Last`). When the descriptor comes from a visible `ada.range`, the
+// `extractvalue` of the producing `insertvalue` folds away under optimization,
+// so a static bound collapses to its constant.
+struct AttrOpLowering : public OpConversionPattern<ada::AttrOp> {
+  using OpConversionPattern<ada::AttrOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::AttrOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    int64_t field = op.getName() == "first" ? 0 : 1;
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op, adaptor.getRange(), llvm::ArrayRef<int64_t>{field});
+    return success();
+  }
+};
+
 // OpRewritePattern: no ada.qual operands or results; plain erasure needs no
 // type converter.
 struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
@@ -770,8 +788,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
                UnwrapOpLowering, SubpOpLowering, ConstantOpLowering,
-               CoerceOpLowering, RangeOpLowering, RangeCheckOpLowering>(
-      typeConverter, &getContext());
+               CoerceOpLowering, RangeOpLowering, RangeCheckOpLowering,
+               AttrOpLowering>(typeConverter, &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));
