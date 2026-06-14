@@ -19,9 +19,9 @@
 -- LLVM:        icmp eq i32 %0, 0
 -- LLVM:        br i1
 -- LLVM:        ret i32 1
--- LLVM:        sub i32 %0, 1
+-- LLVM:        call { i32, i1 } @llvm.ssub.with.overflow.i32(i32 %0, i32 1)
 -- LLVM:        call i32 @facto__f
--- LLVM:        mul i32
+-- LLVM:        call { i32, i1 } @llvm.smul.with.overflow.i32
 -- LLVM:        ret i32
 
 function Facto return Integer is

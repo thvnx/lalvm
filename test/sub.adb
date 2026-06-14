@@ -6,7 +6,7 @@
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_sub(
--- LLVM:         %{{.*}} = sub i32 %0, %1
+-- LLVM:         %{{.*}} = call { i32, i1 } @llvm.ssub.with.overflow.i32(i32 %0, i32 %1)
 -- LLVM:         ret i32
 
 function Sub (A, B : Integer) return Integer is

@@ -7,7 +7,7 @@
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i16, @standard.short_integer>
 
 -- LLVM-LABEL: define i16 @_ada_short_integer_sub(
--- LLVM:         %{{.*}} = sub i16 %0, %1
+-- LLVM:         %{{.*}} = call { i16, i1 } @llvm.ssub.with.overflow.i16(i16 %0, i16 %1)
 -- LLVM:         ret i16
 
 function Short_Integer_Sub (A, B : Short_Integer) return Short_Integer is

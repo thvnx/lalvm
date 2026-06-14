@@ -15,7 +15,7 @@
 -- LLVM-LABEL: define void @_ada_proc(ptr
 -- LLVM:         load i32, ptr
 -- LLVM:         load i32, ptr
--- LLVM:         %{{.*}} = add i32
+-- LLVM:         %{{.*}} = call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:         store i32 %{{.*}}, ptr
 -- LLVM:         ret void
 

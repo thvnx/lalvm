@@ -20,7 +20,7 @@
 -- LLVM-LABEL: define internal void @param_in_out__increment(ptr
 -- LLVM:          #dbg_declare(ptr %0,
 -- LLVM:          load i32, ptr
--- LLVM:          add i32
+-- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:          store i32
 -- LLVM:          ret void
 -- LLVM:          DILocalVariable(name: "x", arg: 1,

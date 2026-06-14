@@ -17,7 +17,7 @@
 -- LLVM-LABEL: define internal i32 @param_in__double(i32
 -- LLVM-NOT:     alloca
 -- LLVM:          #dbg_value(i32 %0,
--- LLVM:          add i32
+-- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:          ret i32
 -- LLVM:          DILocalVariable(name: "x", arg: 1,
 

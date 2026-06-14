@@ -7,8 +7,8 @@
 -- MLIR-NEXT:    ada.return %[[ABC]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_add(
--- LLVM:         %{{.*}} = add i32 %0, %1
--- LLVM-NEXT:    %{{.*}} = add i32 %{{.*}}, %2
+-- LLVM:         call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %0, i32 %1)
+-- LLVM:         call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %{{.*}}, i32 %2)
 -- LLVM:         ret i32
 
 function Add (I, J, K : Integer) return Integer is

@@ -134,6 +134,49 @@ static mlir::Value emitFileNamePtr(mlir::ConversionPatternRewriter &rewriter,
                                       llvm::ArrayRef<LLVM::GEPArg>{0, 0});
 }
 
+/// Emit a Constraint_Check trap (@rm{11-5}): split the current block, build a
+/// `raise` block that calls the GNAT runtime `fnName(file, line)` and is
+/// unreachable, and branch there when `cond` is true, otherwise fall through to
+/// the continuation. `cond` must already be materialized in the current block;
+/// after the call the rewriter inserts at the end of the original block (its
+/// terminator). Returns failure if the runtime function cannot be declared.
+static mlir::LogicalResult
+emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
+                    mlir::Location loc, mlir::ModuleOp module, mlir::Value cond,
+                    llvm::StringRef fnName) {
+  auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
+  mlir::Type i32Ty = rewriter.getI32Type();
+  auto fn =
+      LLVM::lookupOrCreateFn(rewriter, module, fnName, {ptrTy, i32Ty},
+                             LLVM::LLVMVoidType::get(rewriter.getContext()));
+  if (mlir::failed(fn))
+    return mlir::failure();
+
+  // Split the block at the check; later uses of the value move to `cont`.
+  mlir::Block *opBlock = rewriter.getInsertionBlock();
+  mlir::Block *cont =
+      rewriter.splitBlock(opBlock, rewriter.getInsertionPoint());
+
+  // Raise block: fnName(file, line); unreachable.
+  mlir::Block *raise = rewriter.createBlock(cont);
+  llvm::StringRef fileName;
+  unsigned line = 0;
+  if (auto flc = mlir::dyn_cast<mlir::FileLineColLoc>(loc)) {
+    fileName = flc.getFilename();
+    line = flc.getLine();
+  }
+  mlir::Value file = emitFileNamePtr(rewriter, loc, module, fileName);
+  mlir::Value lineVal = rewriter.create<LLVM::ConstantOp>(
+      loc, i32Ty, rewriter.getI32IntegerAttr(line));
+  rewriter.create<LLVM::CallOp>(loc, *fn, mlir::ValueRange{file, lineVal});
+  rewriter.create<LLVM::UnreachableOp>(loc);
+
+  // Test in the original block: bad -> raise, else -> continue.
+  rewriter.setInsertionPointToEnd(opBlock);
+  rewriter.create<LLVM::CondBrOp>(loc, cond, raise, cont);
+  return mlir::success();
+}
+
 // OpConversionPattern: the result type changes from !ada.qual to a bare MLIR
 // type; the conversion framework must track that mapping for downstream uses.
 struct ConstantOpLowering : public OpConversionPattern<ada::ConstantOp> {
@@ -251,35 +294,7 @@ struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
     mlir::Value hi = rewriter.create<LLVM::ExtractValueOp>(
         loc, desc, llvm::ArrayRef<int64_t>{1});
 
-    // Split the block at the check; later uses of the value move to `cont`.
-    mlir::Block *opBlock = rewriter.getInsertionBlock();
-    mlir::Block *cont =
-        rewriter.splitBlock(opBlock, rewriter.getInsertionPoint());
-
-    // Raise block: __gnat_rcheck_CE_Range_Check(file, line); unreachable.
-    auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
-    mlir::Type i32Ty = rewriter.getI32Type();
-    auto fn = LLVM::lookupOrCreateFn(
-        rewriter, module, "__gnat_rcheck_CE_Range_Check", {ptrTy, i32Ty},
-        LLVM::LLVMVoidType::get(rewriter.getContext()));
-    if (mlir::failed(fn))
-      return mlir::failure();
-
-    mlir::Block *raise = rewriter.createBlock(cont);
-    llvm::StringRef fileName;
-    unsigned line = 0;
-    if (auto flc = mlir::dyn_cast<mlir::FileLineColLoc>(loc)) {
-      fileName = flc.getFilename();
-      line = flc.getLine();
-    }
-    mlir::Value file = emitFileNamePtr(rewriter, loc, module, fileName);
-    mlir::Value lineVal = rewriter.create<LLVM::ConstantOp>(
-        loc, i32Ty, rewriter.getI32IntegerAttr(line));
-    rewriter.create<LLVM::CallOp>(loc, *fn, mlir::ValueRange{file, lineVal});
-    rewriter.create<LLVM::UnreachableOp>(loc);
-
-    // Test in the original block: out of range -> raise, else -> continue.
-    rewriter.setInsertionPointToEnd(opBlock);
+    // Out of range when below the low bound or above the high bound.
     mlir::Value below, above;
     if (mlir::isa<mlir::FloatType>(value.getType())) {
       // Unordered predicates so a NaN value (in no range) raises: `NaN ult lo`
@@ -299,7 +314,10 @@ struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
           hi);
     }
     mlir::Value bad = rewriter.create<LLVM::OrOp>(loc, below, above);
-    rewriter.create<LLVM::CondBrOp>(loc, bad, raise, cont);
+
+    if (mlir::failed(emitConstraintRaise(rewriter, loc, module, bad,
+                                         "__gnat_rcheck_CE_Range_Check")))
+      return mlir::failure();
 
     rewriter.replaceOp(op, value);
     return success();
@@ -352,6 +370,49 @@ struct CallOpLowering : public OpConversionPattern<ada::CallOp> {
 // AdaToLLVM RewritePatterns: Binary operations
 //===----------------------------------------------------------------------===//
 
+// Value of a checked signed-integer arithmetic tree when it is a compile-time
+// constant that does not overflow, else nullopt. After `mem2reg` the promoted
+// locals are constants, so such an operation provably cannot raise and needs no
+// overflow check -- the plain arith op is emitted instead and LLVM folds it,
+// matching GNAT, which folds e.g. `X + Y` to a literal when X and Y have known
+// values. Only overflow-flagged (signed, no modulus) `+`/`-`/`*` are evaluated,
+// with exact two's-complement `APInt` arithmetic.
+static std::optional<llvm::APInt> evalConstInt(mlir::Value v) {
+  if (auto c = v.getDefiningOp<ada::ConstantOp>())
+    if (auto ia = mlir::dyn_cast<mlir::IntegerAttr>(c.getValue()))
+      return ia.getValue();
+  if (auto c = v.getDefiningOp<arith::ConstantOp>())
+    if (auto ia = mlir::dyn_cast<mlir::IntegerAttr>(c.getValue()))
+      return ia.getValue();
+  auto bin = v.getDefiningOp<ada::BinOp>();
+  if (!bin)
+    return std::nullopt;
+  ada::AdaChecksAttr checks = bin.getChecksAttr();
+  if (!checks ||
+      !ada::bitEnumContainsAny(checks.getValue(), ada::AdaChecks::Overflow))
+    return std::nullopt;
+  std::optional<llvm::APInt> l = evalConstInt(bin.getLhs());
+  std::optional<llvm::APInt> r = evalConstInt(bin.getRhs());
+  if (!l || !r)
+    return std::nullopt;
+  llvm::APInt result;
+  bool overflow = false;
+  switch (bin.getKind()) {
+  case ada::AdaBinaryOp::Plus:
+    result = l->sadd_ov(*r, overflow);
+    break;
+  case ada::AdaBinaryOp::Minus:
+    result = l->ssub_ov(*r, overflow);
+    break;
+  case ada::AdaBinaryOp::Mult:
+    result = l->smul_ov(*r, overflow);
+    break;
+  default:
+    return std::nullopt;
+  }
+  return overflow ? std::nullopt : std::optional<llvm::APInt>(result);
+}
+
 // Lowers ada.binop to the corresponding arith op, dispatching on the operator
 // kind attribute and on integer vs. float operand type.
 // OpConversionPattern: operands are ada.qual typed; the adaptor provides the
@@ -368,13 +429,55 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
       return rewriter.notifyMatchFailure(op, [type](Diagnostic &diag) {
         diag << "unsupported operand type: " << type;
       });
+    ada::AdaBinaryOp kind = op.getKind();
+
+    // Signed-integer +/-/* carrying the overflow flag lower to the LLVM checked
+    // intrinsic and trap to the GNAT runtime on overflow (@rm{4-5}). A
+    // provably-safe compile-time constant skips the check and uses the plain
+    // arith op below (which LLVM folds); so do floats, modular, /, and
+    // unflagged ops.
+    ada::AdaChecks checks = {};
+    if (ada::AdaChecksAttr a = op.getChecksAttr())
+      checks = a.getValue();
+    if (isInt && ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) &&
+        !evalConstInt(op.getResult())) {
+      mlir::Location loc = op.getLoc();
+      auto module = op->getParentOfType<mlir::ModuleOp>();
+      auto st = LLVM::LLVMStructType::getLiteral(rewriter.getContext(),
+                                                 {type, rewriter.getI1Type()});
+      mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
+      mlir::Value wo;
+      switch (kind) {
+      case ada::AdaBinaryOp::Plus:
+        wo = rewriter.create<LLVM::SAddWithOverflowOp>(loc, st, lhs, rhs);
+        break;
+      case ada::AdaBinaryOp::Minus:
+        wo = rewriter.create<LLVM::SSubWithOverflowOp>(loc, st, lhs, rhs);
+        break;
+      case ada::AdaBinaryOp::Mult:
+        wo = rewriter.create<LLVM::SMulWithOverflowOp>(loc, st, lhs, rhs);
+        break;
+      default:
+        return rewriter.notifyMatchFailure(op, "overflow check on non-+-* op");
+      }
+      mlir::Value res = rewriter.create<LLVM::ExtractValueOp>(
+          loc, wo, llvm::ArrayRef<int64_t>{0});
+      mlir::Value ovf = rewriter.create<LLVM::ExtractValueOp>(
+          loc, wo, llvm::ArrayRef<int64_t>{1});
+      if (mlir::failed(emitConstraintRaise(rewriter, loc, module, ovf,
+                                           "__gnat_rcheck_CE_Overflow_Check")))
+        return mlir::failure();
+      rewriter.replaceOp(op, res);
+      return success();
+    }
+
     auto lower = [&](bool intType, auto iOp, auto fOp) {
       if (intType)
         rewriter.replaceOpWithNewOp<decltype(iOp)>(op, adaptor.getOperands());
       else
         rewriter.replaceOpWithNewOp<decltype(fOp)>(op, adaptor.getOperands());
     };
-    switch (op.getKind()) {
+    switch (kind) {
     case ada::AdaBinaryOp::Plus:
       lower(isInt, arith::AddIOp{}, arith::AddFOp{});
       break;

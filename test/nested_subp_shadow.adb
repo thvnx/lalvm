@@ -21,7 +21,7 @@
 -- LLVM:          call i32 @nested_subp_shadow__nested_subp_shadow(i32 12)
 -- LLVM:          ret i32
 -- LLVM-LABEL: define internal i32 @nested_subp_shadow__nested_subp_shadow(i32
--- LLVM:          add i32
+-- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:          ret i32
 
 function Nested_Subp_Shadow return Integer is

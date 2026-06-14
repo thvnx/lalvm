@@ -7,7 +7,7 @@
 -- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_local_var_init_from_expr(
--- LLVM:         add i32
+-- LLVM:         call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:         ret i32
 
 function Local_Var_Init_From_Expr (A, B : Integer) return Integer is

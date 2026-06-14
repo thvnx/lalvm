@@ -17,7 +17,7 @@
 -- LLVM-LABEL: define void @_ada_operator_overload(
 -- LLVM:          ret void
 -- LLVM-LABEL: define internal i32 @operator_overload__Omultiply(
--- LLVM:          add i32
+-- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:          ret i32
 
 procedure Operator_Overload is

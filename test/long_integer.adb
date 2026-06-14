@@ -7,7 +7,7 @@
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i64, @standard.long_integer>
 
 -- LLVM-LABEL: define i64 @_ada_long_integer(
--- LLVM:         %{{.*}} = add i64 %0, %1
+-- LLVM:         %{{.*}} = call { i64, i1 } @llvm.sadd.with.overflow.i64(i64 %0, i64 %1)
 -- LLVM:         ret i64
 
 function Long_Integer (A, B : Long_Integer) return Long_Integer is

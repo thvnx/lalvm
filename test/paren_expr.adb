@@ -11,8 +11,9 @@
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_paren_expr(
--- LLVM:         %[[SUM:.*]] = add i32 %0, %1
--- LLVM-NEXT:    %{{.*}} = mul i32 %[[SUM]], %2
+-- LLVM:         %[[WS:.*]] = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %0, i32 %1)
+-- LLVM:         %[[SUM:.*]] = extractvalue { i32, i1 } %[[WS]], 0
+-- LLVM:         call { i32, i1 } @llvm.smul.with.overflow.i32(i32 %[[SUM]], i32 %2)
 -- LLVM:         ret i32
 
 function Paren_Expr (A, B, C : Integer) return Integer is
