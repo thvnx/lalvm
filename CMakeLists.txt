@@ -66,6 +66,7 @@ add_llvm_executable(lalvm
   mlir/AdaToLLVMIRTranslation.cpp
   mlir/AdaDebugInfo.cpp
   mlir/EnumDITypes.cpp
+  mlir/SubrangeDITypes.cpp
   frontend/AST.cpp
   lalvm.cpp
 

@@ -7,6 +7,7 @@
 #include "ada/EnumDITypes.h"
 #include "ada/MLIRGen.h"
 #include "ada/Passes.h"
+#include "ada/SubrangeDITypes.h"
 
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -276,6 +277,7 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   llvmModule->addModuleFlag(llvm::Module::Max, "Dwarf Version", 5);
 
   mlir::ada::buildEnumDITypes(*llvmModule, *module);
+  mlir::ada::buildSubrangeDITypes(*llvmModule, *module);
 
   // Initialize the host target backend.
   llvm::InitializeNativeTarget();

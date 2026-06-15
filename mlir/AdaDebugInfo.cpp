@@ -122,9 +122,26 @@ static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
       /*associated=*/LLVM::DIExpressionAttr{});
 }
 
+/// Build a DIDerivedType typedef placeholder for a constrained integer subtype.
+/// MLIR has no DISubrangeType attr (the only LLVM node with
+/// DW_TAG_subrange_type as a type), so a typedef of the base type, keyed by the
+/// full sym_name, stands in until buildSubrangeDITypes replaces it with a real
+/// DISubrangeType after MLIR-to-LLVM translation (matching by name). The
+/// typedef is itself a valid, honest fallback should that step not run.
+static LLVM::DIDerivedTypeAttr makeDISubrangeStub(MLIRContext *ctx,
+                                                  ada::TypeOp typeOp,
+                                                  LLVM::DITypeAttr baseType) {
+  return LLVM::DIDerivedTypeAttr::get(
+      ctx, llvm::dwarf::DW_TAG_typedef,
+      StringAttr::get(ctx, typeOp.getSymName()), baseType, /*sizeInBits=*/0,
+      /*alignInBits=*/0, /*offsetInBits=*/0, /*dwarfAddressSpace=*/std::nullopt,
+      /*extraData=*/LLVM::DINodeAttr{});
+}
+
 /// Dispatch to the appropriate DI type for a given ada.type op.
-/// Returns a DICompositeTypeAttr stub for enum types, a DIBasicTypeAttr for
-/// integer and float types, and null for unsupported type info kinds.
+/// Returns a DICompositeTypeAttr stub for enum types, a DIDerivedType typedef
+/// stub for constrained integer subtypes, a DIBasicTypeAttr for base integer
+/// and float types, and null for unsupported type info kinds.
 static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   auto enumInfo =
       dyn_cast_or_null<ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
@@ -144,6 +161,19 @@ static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   if (!isa<ada::IntegerTypeInfoAttr, ada::FloatTypeInfoAttr>(
           typeOp.getTypeInfoAttr()))
     return {};
+  // A constrained integer subtype with at least one static bound is a DWARF
+  // subrange of its base type. A subtype with only dynamic bounds falls through
+  // to a basic type until dynamic-bound subranges are supported.
+  if (auto intInfo =
+          dyn_cast<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
+    if (typeOp.getBaseAttr() &&
+        (intInfo.staticLower() || intInfo.staticUpper())) {
+      auto baseOp = dyn_cast_or_null<ada::TypeOp>(
+          SymbolTable::lookupNearestSymbolFrom(typeOp, typeOp.getBaseAttr()));
+      return makeDISubrangeStub(ctx, typeOp,
+                                baseOp ? makeDITypeAttr(ctx, baseOp)
+                                       : LLVM::DITypeAttr());
+    }
   return makeDINamedType(ctx, typeOp);
 }
 
