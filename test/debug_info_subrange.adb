@@ -6,7 +6,9 @@
 -- constraint (`range 1 .. 10`) rather than a bare integer. Built by
 -- buildSubrangeDITypes after translation, replacing the placeholder emitted by
 -- AdaDebugInfoPass. `V` is passed `out` so it survives mem2reg as a real
--- variable carrying the subrange type.
+-- variable carrying the subrange type. The by-reference parameter `X` of the
+-- subtype is described by the same subrange (its Ada subtype comes from the
+-- parameter's memref element, not from re-inferring the base type).
 
 -- CHECK: DW_TAG_variable
 -- CHECK: DW_AT_name ("v")
@@ -15,6 +17,9 @@
 -- CHECK: DW_AT_name ("s")
 -- CHECK: DW_AT_lower_bound (1)
 -- CHECK: DW_AT_upper_bound (10)
+-- CHECK: DW_TAG_formal_parameter
+-- CHECK: DW_AT_name ("x")
+-- CHECK: DW_AT_type ({{.*}} "s")
 
 function Debug_Info_Subrange return Integer is
    subtype S is Integer range 1 .. 10;

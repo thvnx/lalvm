@@ -666,9 +666,15 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
                   ConversionPatternRewriter &rewriter) const override {
     mlir::FunctionType funcType = op.getFunctionType();
 
-    // Collect Ada type refs for ada.qual input params before region move.
+    // Collect Ada type refs for input params before region move. A
+    // by-reference (out/in out) parameter is a memref of its ada.qual; an in
+    // parameter is the ada.qual directly. Record the Ada subtype either way so
+    // AdaDebugInfoPass describes the parameter with its own type rather than
+    // re-inferring the base type from a load/store.
     SmallVector<mlir::FlatSymbolRefAttr> paramTypeRefs;
     for (mlir::Type t : funcType.getInputs()) {
+      if (auto mr = dyn_cast<MemRefType>(t))
+        t = mr.getElementType();
       if (auto typed = dyn_cast<ada::QualType>(t))
         paramTypeRefs.push_back(typed.getAdaType());
       else
