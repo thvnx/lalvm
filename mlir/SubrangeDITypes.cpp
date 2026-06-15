@@ -157,5 +157,29 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
     }
   }
 
+  // Rewrite subprogram signatures: a return or parameter type still pointing at
+  // the typedef placeholder becomes the subrange, so the DISubroutineType
+  // matches the parameter DIEs and leaves no placeholder behind.
+  for (llvm::Function &f : llvmModule) {
+    auto *sp = f.getSubprogram();
+    if (!sp || !sp->getType() || !sp->getType()->getRawTypeArray())
+      continue;
+    llvm::SmallVector<llvm::Metadata *> elems;
+    bool changed = false;
+    for (llvm::DIType *t : sp->getType()->getTypeArray()) {
+      if (auto *deriv = llvm::dyn_cast_or_null<llvm::DIDerivedType>(t)) {
+        auto it = subrangeByName.find(deriv->getName());
+        if (it != subrangeByName.end()) {
+          elems.push_back(it->second);
+          changed = true;
+          continue;
+        }
+      }
+      elems.push_back(t);
+    }
+    if (changed)
+      sp->replaceType(db.createSubroutineType(db.getOrCreateTypeArray(elems)));
+  }
+
   db.finalize();
 }
