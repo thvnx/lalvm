@@ -968,8 +968,15 @@ private:
   /// a Constraint_Check (@rm{11-5}) when `expected` is a constrained subtype.
   mlir::Value coerce(mlir::Value val, mlir::ada::QualType expected,
                      mlir::Location location) {
-    if (val.getType() == expected)
+    if (val.getType() == expected) {
+      // A value already of `expected` is trusted to satisfy the constraint,
+      // except a constant that acquired the subtype from context without a
+      // check: re-run the Constraint_Check so a dynamic-bound subtype is still
+      // verified at run time (a static one is already resolved at emission).
+      if (val.getDefiningOp<mlir::ada::ConstantOp>())
+        return constrainToSubtype(val, val, expected, location);
       return val;
+    }
     mlir::Value coerced =
         builder.create<mlir::ada::CoerceOp>(location, expected, val);
     return constrainToSubtype(val, coerced, expected, location);
