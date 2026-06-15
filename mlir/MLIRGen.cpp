@@ -1296,6 +1296,61 @@ private:
     return nullptr;
   }
 
+  /// Emit a scalar attribute reference (@rm{3-5}): `'First`/`'Last` on an
+  /// integer subtype prefix. The decision is per bound: a static bound is read
+  /// straight from the subtype's `int_info` and emitted as a constant; a
+  /// dynamic bound is read at run time from the range descriptor elaborated at
+  /// the subtype declaration, via `ada.attr`. So `range 1 .. N` yields a
+  /// constant `'First` but a dynamic `'Last`.
+  mlir::Value mlirGenAttributeRef(ada_node &expr) {
+    mlir::Location location = loc(expr);
+
+    ada_node attrId;
+    ada_attribute_ref_f_attribute(&expr, &attrId);
+    std::string name = libadalang::getName(&attrId, /*canonical=*/true);
+    if (name != "first" && name != "last") {
+      mlir::emitError(location, "unsupported attribute '") << name << "'";
+      return nullptr;
+    }
+
+    ada_node prefix, subtype;
+    ada_attribute_ref_f_prefix(&expr, &prefix);
+    if (!ada_name_p_name_designated_type(&prefix, &subtype) ||
+        ada_node_is_null(&subtype)) {
+      mlir::emitError(location, "'") << name << "' prefix is not a subtype";
+      return nullptr;
+    }
+    mlir::ada::QualType type = getAdaQualType(subtype, location);
+    if (!type)
+      return nullptr;
+    mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(subtype, location);
+    auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+        typeOp ? typeOp.getTypeInfoAttr() : mlir::Attribute());
+    if (!info) {
+      mlir::emitError(location, "'")
+          << name << "' is only supported on integer subtypes";
+      return nullptr;
+    }
+
+    // Static bound: read it straight from the subtype's `int_info`.
+    bool wantLow = name == "first";
+    if (mlir::IntegerAttr bound =
+            wantLow ? info.staticLower() : info.staticUpper())
+      return emitIntConstant(bound.getValue(), type, location);
+
+    // Dynamic bound: read from the range descriptor elaborated at the subtype
+    // declaration.
+    mlir::Value range = findDynamicRange(
+        builder.getInsertionBlock()->getParentOp(), type.getAdaType());
+    if (!range) {
+      mlir::emitError(location, "no range descriptor in scope for '")
+          << name << "'";
+      return nullptr;
+    }
+    return builder.create<mlir::ada::AttrOp>(
+        location, type, builder.getStringAttr(name), range);
+  }
+
   /// Codegen an expression node. Returns the SSA Value for the result, or
   /// nullptr on failure (unsupported expression kind or codegen error).
   mlir::Value visit_expr(ada_node &expr) {
@@ -1362,6 +1417,8 @@ private:
       return mlirGenBinOp(expr);
     case ada_call_expr:
       return mlirGenCallExprValue(expr);
+    case ada_attribute_ref:
+      return mlirGenAttributeRef(expr);
     case ada_if_expr:
       return mlirGenIfExpr(expr);
     case ada_paren_expr: {
@@ -1692,7 +1749,13 @@ private:
   /// reference that ClosureConversion lifts into a parameter.
   mlir::Value findDynamicRange(mlir::Operation *from,
                                mlir::FlatSymbolRefAttr sym) {
-    for (auto subp = from->getParentOfType<mlir::ada::SubpOp>(); subp;
+    // Start at the nearest enclosing subprogram, including `from` itself when
+    // it is one (an attribute use anchored on its `ada.subp` must see a range
+    // declared in that same subprogram).
+    mlir::ada::SubpOp start = mlir::dyn_cast<mlir::ada::SubpOp>(from);
+    if (!start)
+      start = from->getParentOfType<mlir::ada::SubpOp>();
+    for (auto subp = start; subp;
          subp = subp->getParentOfType<mlir::ada::SubpOp>()) {
       if (subp.getBody().empty())
         continue;
