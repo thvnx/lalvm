@@ -92,12 +92,12 @@ lalvm --emit=llvm compute.adb   # LLVM IR
 MLIR output:
 ```mlir
 module @compute {
-  ada.type @standard.integer : i32 = #ada.numeric_info
+  ada.type @standard.integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
   ada.subp @compute(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
     %0 = ada.call @compute.double(%arg0) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
     ada.decls {
       ada.subp private @compute.double(%arg1: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
-        %1 = ada.binop "+" %arg1, %arg1 : !ada.qual<i32, @standard.integer>
+        %1 = ada.binop "+" %arg1, %arg1 checks<overflow> : !ada.qual<i32, @standard.integer>
         ada.return %1 : !ada.qual<i32, @standard.integer>
       }
     }
@@ -157,7 +157,10 @@ Each named Ada object (variable, constant, named number, parameter) carries a
 `NameLoc` in the Ada dialect, which `AdaDebugInfoPass` consumes to emit
 `dbg.declare` (for stack variables) or `dbg.value` (for constants and named
 numbers). Enum types produce `DICompositeType` entries with one `DIEnumerator`
-per literal.
+per literal. Constrained integer subtypes produce `DISubrangeType` entries with
+their bounds: constants for static bounds, and a referenced `DILocalVariable`
+for a dynamic bound (currently a subprogram parameter; see the limitations in
+`AdaDebugInfoPass`).
 
 To inspect source locations in the MLIR output:
 
@@ -177,18 +180,26 @@ Work in progress. Only a subset of Ada is supported; most language features
 are not yet implemented.
 
 **Expressions:**
-- Integer and real literals; named numbers (RM 3.3.2)
+- Integer and real literals; named numbers
 - Binary arithmetic: `+`, `-`, `*`, `/`
-- Relational comparisons: `=`, `/=` (RM 4.5.2)
-- If expressions (RM 4.5.7) and parenthesized expressions (RM 4.4)
+- Relational comparisons: `=`, `/=`
+- If expressions and parenthesized expressions
 - Variable and parameter references
 - Function calls (including nested)
 - Enum and character literals
+- `'First`/`'Last` attributes on scalar (sub)types
+
+**Checks:**
+- Overflow check on signed-integer `+`/`-`/`*` and a division check on integer
+  `/`, raising `Constraint_Error` (modular arithmetic wraps, no check)
+- `Constraint_Error` range checks where a value flows into a constrained
+  subtype; statically-resolved checks are decided at compile time (out-of-range
+  static expressions are diagnosed, in-range ones emit no check)
 
 **Statements:**
 - Assignments, `return`, `null`
 - Procedure calls
-- `if` statements (RM 5.3)
+- `if` statements
 - Block statements (`begin`/`end` and `declare`/`begin`/`end`)
 
 **Declarations:**
@@ -206,11 +217,13 @@ are not yet implemented.
 - `Integer` (i32), `Short_Integer` (i16), `Long_Integer` (i64)
 - `Float` (f32), `Long_Float` (f64)
 - `Boolean` (i1) and user-defined enum types (i1 for 2 literals, i8 for 3-256)
-- `Character` (i8) and user-defined character types (RM 3.5.2)
+- `Character` (i8) and user-defined character types
+- Integer subtypes with static or dynamic range constraints
+  (`subtype S is Integer range 1 .. N`); widths derived from the declared range
 
 **Debug info:** DWARF 5, `DW_LANG_Ada2012`, source locations on all ops,
 `dbg.declare`/`dbg.value` for variables and constants, `DICompositeType`
-for enum types
+for enum types, `DISubrangeType` for constrained integer subtypes
 
 ## Architecture
 
@@ -218,8 +231,12 @@ The compiler is organized into the Ada dialect plus a sequence of MLIR passes:
 
 - **Ada dialect** (`include/ada/`, `mlir/Dialect.cpp`): custom MLIR dialect.
   Operations: `ada.type`, `ada.alloca`, `ada.constant`, `ada.coerce`,
-  `ada.binop`, `ada.cmp`, `ada.unwrap`, `ada.null`, `ada.decls`, `ada.call`,
-  `ada.subp`, `ada.return`.
+  `ada.binop`, `ada.cmp`, `ada.range`, `ada.range_check`, `ada.attr`,
+  `ada.unwrap`, `ada.null`, `ada.decls`, `ada.call`, `ada.subp`, `ada.return`.
+  `ada.binop` carries an optional `checks<overflow|division>` group; subtype
+  constraints are a first-class `!ada.range<T, @sym>` value (static or dynamic
+  bounds) checked by `ada.range_check`, and `ada.attr` reads `'First`/`'Last`
+  from it.
   The `!ada.qual<T, @sym>` type makes Ada type identity part of the MLIR
   type system: every SSA value's type encodes both its machine representation
   `T` and its Ada declared type `@sym` (a flat symbol reference to the
