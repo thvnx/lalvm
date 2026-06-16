@@ -6,15 +6,20 @@ PROJECT_BRIEF    = "Ada to LLVM IR compiler via MLIR"
 OUTPUT_DIRECTORY = @PROJECT_BINARY_DIR@/docs
 STRIP_FROM_PATH  = @PROJECT_SOURCE_DIR@ @PROJECT_BINARY_DIR@
 
-# Sources: public headers, implementation files, driver.
-# AdaOps.md is the generated op-reference produced by mlir-tblgen.
-INPUT         = @PROJECT_SOURCE_DIR@/include \
+# Sources: the README (rendered as the main page), public headers,
+# implementation files, driver. AdaOps.md is the generated op-reference
+# produced by mlir-tblgen.
+INPUT         = @PROJECT_SOURCE_DIR@/README.md \
+                @PROJECT_SOURCE_DIR@/include \
                 @PROJECT_SOURCE_DIR@/frontend \
                 @PROJECT_SOURCE_DIR@/mlir \
                 @PROJECT_SOURCE_DIR@/lalvm.cpp \
                 @PROJECT_BINARY_DIR@/include/ada
 RECURSIVE     = YES
 FILE_PATTERNS = *.cpp *.h *.md *.inc
+
+# Render the README as the documentation landing page.
+USE_MDFILE_AS_MAINPAGE = @PROJECT_SOURCE_DIR@/README.md
 
 EXTENSION_MAPPING = .inc=C++
 
