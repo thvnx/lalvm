@@ -173,4 +173,31 @@ def DINameAttr : AttrDef<Ada_Dialect, "DIName"> {
   let assemblyFormat = "`<` $name `>`";
 }
 
+// Constrained subtype whose dynamic subrange bound a descriptor value carries.
+// LowerToLLVM attaches it to the lowered `insertvalue` location so that
+// AdaDebugInfoPass can find each non-constant bound and bind a DI variable to
+// it; the insertvalue position (0 low, 1 high) selects which bound.
+def DIDynBoundAttr : AttrDef<Ada_Dialect, "DIDynBound"> {
+  let mnemonic = "di_dyn_bound";
+  let summary = "Subtype of a dynamic subrange bound for FusedLoc metadata";
+  let parameters = (ins
+    AttrParameter<"::mlir::FlatSymbolRefAttr", "constrained subtype sym_name">:$subtype
+  );
+  let assemblyFormat = "`<` $subtype `>`";
+}
+
+// Names of the DI variables carrying a constrained subtype's dynamic bounds.
+// AdaDebugInfoPass attaches it to the `ada.type` location so buildSubrangeDITypes
+// can look each up (by enclosing-subprogram scope + name) and use it as the
+// DISubrangeType bound. A side is null when that bound is static.
+def DISubrangeBoundsAttr : AttrDef<Ada_Dialect, "DISubrangeBounds"> {
+  let mnemonic = "di_subrange_bounds";
+  let summary = "Dynamic subrange bound variable names for FusedLoc metadata";
+  let parameters = (ins
+    OptionalParameter<"::mlir::StringAttr">:$lower,
+    OptionalParameter<"::mlir::StringAttr">:$upper
+  );
+  let assemblyFormat = "`<` (`lower` $lower^)? (`upper` $upper^)? `>`";
+}
+
 #endif // ADA_ATTRS

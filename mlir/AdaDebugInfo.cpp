@@ -161,13 +161,12 @@ static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   if (!isa<ada::IntegerTypeInfoAttr, ada::FloatTypeInfoAttr>(
           typeOp.getTypeInfoAttr()))
     return {};
-  // A constrained integer subtype with at least one static bound is a DWARF
-  // subrange of its base type. A subtype with only dynamic bounds falls through
-  // to a basic type until dynamic-bound subranges are supported.
+  // A constrained integer subtype (one carrying a range, static or dynamic) is
+  // a DWARF subrange of its base type; buildSubrangeDITypes fills in the
+  // bounds.
   if (auto intInfo =
           dyn_cast<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
-    if (typeOp.getBaseAttr() &&
-        (intInfo.staticLower() || intInfo.staticUpper())) {
+    if (typeOp.getBaseAttr() && intInfo.hasRange()) {
       auto baseOp = dyn_cast_or_null<ada::TypeOp>(
           SymbolTable::lookupNearestSymbolFrom(typeOp, typeOp.getBaseAttr()));
       return makeDISubrangeStub(ctx, typeOp,
@@ -508,6 +507,114 @@ struct AdaDebugInfoPass
           LLVM::DbgValueOp::create(builder, nl, arg, varInfo);
       }
     });
+
+    // Pass 6: pick the variable carrying each dynamic subrange bound.
+    // LowerToLLVM tagged each non-constant descriptor bound (an `insertvalue`)
+    // with its subtype symbol (a DIDynBoundAttr on the value's location); the
+    // insertvalue position (0 low, 1 high) names the bound. When an existing
+    // variable already carries the bound value (described by a dbg.value),
+    // record it (as GNAT does); otherwise create an artificial
+    // "<subtype>'first"/"'last" variable. The chosen names are accumulated per
+    // subtype and attached as DISubrangeBounds metadata below, where
+    // buildSubrangeDITypes reads them.
+    //
+    // Limitation: in practice only a subprogram *parameter* bound is reused,
+    // because a parameter survives to this pass as an entry block-arg with a
+    // dbg.value. A bound that is a local object does not: mem2reg promotes its
+    // alloca away before this pass, dropping the NameLoc that AdaDebugInfoPass
+    // would emit debug info from, so no dbg.value names it (and an unpromoted
+    // local would carry a dbg.declare, which this scan does not match). Such a
+    // bound therefore falls back to the artificial variable, exactly like a
+    // computed bound. Reusing a local would require preserving its debug
+    // identity through mem2reg, or tracing the bound load back to the alloca's
+    // dbg.declare.
+    //
+    // A deeper limitation is cross-scope bounds. GNAT emits one shared subrange
+    // that references the source object's variable directly and relies on
+    // DW_AT_static_link on each nested subprogram so the debugger can walk up
+    // to the enclosing frame where that variable lives. lalvm cannot mirror
+    // this: ClosureConversion has already rewritten up-level references into
+    // explicit captured parameters, and HoistNestedSymbolOperations flattens
+    // every nested subprogram to module level, so there is no lexical nesting
+    // and no static link/frame chain to follow. A bound variable is thus only
+    // meaningful in the subprogram that emits it; a subtype used from a nested
+    // scope cannot reference the parent scope's bound. Fully supporting all
+    // cases would require either preserving lexical nesting and emitting
+    // DW_AT_static_link (the GNAT model), or building a per-scope subrange copy
+    // keyed off each scope's captured bound.
+    llvm::DenseMap<Operation *, std::pair<StringAttr, StringAttr>> boundVars;
+    module.walk([&](LLVM::InsertValueOp ins) {
+      auto dynBound =
+          ins.getLoc()->findInstanceOf<FusedLocWith<ada::DIDynBoundAttr>>();
+      if (!dynBound)
+        return;
+      FlatSymbolRefAttr sym = dynBound.getMetadata().getSubtype();
+      auto func = ins->getParentOfType<LLVM::LLVMFuncOp>();
+      if (!func)
+        return;
+      auto subprogram = getSubprogram(func);
+      if (!subprogram)
+        return;
+      auto intType = dyn_cast<IntegerType>(ins.getValue().getType());
+      if (!intType)
+        return;
+      ada::TypeOp subtypeOp = typeOpByName.lookup(sym.getAttr());
+      if (!subtypeOp)
+        return;
+      bool isUpper = !ins.getPosition().empty() && ins.getPosition()[0] == 1;
+      mlir::Value boundVal = ins.getValue();
+
+      // Prefer the source object's own variable, as GNAT does: when an existing
+      // variable described by a dbg.value from an earlier pass already carries
+      // the bound value, reference it directly rather than an artificial copy.
+      // In practice this matches a subprogram parameter (see the limitation
+      // noted above); a computed bound, or a local whose debug identity did not
+      // survive mem2reg, gets an artificial variable bound to the value, named
+      // "<subtype>'first/'last".
+      StringAttr boundVarName;
+      func.walk([&](LLVM::DbgValueOp dv) {
+        if (!boundVarName && dv.getValue() == boundVal)
+          boundVarName = dv.getVarInfo().getName();
+      });
+      if (!boundVarName) {
+        boundVarName =
+            StringAttr::get(ctx, (llvm::Twine(ada::bareName(sym.getValue())) +
+                                  (isUpper ? "'last" : "'first"))
+                                     .str());
+        // Describe the artificial bound with the subtype's named base DIType
+        // (the same node the subrange's baseType uses), not a generic
+        // integer_N.
+        LLVM::DITypeAttr boundType;
+        if (auto baseAttr = subtypeOp.getBaseAttr())
+          if (auto baseOp = dyn_cast_or_null<ada::TypeOp>(
+                  SymbolTable::lookupNearestSymbolFrom(subtypeOp, baseAttr)))
+            boundType = makeDITypeAttr(ctx, baseOp);
+        if (!boundType)
+          boundType = makeDIIntType(ctx, intType);
+        auto [fileAttr, line] = getFileAndLine(ctx, ins.getLoc(), subprogram);
+        auto varInfo = LLVM::DILocalVariableAttr::get(
+            subprogram, boundVarName, fileAttr, line, /*arg=*/0,
+            /*alignInBits=*/0, boundType, LLVM::DIFlags::Artificial);
+        OpBuilder b(ins);
+        b.setInsertionPointAfter(ins);
+        LLVM::DbgValueOp::create(b, ins.getLoc(), boundVal, varInfo);
+      }
+      // Record which variable carries this bound; buildSubrangeDITypes looks it
+      // up by (this subprogram's scope, name). Last writer wins per subtype,
+      // which is unambiguous only because ClosureConversion materializes a
+      // subtype's range descriptor once (in its declaring scope) and passes it
+      // to nested subprograms as a captured parameter, so each bound has
+      // exactly one tagged insertvalue.
+      auto &vars = boundVars[subtypeOp.getOperation()];
+      (isUpper ? vars.second : vars.first) = boundVarName;
+    });
+
+    // Attach the accumulated bound-variable names to each subtype's location as
+    // DISubrangeBounds metadata (a null side stays a static bound).
+    for (auto &[op, vars] : boundVars)
+      op->setLoc(FusedLoc::get(
+          ctx, {op->getLoc()},
+          ada::DISubrangeBoundsAttr::get(ctx, vars.first, vars.second)));
   }
 };
 

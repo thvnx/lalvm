@@ -30,19 +30,37 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
     return;
   auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
 
-  // Collect constrained integer subtypes carrying at least one static bound;
-  // a subtype with only dynamic bounds keeps its basic type for now.
+  // Collect constrained integer subtypes (any recorded range, static or
+  // dynamic). A static bound becomes a constant; a dynamic one references the
+  // bound variable AdaDebugInfoPass recorded for it (a parameter's own
+  // variable, or an artificial one for a computed or non-surviving-local
+  // bound).
   llvm::SmallVector<mlir::ada::TypeOp> subtypeOps;
   module.walk([&](mlir::ada::TypeOp typeOp) {
     auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
         typeOp.getTypeInfoAttr());
-    if (intInfo && typeOp.getBaseAttr() &&
-        (intInfo.staticLower() || intInfo.staticUpper()) &&
+    if (intInfo && typeOp.getBaseAttr() && intInfo.hasRange() &&
         mlir::isa<mlir::IntegerType>(typeOp.getMlirType()))
       subtypeOps.push_back(typeOp);
   });
   if (subtypeOps.empty())
     return;
+
+  // Index the artificial bound variables (short name + bound suffix) emitted by
+  // AdaDebugInfoPass, keyed by (scope, name): the name is unique only within
+  // the subprogram where the subtype is declared, so a dynamic bound looks it
+  // up in that scope.
+  llvm::DenseMap<std::pair<llvm::DILocalScope *, llvm::StringRef>,
+                 llvm::DILocalVariable *>
+      boundVarByScopeName;
+  for (llvm::Function &f : llvmModule)
+    for (llvm::BasicBlock &bb : f)
+      for (llvm::Instruction &i : bb)
+        for (llvm::DbgVariableRecord &dvr :
+             llvm::filterDbgVars(i.getDbgRecordRange())) {
+          auto *v = dvr.getVariable();
+          boundVarByScopeName[{v->getScope(), v->getName()}] = v;
+        }
 
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
@@ -94,20 +112,24 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
         mlir::cast<mlir::ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr());
     auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
 
-    // Scope/file/line from the fused location (same unwrap as
-    // buildEnumDITypes): a locally-declared subtype is scoped to its enclosing
-    // subprogram.
-    mlir::Location loc = typeOp.getLoc();
+    // Scope from the enclosing-subprogram metadata: a locally-declared subtype
+    // is scoped to its subprogram. findInstanceOf walks any FusedLoc layering
+    // (a dynamic subtype also carries DISubrangeBounds metadata).
     llvm::DIScope *scope = cu;
-    if (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
-      if (auto scopeRef = mlir::dyn_cast_or_null<mlir::ada::DIScopeRefAttr>(
-              fused.getMetadata())) {
-        auto *fn = llvmModule.getFunction(scopeRef.getScope().getValue());
-        if (fn && fn->getSubprogram())
-          scope = fn->getSubprogram();
-      }
-      if (!fused.getLocations().empty())
-        loc = fused.getLocations().front();
+    if (auto fused = typeOp.getLoc()
+                         ->findInstanceOf<
+                             mlir::FusedLocWith<mlir::ada::DIScopeRefAttr>>()) {
+      auto *fn =
+          llvmModule.getFunction(fused.getMetadata().getScope().getValue());
+      if (fn && fn->getSubprogram())
+        scope = fn->getSubprogram();
+    }
+    // Unwrap the FusedLoc metadata layers down to the source location.
+    mlir::Location loc = typeOp.getLoc();
+    while (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
+      if (fused.getLocations().empty())
+        break;
+      loc = fused.getLocations().front();
     }
     llvm::StringRef filePath;
     unsigned line = 0;
@@ -118,12 +140,33 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
 
     auto *boundTy =
         llvm::IntegerType::get(llvmModule.getContext(), intType.getWidth());
+    // A static bound is a constant; a dynamic one references the variable
+    // AdaDebugInfoPass recorded for it (the source object, or an artificial
+    // bound) as DISubrangeBounds metadata, found by name within this
+    // subprogram's scope.
+    auto *subprogram = llvm::dyn_cast_or_null<llvm::DISubprogram>(scope);
+    auto bounds =
+        typeOp.getLoc()
+            ->findInstanceOf<
+                mlir::FusedLocWith<mlir::ada::DISubrangeBoundsAttr>>();
+    auto dynBound = [&](mlir::StringAttr var) -> llvm::Metadata * {
+      if (!subprogram || !var)
+        return nullptr;
+      auto it = boundVarByScopeName.find({subprogram, var.getValue()});
+      return it == boundVarByScopeName.end() ? nullptr : it->second;
+    };
+    llvm::Metadata *loMD =
+        intInfo.staticLower()
+            ? boundMD(intInfo.staticLower(), boundTy)
+            : dynBound(bounds ? bounds.getMetadata().getLower() : nullptr);
+    llvm::Metadata *hiMD =
+        intInfo.staticUpper()
+            ? boundMD(intInfo.staticUpper(), boundTy)
+            : dynBound(bounds ? bounds.getMetadata().getUpper() : nullptr);
     auto *subrange = db.createSubrangeType(
         mlir::ada::bareName(typeOp.getSymName()), getOrCreateFile(filePath),
         line, scope, intType.getWidth(), /*AlignInBits=*/0,
-        llvm::DINode::FlagZero, baseTypeFor(typeOp),
-        boundMD(intInfo.staticLower(), boundTy),
-        boundMD(intInfo.staticUpper(), boundTy),
+        llvm::DINode::FlagZero, baseTypeFor(typeOp), loMD, hiMD,
         /*Stride=*/nullptr, /*Bias=*/nullptr);
     subrangeByName[typeOp.getSymName()] = subrange;
   }

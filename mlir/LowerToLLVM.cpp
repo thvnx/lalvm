@@ -262,12 +262,31 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
     if (!structTy)
       return rewriter.notifyMatchFailure(op, "could not convert !ada.range");
     mlir::Location loc = op.getLoc();
+    auto subtypeSym = mlir::cast<ada::RangeType>(op.getResult().getType())
+                          .getConstrainedType();
     mlir::Value agg = rewriter.create<LLVM::UndefOp>(loc, structTy);
-    agg = rewriter.create<LLVM::InsertValueOp>(loc, agg, adaptor.getLow(),
-                                               llvm::ArrayRef<int64_t>{0});
-    agg = rewriter.create<LLVM::InsertValueOp>(loc, agg, adaptor.getHigh(),
-                                               llvm::ArrayRef<int64_t>{1});
-    rewriter.replaceOp(op, agg);
+    auto lo = rewriter.create<LLVM::InsertValueOp>(loc, agg, adaptor.getLow(),
+                                                   llvm::ArrayRef<int64_t>{0});
+    auto hi = rewriter.create<LLVM::InsertValueOp>(loc, lo, adaptor.getHigh(),
+                                                   llvm::ArrayRef<int64_t>{1});
+    // Tag a dynamic (non-constant) bound with its subtype symbol so
+    // AdaDebugInfoPass can attach an artificial DI variable for the subrange
+    // type's bound; the insertvalue position (0 low, 1 high) names which bound.
+    // The marker rides on the value's location, like the other Ada DI metadata.
+    auto *ctx = rewriter.getContext();
+    auto isConst = [](mlir::Value v) {
+      return v.getDefiningOp<arith::ConstantOp>() ||
+             v.getDefiningOp<LLVM::ConstantOp>();
+    };
+    auto markDyn = [&](LLVM::InsertValueOp iv) {
+      iv->setLoc(mlir::FusedLoc::get(
+          ctx, {iv->getLoc()}, ada::DIDynBoundAttr::get(ctx, subtypeSym)));
+    };
+    if (!isConst(adaptor.getLow()))
+      markDyn(lo);
+    if (!isConst(adaptor.getHigh()))
+      markDyn(hi);
+    rewriter.replaceOp(op, hi.getResult());
     return success();
   }
 };
