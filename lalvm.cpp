@@ -12,8 +12,10 @@
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/MC/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -285,15 +287,31 @@ static int emitLLVMIR(mlir::MLIRContext &context,
 
   // Build the host target machine, honoring the codegen flags (-mcpu, -mattr,
   // --relocation-model, ...) registered above, and stamp its triple/datalayout
-  // onto the LLVM module.
-  auto tmOrError = llvm::codegen::createTargetMachineForTriple(
-      llvm::sys::getDefaultTargetTriple());
-  if (!tmOrError) {
-    llvm::errs() << "Could not create target machine: "
-                 << llvm::toString(tmOrError.takeError()) << "\n";
+  // onto the LLVM module. Default the relocation model to PIC when the user did
+  // not pass --relocation-model: GNAT links default-PIE on our target, so PIC
+  // objects link cleanly against GNAT-compiled code (an explicit flag wins).
+  // This is why we build the TargetMachine by hand rather than via
+  // codegen::createTargetMachineForTriple, which has no default-override hook.
+  llvm::Triple triple(llvm::sys::getDefaultTargetTriple());
+  std::string lookupError;
+  const llvm::Target *target =
+      llvm::TargetRegistry::lookupTarget(triple, lookupError);
+  if (!target) {
+    llvm::errs() << "Could not look up target: " << lookupError << "\n";
     return 1;
   }
-  llvm::TargetMachine &tm = *tmOrError.get();
+  llvm::Reloc::Model relocModel =
+      llvm::codegen::getExplicitRelocModel().value_or(llvm::Reloc::PIC_);
+  std::unique_ptr<llvm::TargetMachine> tmOwner(target->createTargetMachine(
+      triple, llvm::codegen::getCPUStr(), llvm::codegen::getFeaturesStr(),
+      llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple), relocModel,
+      llvm::codegen::getExplicitCodeModel()));
+  if (!tmOwner) {
+    llvm::errs() << "Could not create target machine for " << triple.str()
+                 << "\n";
+    return 1;
+  }
+  llvm::TargetMachine &tm = *tmOwner;
   mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(), &tm);
 
   // TODO: add an optional optimization pipeline via
