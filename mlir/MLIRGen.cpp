@@ -999,6 +999,24 @@ private:
     return builder.create<mlir::ada::RangeOp>(location, rangeType, lo, hi);
   }
 
+  /// Return a constant-bounds `ada.range` descriptor for the static-bound
+  /// subtype `sym`, emitted lazily: reuse one already present in the current
+  /// block, otherwise emit one here, at the first check that needs it. MLIRGen
+  /// builds forward, so any descriptor already in the block precedes this check
+  /// and dominates it; later checks in the same block then reuse it.
+  mlir::Value staticRangeFor(mlir::FlatSymbolRefAttr sym,
+                             mlir::IntegerType intType, llvm::APInt lo,
+                             llvm::APInt hi, mlir::Location location) {
+    if (mlir::Block *block = builder.getInsertionBlock())
+      for (mlir::Operation &op : *block)
+        if (auto rangeOp = mlir::dyn_cast<mlir::ada::RangeOp>(&op))
+          if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
+                  .getConstrainedType() == sym)
+            return rangeOp.getResult();
+    return emitRange(constBound(intType, lo, location),
+                     constBound(intType, hi, location), sym, location);
+  }
+
   /// Emit a Constraint_Check (@rm{11-5}) when `coerced` flows into a
   /// constrained scalar subtype `target`. A static source value (`src` an
   /// `ada.constant`) is resolved at emission like a literal site: in range ->
@@ -1029,7 +1047,8 @@ private:
         return coerced;
     } else {
       // Static bounds: resolve a static source value here like a literal site
-      // (on the exact value); a dynamic one checks against constant bounds.
+      // (on the exact value); a dynamic one checks against constant bounds,
+      // reusing one descriptor per block rather than re-emitting per check.
       if (auto cst = src.getDefiningOp<mlir::ada::ConstantOp>())
         if (auto valAttr = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
           diagnoseOutOfRange(valAttr.getValue(), loAttr.getValue(),
@@ -1037,9 +1056,8 @@ private:
           return coerced;
         }
       auto intType = mlir::cast<mlir::IntegerType>(target.getMlirType());
-      range = emitRange(constBound(intType, loAttr.getValue(), location),
-                        constBound(intType, hiAttr.getValue(), location),
-                        target.getAdaType(), location);
+      range = staticRangeFor(target.getAdaType(), intType, loAttr.getValue(),
+                             hiAttr.getValue(), location);
     }
     return builder.create<mlir::ada::RangeCheckOp>(location, target, coerced,
                                                    range);
