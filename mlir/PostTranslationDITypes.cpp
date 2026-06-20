@@ -58,6 +58,26 @@ static void retypeLocalVariable(llvm::DIBuilder &db,
   dvr.setVariable(newVar);
 }
 
+/// Look through a DW_TAG_const_type wrapper (an Ada `in` parameter's type) to
+/// the underlying placeholder, so it can be matched by name like an unwrapped
+/// type. Returns `t` unchanged when it is not const-qualified.
+static llvm::DIType *stripConst(llvm::DIType *t) {
+  auto *d = llvm::dyn_cast_or_null<llvm::DIDerivedType>(t);
+  if (d && d->getTag() == llvm::dwarf::DW_TAG_const_type)
+    return d->getBaseType();
+  return t;
+}
+
+/// Re-apply the const wrapper of `current` (if any) around `newType`, so a
+/// replaced `in` parameter type stays const-qualified.
+static llvm::DIType *preserveConst(llvm::DIBuilder &db, llvm::DIType *current,
+                                   llvm::DIType *newType) {
+  auto *d = llvm::dyn_cast_or_null<llvm::DIDerivedType>(current);
+  if (d && d->getTag() == llvm::dwarf::DW_TAG_const_type)
+    return db.createQualifiedType(llvm::dwarf::DW_TAG_const_type, newType);
+  return newType;
+}
+
 void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
                                  mlir::ModuleOp module) {
   auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
@@ -134,14 +154,15 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
       for (auto &i : bb) {
         for (llvm::DbgVariableRecord &dvr :
              llvm::filterDbgVars(i.getDbgRecordRange())) {
-          auto *ct = llvm::dyn_cast<llvm::DICompositeType>(
-              dvr.getVariable()->getType());
+          auto *vt = dvr.getVariable()->getType();
+          auto *ct =
+              llvm::dyn_cast_or_null<llvm::DICompositeType>(stripConst(vt));
           if (!ct || !ct->getElements().empty())
             continue;
           auto it = enumTypeByName.find(ct->getName());
           if (it == enumTypeByName.end())
             continue;
-          retypeLocalVariable(db, dvr, it->second);
+          retypeLocalVariable(db, dvr, preserveConst(db, vt, it->second));
         }
       }
     }
@@ -299,14 +320,15 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
       for (auto &i : bb) {
         for (llvm::DbgVariableRecord &dvr :
              llvm::filterDbgVars(i.getDbgRecordRange())) {
+          auto *vt = dvr.getVariable()->getType();
           auto *dt =
-              llvm::dyn_cast<llvm::DIDerivedType>(dvr.getVariable()->getType());
+              llvm::dyn_cast_or_null<llvm::DIDerivedType>(stripConst(vt));
           if (!dt)
             continue;
           auto it = subrangeByName.find(dt->getName());
           if (it == subrangeByName.end())
             continue;
-          retypeLocalVariable(db, dvr, it->second);
+          retypeLocalVariable(db, dvr, preserveConst(db, vt, it->second));
         }
       }
     }

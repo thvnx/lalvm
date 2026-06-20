@@ -3,17 +3,19 @@
 
 -- `in` parameters (scalar) and `out` parameters (reference) both produce
 -- DW_TAG_formal_parameter entries in DWARF, with name and type from NameLoc.
--- The function carries a DW_AT_type for its return type (Integer); the nested
+-- An `in` parameter is read-only, so its type is wrapped in DW_TAG_const_type;
+-- an `out` (reference) parameter is writable and stays unqualified. The
+-- function carries a DW_AT_type for its return type (Integer); the nested
 -- procedure has none (void return).
 
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_AT_type ({{.*}} "integer")
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("a")
--- CHECK: DW_AT_type ({{.*}} "integer")
+-- CHECK: DW_AT_type ({{.*}} "const integer")
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("b")
--- CHECK: DW_AT_type ({{.*}} "integer")
+-- CHECK: DW_AT_type ({{.*}} "const integer")
 
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter

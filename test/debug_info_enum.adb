@@ -18,7 +18,7 @@
 -- CHECK: DW_TAG_subprogram
 -- CHECK: DW_TAG_formal_parameter
 -- CHECK: DW_AT_name ("a")
--- CHECK: DW_AT_type ({{.*}} "boolean")
+-- CHECK: DW_AT_type ({{.*}} "const boolean")
 -- CHECK: DW_TAG_variable
 -- CHECK: DW_AT_name ("b")
 -- CHECK: DW_AT_type ({{.*}} "boolean")

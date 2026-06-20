@@ -139,6 +139,16 @@ static LLVM::DIDerivedTypeAttr makeDISubrangeStub(MLIRContext *ctx,
       /*extraData=*/LLVM::DINodeAttr{});
 }
 
+/// Wrap `baseType` in a DW_TAG_const_type, modeling an Ada `in` parameter as a
+/// read-only (constant) view (@rm{6-1}), as GNAT does.
+static LLVM::DIDerivedTypeAttr makeDIConstType(MLIRContext *ctx,
+                                               LLVM::DITypeAttr baseType) {
+  return LLVM::DIDerivedTypeAttr::get(
+      ctx, llvm::dwarf::DW_TAG_const_type, /*name=*/StringAttr{}, baseType,
+      /*sizeInBits=*/0, /*alignInBits=*/0, /*offsetInBits=*/0,
+      /*dwarfAddressSpace=*/std::nullopt, /*extraData=*/LLVM::DINodeAttr{});
+}
+
 /// Dispatch to the appropriate DI type for a given ada.type op.
 /// Returns a DICompositeTypeAttr stub for enum types, a DIDerivedType typedef
 /// stub for constrained integer subtypes, a DIBasicTypeAttr for base integer
@@ -463,6 +473,9 @@ struct AdaDebugInfoPass
               continue; // float without type info: skip silently
             diType = makeDIIntType(ctx, intType);
           }
+          // Ada `in` parameters are read-only (@rm{6-1}): wrap in const, as
+          // GNAT does (reference `in out`/`out` params below stay non-const).
+          diType = makeDIConstType(ctx, diType);
         } else if (isa<LLVM::LLVMPointerType>(argType)) {
           // Reference `in out`/`out` parameter: dbg.declare.
           // The ptr is opaque; recover the element type from the first
