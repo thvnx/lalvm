@@ -311,6 +311,12 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   }
   llvm::Reloc::Model relocModel =
       llvm::codegen::getExplicitRelocModel().value_or(llvm::Reloc::PIC_);
+
+  // Record the PIC level so the IR matches the relocation model (clang/GNAT do
+  // the same). No PIE level: we emit PIC, not PIE, objects (see note above).
+  if (relocModel == llvm::Reloc::PIC_)
+    llvmModule->setPICLevel(llvm::PICLevel::BigPIC);
+
   std::unique_ptr<llvm::TargetMachine> tmOwner(target->createTargetMachine(
       triple, llvm::codegen::getCPUStr(), llvm::codegen::getFeaturesStr(),
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple), relocModel,
