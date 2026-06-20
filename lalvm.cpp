@@ -9,7 +9,9 @@
 #include "ada/PostTranslationDITypes.h"
 
 #include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
@@ -270,6 +272,14 @@ static int emitLLVMIR(mlir::MLIRContext &context,
 
   llvmModule->setModuleIdentifier(llvm::sys::path::filename(inputFilename));
   llvmModule->setSourceFileName(inputFilename);
+
+  // Stamp the compiler identity into `llvm.ident` (it lands in the object's
+  // `.comment` section), mirroring how clang and GNAT record their version.
+  // lalvm has no version of its own yet, so report the LLVM it was built with.
+  llvm::NamedMDNode *ident = llvmModule->getOrInsertNamedMetadata("llvm.ident");
+  ident->addOperand(llvm::MDNode::get(
+      llvmContext, llvm::MDString::get(
+                       llvmContext, "lalvm (LLVM " LLVM_VERSION_STRING ")")));
 
   // Request DWARF 5 so the backend emits the modern `.debug_names`
   // accelerator table instead of the deprecated GNU `.debug_pubnames`
