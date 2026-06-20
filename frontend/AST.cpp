@@ -24,7 +24,8 @@ static bool print_exception(bool or_silent) {
                  << exc->information << "\n";
     free(exc_name);
     return true;
-  } else if (!or_silent)
+  }
+  if (!or_silent)
     llvm::errs() << "Got no exception\n";
   return false;
 }

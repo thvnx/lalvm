@@ -41,7 +41,7 @@ std::string bigIntToString(ada_big_integer bigint);
 std::optional<llvm::APInt> bigIntToAPInt(ada_big_integer bigint);
 
 /// Wrapper that enables printing an ada_node via operator<<.
-/// Usage: llvm::errs() << libadalang::print(&node);
+/// Usage: llvm::errs() << libadalang::image(&node);
 struct NodePrinter {
   ada_node *node;
 };

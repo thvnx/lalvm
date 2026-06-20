@@ -37,6 +37,7 @@ namespace libadalang = frontend::libadalang;
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/ADT/bit.h"
 #include <cassert>
@@ -428,7 +429,7 @@ private:
       // Transparent nodes: visit children without warning.
       break;
     default: {
-      // TODO: turn this into an Error when lalvm is mature enough.
+      // @todo Turn this into an error when lalvm is mature enough.
       mlir::emitWarning(loc(node), "visit: unhandled node '")
           << libadalang::image(&node) << "'";
       break;
@@ -690,8 +691,8 @@ private:
       break;
     }
 
-    // Arithmetic operators (@rm{4-5-3}-4.5.5): operands and result share one
-    // type. Coerce both operands to the result type so
+    // Arithmetic operators (@rm{4-5-3}..@rm{4-5-5}): operands and result share
+    // one type. Coerce both operands to the result type so
     // SameOperandsAndResultType is satisfied when the sides differ.
     if (resultType) {
       lhs = coerce(lhs, resultType, loc(binop));
@@ -1812,7 +1813,7 @@ private:
       return mlirGenSubtypeDecl(type_decl, external);
 
     // Universal types (@rm{3-4-1}) and numeric types
-    // (@rm{3-5-4}, @rm{3.5.6}, @rm{3.5.7}).
+    // (@rm{3-5-4}, @rm{3-5-6}, @rm{3-5-7}).
     if (libadalang::isUniversalTypeDecl(type_decl) ||
         libadalang::isNumericTypeDecl(type_decl)) {
       auto typeName = resolveTypeDeclName(type_decl, external);

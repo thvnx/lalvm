@@ -68,7 +68,7 @@ enum InputType { Ada, MLIR };
 
 static cl::opt<enum InputType> inputType(
     "x", cl::init(Ada), cl::desc("Decides the kind of input to load"),
-    cl::values(clEnumValN(Ada, "Ada", "load the input file as a Ada source.")),
+    cl::values(clEnumValN(Ada, "Ada", "load the input file as an Ada source")),
     cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR file")),
     cl::cat(lalvmCategory));
 
@@ -314,7 +314,7 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   llvm::TargetMachine &tm = *tmOwner;
   mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(), &tm);
 
-  // TODO: add an optional optimization pipeline via
+  // @todo Add an optional optimization pipeline via
   // mlir::makeOptimizingTransformer.
   if (emitAction == Action::EmitLLVMIR)
     return writeTextOutput(

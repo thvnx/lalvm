@@ -653,7 +653,8 @@ def SubpOp : Ada_Op<"subp", [
     /// GNAT ABI name, derived from the qualified sym_name: split on the dot,
     /// operator-map each segment, and join with double underscores (e.g.
     /// proc.b.inner to proc__b__inner). Library-level subprograms get the
-    /// _ada_ prefix. Relies on the op's parent, so call before hoisting.
+    /// _ada_ prefix. Reads symbol visibility rather than the op's parent, so
+    /// the name stays stable across passes that hoist the op to module level.
     std::string getMangledName();
   }];
 

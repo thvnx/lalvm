@@ -483,7 +483,7 @@ mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
   // Defense-in-depth only: MLIRGen resolves static checks at emission time and
   // never emits a statically-passing one, and the pipeline runs no
   // canonicalizer. Should a statically-passing check reach here anyway, drop
-  // it by forwarding the value -- but only when the bounds and the value are
+  // it by forwarding the value, but only when the bounds and the value are
   // all compile-time constants and the value provably lies within range.
   auto rangeOp = getRange().getDefiningOp<RangeOp>();
   if (!rangeOp)
@@ -500,7 +500,7 @@ mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
       return {};
     const llvm::APInt &l = lo.getValue(), &h = hi.getValue(), &x = v.getValue();
     // Bounds are signless `iN`. Without the subtype's signedness, forward only
-    // when the value is in range under both signed and unsigned readings --
+    // when the value is in range under both signed and unsigned readings;
     // sound either way, at the cost of not folding some negative-bound ranges
     // (acceptable for a defense-in-depth fold).
     if (l.sle(x) && x.sle(h) && l.ule(x) && x.ule(h))

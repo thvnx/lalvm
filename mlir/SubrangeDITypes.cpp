@@ -173,12 +173,12 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
 
   // Replace the typedef placeholders (emitted by AdaDebugInfoPass) with the
   // full DISubrangeType built above, matching by the subtype's sym_name.
-  for (auto &F : llvmModule) {
-    for (auto &BB : F) {
-      for (auto &I : BB) {
-        for (llvm::DbgVariableRecord &DVR :
-             llvm::filterDbgVars(I.getDbgRecordRange())) {
-          auto *var = DVR.getVariable();
+  for (auto &f : llvmModule) {
+    for (auto &bb : f) {
+      for (auto &i : bb) {
+        for (llvm::DbgVariableRecord &dvr :
+             llvm::filterDbgVars(i.getDbgRecordRange())) {
+          auto *var = dvr.getVariable();
           auto *dt = llvm::dyn_cast<llvm::DIDerivedType>(var->getType());
           if (!dt)
             continue;
@@ -194,7 +194,7 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
             newVar = db.createAutoVariable(var->getScope(), var->getName(),
                                            var->getFile(), var->getLine(),
                                            it->second);
-          DVR.setVariable(newVar);
+          dvr.setVariable(newVar);
         }
       }
     }

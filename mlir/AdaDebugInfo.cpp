@@ -145,9 +145,8 @@ static LLVM::DIDerivedTypeAttr makeDISubrangeStub(MLIRContext *ctx,
 static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   auto enumInfo =
       dyn_cast_or_null<ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
-  // Subtypes carry no literals/representation of their own: describe them as
-  // their base type until subtype DWARF (typedef/subrange DIEs) lands. Base
-  // links are acyclic by construction.
+  // Subtypes that carry no range of their own (no literals/representation)
+  // are described as their base type. Base links are acyclic by construction.
   if (!typeOp.getTypeInfoAttr() || (enumInfo && enumInfo.getNames().empty())) {
     auto baseAttr = typeOp.getBaseAttr();
     if (!baseAttr)
@@ -223,9 +222,9 @@ getFileAndLine(MLIRContext *ctx, Location loc,
   return {subprogram.getFile(), 0};
 }
 
-// Returns the DISubprogramAttr attached to `op` by DIScopeForLLVMFuncOpPass,
-// or a null attr if the location is not a FusedLoc with DISubprogramAttr
-// metadata (i.e. the function has no debug info).
+/// Returns the DISubprogramAttr attached to `op` by DIScopeForLLVMFuncOpPass,
+/// or a null attr if the location is not a FusedLoc with DISubprogramAttr
+/// metadata (i.e. the function has no debug info).
 static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
   auto fl = dyn_cast<FusedLoc>(op->getLoc());
   if (!fl)
@@ -233,9 +232,9 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
   return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
 }
 
-// Rebuild `sp` overriding its name, flags, and subroutine type, preserving
-// every other field (notably linkageName). DISubprogramAttr has no copy-with,
-// so the full get() is unavoidable; this keeps the boilerplate in one place.
+/// Rebuild `sp` overriding its name, flags, and subroutine type, preserving
+/// every other field (notably linkageName). DISubprogramAttr has no copy-with,
+/// so the full get() is unavoidable; this keeps the boilerplate in one place.
 static LLVM::DISubprogramAttr cloneSubprogram(LLVM::DISubprogramAttr sp,
                                               StringAttr name,
                                               LLVM::DISubprogramFlags flags,

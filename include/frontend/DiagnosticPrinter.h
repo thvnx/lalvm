@@ -10,7 +10,7 @@
 namespace frontend {
 
 /// Formats and prints diagnostics to stderr in the standard
-/// "basename:line:col: [severity] message" format.
+/// "basename:line:col: severity: message" format.
 class DiagnosticPrinter {
 public:
   DiagnosticPrinter() = default;

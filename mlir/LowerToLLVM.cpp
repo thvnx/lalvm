@@ -46,12 +46,9 @@ using namespace mlir;
 // The pass uses FullConversion, meaning every op must be lowered; no Ada ops
 // are allowed to survive.
 //
-// Lowering chain overview:
-//   ada.subp     ->  func.func
-//   ada.return   ->  func.return
-//   ada.binop    ->  arith.addi/subi/muli  (integers)
-//                    arith.addf/subf/mulf  (floats)
-//   func.func / arith.*  ->  LLVM dialect  (via upstream conversion patterns)
+// Each Ada op is lowered by its own `*OpLowering` pattern (see below), mostly
+// onto the Func, Arith, and MemRef dialects, which upstream conversion patterns
+// then lower the rest of the way to the LLVM dialect.
 
 //===----------------------------------------------------------------------===//
 // AdaToLLVMLoweringPass
@@ -760,9 +757,6 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
 void AdaToLLVMLoweringPass::runOnOperation() {
   ModuleOp module = getOperation();
 
-  // The first thing to define is the conversion target. This will define the
-  // final target for this lowering. For this lowering, we are only targeting
-  // the LLVM dialect.
   // LLVMConversionTarget marks all LLVM dialect ops as legal and everything
   // else (including ada.*) as illegal, driving the full conversion.
   LLVMConversionTarget target(getContext());
