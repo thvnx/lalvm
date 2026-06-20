@@ -4,10 +4,9 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include "ada/Dialect.h"
-#include "ada/EnumDITypes.h"
 #include "ada/MLIRGen.h"
 #include "ada/Passes.h"
-#include "ada/SubrangeDITypes.h"
+#include "ada/PostTranslationDITypes.h"
 
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/IR/LegacyPassManager.h"

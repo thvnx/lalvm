@@ -48,8 +48,9 @@ std::unique_ptr<mlir::Pass> createDICompileUnitAdaPass();
 /// each llvm.func.
 ///
 /// Enum types use an empty `DICompositeTypeAttr` stub; `buildEnumDITypes` in
-/// EnumDITypes.h replaces those stubs with full `DW_TAG_enumeration_type`
-/// nodes via LLVM's DIBuilder after MLIR-to-LLVM translation.
+/// PostTranslationDITypes.h replaces those stubs with full
+/// `DW_TAG_enumeration_type` nodes via LLVM's DIBuilder after MLIR-to-LLVM
+/// translation.
 ///
 /// @todo Remove the stub/replace dance once MLIR gains `DIEnumeratorAttr`
 /// support; at that point enum composite types can be built directly inside

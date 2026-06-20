@@ -111,7 +111,8 @@ static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
   return LLVM::DICompositeTypeAttr::get(
       ctx, llvm::dwarf::DW_TAG_enumeration_type,
       // Full sym_name: this stub's name is the key matched against the
-      // post-translation enum types in buildEnumDITypes (EnumDITypes.cpp).
+      // post-translation enum types in buildEnumDITypes
+      // (PostTranslationDITypes.cpp).
       StringAttr::get(ctx, typeOp.getSymName()),
       /*file=*/LLVM::DIFileAttr{}, /*line=*/0, /*scope=*/LLVM::DIScopeAttr{},
       /*baseType=*/LLVM::DITypeAttr{}, LLVM::DIFlags::Zero,

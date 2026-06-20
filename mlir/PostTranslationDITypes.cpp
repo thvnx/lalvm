@@ -1,4 +1,4 @@
-//===- SubrangeDITypes.cpp - Post-translation subrange DI type builder ---===//
+//===- PostTranslationDITypes.cpp - Post-translation DI type builders -----===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,8 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ada/SubrangeDITypes.h"
-#include "ada/DITypeUtils.h"
+#include "ada/PostTranslationDITypes.h"
 #include "ada/Dialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -22,6 +21,134 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugProgramInstruction.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/Support/Path.h"
+
+// Both builders below cache DIFiles by path and retype placeholder DIEs the
+// same way; these helpers capture the shared logic.
+
+/// Return the DIFile for `path`, creating it once and caching by path so
+/// repeated lookups reuse the same file node.
+static llvm::DIFile *
+getOrCreateDIFile(llvm::DIBuilder &db,
+                  llvm::DenseMap<llvm::StringRef, llvm::DIFile *> &cache,
+                  llvm::StringRef path) {
+  auto *&file = cache[path];
+  if (!file)
+    file = db.createFile(llvm::sys::path::filename(path),
+                         llvm::sys::path::parent_path(path));
+  return file;
+}
+
+/// Rebuild the local variable `dvr` refers to so its type becomes `newType`,
+/// preserving whether it is a parameter or an auto variable (DILocalVariable
+/// has no copy-with, so the variable must be recreated).
+static void retypeLocalVariable(llvm::DIBuilder &db,
+                                llvm::DbgVariableRecord &dvr,
+                                llvm::DIType *newType) {
+  auto *var = dvr.getVariable();
+  llvm::DILocalVariable *newVar;
+  if (var->getArg() > 0)
+    newVar = db.createParameterVariable(var->getScope(), var->getName(),
+                                        var->getArg(), var->getFile(),
+                                        var->getLine(), newType);
+  else
+    newVar = db.createAutoVariable(var->getScope(), var->getName(),
+                                   var->getFile(), var->getLine(), newType);
+  dvr.setVariable(newVar);
+}
+
+void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
+                                 mlir::ModuleOp module) {
+  auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
+  if (!cuMeta || cuMeta->getNumOperands() == 0)
+    return;
+  auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
+
+  // Collect surviving enum ada.type ops; skip the IR scan if none exist.
+  llvm::SmallVector<mlir::ada::TypeOp> enumTypeOps;
+  module.walk([&](mlir::ada::TypeOp typeOp) {
+    // Constraint-only enum subtype infos carry no literals to describe.
+    auto enumInfo = mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (enumInfo && !enumInfo.getNames().empty() &&
+        mlir::isa<mlir::IntegerType>(typeOp.getMlirType()))
+      enumTypeOps.push_back(typeOp);
+  });
+  if (enumTypeOps.empty())
+    return;
+
+  llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
+  llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
+
+  // Build enum DI types directly from surviving ada.type ops.
+  llvm::StringMap<llvm::DICompositeType *> enumTypeByName;
+  for (mlir::ada::TypeOp typeOp : enumTypeOps) {
+    auto enumInfo =
+        mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
+    auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
+
+    // HoistNestedSymbolOperations fused the enclosing subprogram (DWARF scope)
+    // onto the type's location before lifting it to module level, away from its
+    // lexical parent. Unwrap it for both the scope and the source file/line; a
+    // type without it (predefined / library-level) is scoped to the cu.
+    mlir::Location loc = typeOp.getLoc();
+    llvm::DIScope *scope = cu;
+    if (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
+      if (auto scopeRef = mlir::dyn_cast_or_null<mlir::ada::DIScopeRefAttr>(
+              fused.getMetadata())) {
+        auto *fn = llvmModule.getFunction(scopeRef.getScope().getValue());
+        if (fn && fn->getSubprogram())
+          scope = fn->getSubprogram();
+      }
+      if (!fused.getLocations().empty())
+        loc = fused.getLocations().front();
+    }
+
+    llvm::StringRef filePath;
+    unsigned line = 0;
+    if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(loc)) {
+      filePath = flc.getFilename().getValue();
+      line = flc.getStartLine();
+    }
+
+    llvm::SmallVector<llvm::Metadata *, 8> elems;
+    for (auto [name, val] : enumInfo.literals())
+      elems.push_back(db.createEnumerator(name, static_cast<uint64_t>(val)));
+
+    // The displayed DWARF name is the bare Ada name; the lookup key below stays
+    // the full sym_name so shadowed enums (same bare name) remain distinct.
+    auto *enumType = db.createEnumerationType(
+        scope, mlir::ada::bareName(typeOp.getSymName()),
+        getOrCreateDIFile(db, fileCache, filePath), line,
+        llvm::alignTo(intType.getWidth(), 8),
+        /*AlignInBits=*/0, db.getOrCreateArray(elems),
+        /*UnderlyingType=*/nullptr);
+    enumTypeByName[typeOp.getSymName()] = enumType;
+  }
+
+  // Replace empty DICompositeType stubs (emitted by AdaDebugInfoPass as
+  // placeholders for enum types) with the full DICompositeType built above.
+  for (auto &f : llvmModule) {
+    for (auto &bb : f) {
+      for (auto &i : bb) {
+        for (llvm::DbgVariableRecord &dvr :
+             llvm::filterDbgVars(i.getDbgRecordRange())) {
+          auto *ct = llvm::dyn_cast<llvm::DICompositeType>(
+              dvr.getVariable()->getType());
+          if (!ct || !ct->getElements().empty())
+            continue;
+          auto it = enumTypeByName.find(ct->getName());
+          if (it == enumTypeByName.end())
+            continue;
+          retypeLocalVariable(db, dvr, it->second);
+        }
+      }
+    }
+  }
+
+  db.finalize();
+}
 
 void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
                                      mlir::ModuleOp module) {
@@ -158,7 +285,7 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
             : dynBound(bounds ? bounds.getMetadata().getUpper() : nullptr);
     auto *subrange = db.createSubrangeType(
         mlir::ada::bareName(typeOp.getSymName()),
-        mlir::ada::getOrCreateDIFile(db, fileCache, filePath), line, scope,
+        getOrCreateDIFile(db, fileCache, filePath), line, scope,
         intType.getWidth(), /*AlignInBits=*/0, llvm::DINode::FlagZero,
         baseTypeFor(typeOp), loMD, hiMD,
         /*Stride=*/nullptr, /*Bias=*/nullptr);
@@ -179,7 +306,7 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
           auto it = subrangeByName.find(dt->getName());
           if (it == subrangeByName.end())
             continue;
-          mlir::ada::retypeLocalVariable(db, dvr, it->second);
+          retypeLocalVariable(db, dvr, it->second);
         }
       }
     }

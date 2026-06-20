@@ -64,7 +64,8 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
         // Capture the enclosing subprogram's mangled name now, while FQN
         // sym_names are still intact (the rename loop runs afterward). It is
         // fused onto the type's location below as its DWARF scope, recovered in
-        // EnumDITypes once the op has been lifted away from its lexical parent.
+        // buildEnumDITypes once the op has been lifted away from its lexical
+        // parent.
         std::string scopeName;
         for (Operation *p = op->getParentOp(); p; p = p->getParentOp())
           if (auto subp = dyn_cast<ada::SubpOp>(p)) {
@@ -105,8 +106,8 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
   // Hoist the remaining nested ada.type ops to module level. Their FQN
   // sym_names are unique, so a plain move keeps every type-symbol reference
   // (the @sym in ada.qual) valid. Fuse the captured enclosing subprogram onto
-  // the location so EnumDITypes can still place the type's DWARF scope under
-  // it.
+  // the location so buildEnumDITypes can still place the type's DWARF scope
+  // under it.
   for (auto &[op, scopeName] : nestedTypes) {
     if (!scopeName.empty()) {
       auto *ctx = module.getContext();
