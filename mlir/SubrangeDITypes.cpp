@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ada/SubrangeDITypes.h"
+#include "ada/DITypeUtils.h"
 #include "ada/Dialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -21,7 +22,6 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/DebugProgramInstruction.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/Path.h"
 
 void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
                                      mlir::ModuleOp module) {
@@ -64,13 +64,6 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
 
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
-  auto getOrCreateFile = [&](llvm::StringRef filePath) -> llvm::DIFile * {
-    auto *&file = fileCache[filePath];
-    if (!file)
-      file = db.createFile(llvm::sys::path::filename(filePath),
-                           llvm::sys::path::parent_path(filePath));
-    return file;
-  };
 
   // A static bound becomes a constant in the subtype's own machine width (the
   // `int_info` encoding is a minimal-width signed value, widened to fit), so a
@@ -164,9 +157,10 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
             ? boundMD(intInfo.staticUpper(), boundTy)
             : dynBound(bounds ? bounds.getMetadata().getUpper() : nullptr);
     auto *subrange = db.createSubrangeType(
-        mlir::ada::bareName(typeOp.getSymName()), getOrCreateFile(filePath),
-        line, scope, intType.getWidth(), /*AlignInBits=*/0,
-        llvm::DINode::FlagZero, baseTypeFor(typeOp), loMD, hiMD,
+        mlir::ada::bareName(typeOp.getSymName()),
+        mlir::ada::getOrCreateDIFile(db, fileCache, filePath), line, scope,
+        intType.getWidth(), /*AlignInBits=*/0, llvm::DINode::FlagZero,
+        baseTypeFor(typeOp), loMD, hiMD,
         /*Stride=*/nullptr, /*Bias=*/nullptr);
     subrangeByName[typeOp.getSymName()] = subrange;
   }
@@ -178,23 +172,14 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
       for (auto &i : bb) {
         for (llvm::DbgVariableRecord &dvr :
              llvm::filterDbgVars(i.getDbgRecordRange())) {
-          auto *var = dvr.getVariable();
-          auto *dt = llvm::dyn_cast<llvm::DIDerivedType>(var->getType());
+          auto *dt =
+              llvm::dyn_cast<llvm::DIDerivedType>(dvr.getVariable()->getType());
           if (!dt)
             continue;
           auto it = subrangeByName.find(dt->getName());
           if (it == subrangeByName.end())
             continue;
-          llvm::DILocalVariable *newVar;
-          if (var->getArg() > 0)
-            newVar = db.createParameterVariable(var->getScope(), var->getName(),
-                                                var->getArg(), var->getFile(),
-                                                var->getLine(), it->second);
-          else
-            newVar = db.createAutoVariable(var->getScope(), var->getName(),
-                                           var->getFile(), var->getLine(),
-                                           it->second);
-          dvr.setVariable(newVar);
+          mlir::ada::retypeLocalVariable(db, dvr, it->second);
         }
       }
     }

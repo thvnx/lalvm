@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ada/EnumDITypes.h"
+#include "ada/DITypeUtils.h"
 #include "ada/Dialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -19,7 +20,6 @@
 #include "llvm/IR/DebugProgramInstruction.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/Path.h"
 
 void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
                                  mlir::ModuleOp module) {
@@ -43,14 +43,6 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
 
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
-
-  auto getOrCreateFile = [&](llvm::StringRef filePath) -> llvm::DIFile * {
-    auto *&file = fileCache[filePath];
-    if (!file)
-      file = db.createFile(llvm::sys::path::filename(filePath),
-                           llvm::sys::path::parent_path(filePath));
-    return file;
-  };
 
   // Build enum DI types directly from surviving ada.type ops.
   llvm::StringMap<llvm::DICompositeType *> enumTypeByName;
@@ -91,7 +83,8 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
     // the full sym_name so shadowed enums (same bare name) remain distinct.
     auto *enumType = db.createEnumerationType(
         scope, mlir::ada::bareName(typeOp.getSymName()),
-        getOrCreateFile(filePath), line, llvm::alignTo(intType.getWidth(), 8),
+        mlir::ada::getOrCreateDIFile(db, fileCache, filePath), line,
+        llvm::alignTo(intType.getWidth(), 8),
         /*AlignInBits=*/0, db.getOrCreateArray(elems),
         /*UnderlyingType=*/nullptr);
     enumTypeByName[typeOp.getSymName()] = enumType;
@@ -99,28 +92,19 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
 
   // Replace empty DICompositeType stubs (emitted by AdaDebugInfoPass as
   // placeholders for enum types) with the full DICompositeType built above.
-  for (auto &F : llvmModule) {
-    for (auto &BB : F) {
-      for (auto &I : BB) {
-        for (llvm::DbgVariableRecord &DVR :
-             llvm::filterDbgVars(I.getDbgRecordRange())) {
-          auto *var = DVR.getVariable();
-          auto *ct = llvm::dyn_cast<llvm::DICompositeType>(var->getType());
+  for (auto &f : llvmModule) {
+    for (auto &bb : f) {
+      for (auto &i : bb) {
+        for (llvm::DbgVariableRecord &dvr :
+             llvm::filterDbgVars(i.getDbgRecordRange())) {
+          auto *ct = llvm::dyn_cast<llvm::DICompositeType>(
+              dvr.getVariable()->getType());
           if (!ct || !ct->getElements().empty())
             continue;
           auto it = enumTypeByName.find(ct->getName());
           if (it == enumTypeByName.end())
             continue;
-          llvm::DILocalVariable *newVar;
-          if (var->getArg() > 0)
-            newVar = db.createParameterVariable(var->getScope(), var->getName(),
-                                                var->getArg(), var->getFile(),
-                                                var->getLine(), it->second);
-          else
-            newVar = db.createAutoVariable(var->getScope(), var->getName(),
-                                           var->getFile(), var->getLine(),
-                                           it->second);
-          DVR.setVariable(newVar);
+          mlir::ada::retypeLocalVariable(db, dvr, it->second);
         }
       }
     }
