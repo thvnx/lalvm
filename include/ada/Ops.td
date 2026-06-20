@@ -176,6 +176,9 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 // (memref.load, memref.store) work with !ada.qual<T> element types without
 // modification and are still used alongside this op.
 def AllocaOp : Ada_Op<"alloca", [
+    // Declares the stack-allocation effect (matching memref.alloca) so a dead
+    // alloca becomes trivially removable once a DCE/canonicalizer pass runs.
+    MemoryEffects<[MemAlloc<AutomaticAllocationScopeResource>]>,
     DeclareOpInterfaceMethods<PromotableAllocationOpInterface>
   ]> {
   let summary = "Ada typed local variable stack allocation";
@@ -501,7 +504,8 @@ def NullOp : Ada_Op<"null", [Pure]> {
 
 // Enclosing SymbolTable for a subprogram's nested symbol declarations, since
 // `ada.subp` itself is not one. See the op description for details.
-def DeclsOp : Ada_Op<"decls", [NoTerminator, SingleBlock, SymbolTable]> {
+def DeclsOp : Ada_Op<"decls", [NoTerminator, SingleBlock, SymbolTable,
+                               HasParent<"::mlir::ada::SubpOp">]> {
   let summary = "Container for a subprogram's nested symbol declarations";
   let description = [{
     A `SymbolTable` region holding the nested symbol declarations (`ada.subp`,
@@ -668,12 +672,13 @@ def SubpOp : Ada_Op<"subp", [
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-// @todo Once LLVM 23.1 is used, add HasAncestor<"ada.subp"> to ReturnOp to get
-// free ancestry verification. ReturnOp::verify() can then drop its parent-walk
-// and null check.
-
+// @todo Once LLVM 23.1 ships `HasAncestor` in ODS, switch `HasParent` to
+// `HasAncestor<"ada.subp">`, which also covers a return nested in a sub-region
+// (e.g. a future block statement); `HasParent` only covers today's flat CFG.
+//
 // Terminator marks this op as the mandatory last op in a basic block.
-def ReturnOp : Ada_Op<"return", [Terminator, ReturnLike]> {
+def ReturnOp : Ada_Op<"return", [Terminator, ReturnLike,
+                                 HasParent<"::mlir::ada::SubpOp">]> {
   let summary = "return operation";
   let description = [{
     Represents an Ada return statement (@rm{5-8}). Functions carry one return
