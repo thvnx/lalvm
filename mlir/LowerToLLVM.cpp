@@ -81,11 +81,12 @@ static mlir::Location attachAdaTypeRef(MLIRContext *ctx, mlir::Location loc,
                                         ada::DITypeRefAttr::get(ctx, adaType)));
 }
 
-/// Whether the Ada type named by `qual` is modular (its arithmetic wraps,
-/// @rm{3-5-4}), so values are unsigned. The modulus is a base-type property (a
-/// subtype's `int_info` records only its range), so walk `base` links from
-/// `from` until a nonzero modulus or the chain ends.
-static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
+/// The modulus of the Ada type named by `qual`, or null when it is not modular.
+/// The modulus is a base-type property (a subtype's `int_info` records only its
+/// range), so walk `base` links from `from` until a nonzero modulus or the
+/// chain ends.
+static mlir::IntegerAttr getModularModulus(mlir::Operation *from,
+                                           ada::QualType qual) {
   auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
       mlir::SymbolTable::lookupNearestSymbolFrom(
           from, qual.getAdaType().getRootReference()));
@@ -93,14 +94,20 @@ static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
     auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
         typeOp.getTypeInfoAttr());
     if (intInfo && intInfo.getModulus())
-      return true;
+      return intInfo.getModulus();
     auto baseAttr = typeOp.getBaseAttr();
     if (!baseAttr)
       break;
     typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
         mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
   }
-  return false;
+  return {};
+}
+
+/// Whether the Ada type named by `qual` is modular (its arithmetic wraps,
+/// @rm{3-5-4}), so values are unsigned.
+static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
+  return static_cast<bool>(getModularModulus(from, qual));
 }
 
 /// Address of a private, NUL-terminated constant holding `fileName`, for the
@@ -503,6 +510,95 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
         return mlir::failure();
       rewriter.replaceOp(op, res);
       return success();
+    }
+
+    // Modular arithmetic (@rm{3-5-4}). Values are unsigned, and the stored
+    // integer width byte-rounds up to a power of two, so the width's own
+    // wraparound realizes the modulus only when it is exactly 2**width (the
+    // common `Interfaces.Unsigned_*` / `mod 256` families).
+    if (isInt) {
+      if (mlir::IntegerAttr modAttr = getModularModulus(
+              op, mlir::cast<ada::QualType>(op.getResult().getType()))) {
+        mlir::Location loc = op.getLoc();
+        mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
+
+        // Division is unsigned and never exceeds the modulus (the quotient is
+        // at most the dividend), so it needs only the unsigned operator, no
+        // reduction. The zero-divisor `Division_Check` is left to the runtime
+        // raise plumbing, as for the non-modular case.
+        if (kind == ada::AdaBinaryOp::Div) {
+          rewriter.replaceOpWithNewOp<arith::DivUIOp>(op, lhs, rhs);
+          return success();
+        }
+
+        // For any other modulus, +/-/* must be explicitly reduced; the width's
+        // wraparound is exact only at modulus == 2**width.
+        llvm::APInt m = modAttr.getValue();
+        unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
+
+        if (m.isPowerOf2() && m.logBase2() == w) {
+          // Width-based wraparound is already exact; fall through to `lower`.
+        } else if (m.isPowerOf2()) {
+          // Power-of-two modulus narrower than the width: mask the low k bits.
+          // Correct for +/-/* alike, since 2**w is a multiple of 2**k.
+          unsigned k = m.logBase2();
+          mlir::Value base;
+          switch (kind) {
+          case ada::AdaBinaryOp::Plus:
+            base = rewriter.create<arith::AddIOp>(loc, lhs, rhs);
+            break;
+          case ada::AdaBinaryOp::Minus:
+            base = rewriter.create<arith::SubIOp>(loc, lhs, rhs);
+            break;
+          default: // Mult
+            base = rewriter.create<arith::MulIOp>(loc, lhs, rhs);
+            break;
+          }
+          mlir::Value mask = rewriter.create<arith::ConstantOp>(
+              loc,
+              rewriter.getIntegerAttr(type, llvm::APInt::getLowBitsSet(w, k)));
+          rewriter.replaceOpWithNewOp<arith::AndIOp>(op, base, mask);
+          return success();
+        } else {
+          // Non-binary modulus: compute in a doubled width so the width's own
+          // wraparound cannot contaminate the reduction, then truncate back.
+          //
+          // `2*w` is sufficient and safe: the representation width covers the
+          // modulus (`modulus <= 2**w`), so the largest intermediate
+          // `(m-1)**2 < 2**(2w)` fits exactly, and `m` (at most `w+1` signed
+          // bits) always zero-extends *up* to the wider type, never narrows.
+          unsigned ww = 2 * w;
+          mlir::Type wide = mlir::IntegerType::get(rewriter.getContext(), ww);
+          mlir::Value a = rewriter.create<arith::ExtUIOp>(loc, wide, lhs);
+          mlir::Value b = rewriter.create<arith::ExtUIOp>(loc, wide, rhs);
+          mlir::Value mc = rewriter.create<arith::ConstantOp>(
+              loc, rewriter.getIntegerAttr(wide, m.zext(ww)));
+          mlir::Value r;
+          if (kind == ada::AdaBinaryOp::Mult) {
+            // The product reaches `(m-1)**2`, so a full `urem` is required.
+            mlir::Value t = rewriter.create<arith::MulIOp>(loc, a, b);
+            r = rewriter.create<arith::RemUIOp>(loc, t, mc);
+          } else {
+            // Addition and subtraction land at most one modulus outside the
+            // range (`a + b < 2m`; `a + m - b` in `1 .. 2m-1`), so a single
+            // conditional `- m` reduces them (a division-free correction).
+            // Subtraction forms `a + m - b` first to stay non-negative (a bare
+            // `a - b` would underflow).
+            mlir::Value s;
+            if (kind == ada::AdaBinaryOp::Plus)
+              s = rewriter.create<arith::AddIOp>(loc, a, b);
+            else
+              s = rewriter.create<arith::SubIOp>(
+                  loc, rewriter.create<arith::AddIOp>(loc, a, mc), b);
+            mlir::Value ge = rewriter.create<arith::CmpIOp>(
+                loc, arith::CmpIPredicate::uge, s, mc);
+            mlir::Value sub = rewriter.create<arith::SubIOp>(loc, s, mc);
+            r = rewriter.create<arith::SelectOp>(loc, ge, sub, s);
+          }
+          rewriter.replaceOpWithNewOp<arith::TruncIOp>(op, type, r);
+          return success();
+        }
+      }
     }
 
     auto lower = [&](bool intType, auto iOp, auto fOp) {
