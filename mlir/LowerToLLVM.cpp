@@ -141,9 +141,10 @@ static mlir::Value emitFileNamePtr(mlir::ConversionPatternRewriter &rewriter,
 /// Emit a Constraint_Check trap (@rm{11-5}): split the current block, build a
 /// `raise` block that calls the GNAT runtime `fnName(file, line)` and is
 /// unreachable, and branch there when `cond` is true, otherwise fall through to
-/// the continuation. `cond` must already be materialized in the current block;
-/// after the call the rewriter inserts at the end of the original block (its
-/// terminator). Returns failure if the runtime function cannot be declared.
+/// the continuation. `cond` must already be materialized in the current block.
+/// On return the rewriter is positioned at the start of the continuation block,
+/// so a caller can keep emitting on the live (non-raising) path or chain a
+/// second check. Returns failure if the runtime function cannot be declared.
 static mlir::LogicalResult
 emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
                     mlir::Location loc, mlir::ModuleOp module, mlir::Value cond,
@@ -178,6 +179,10 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
   // Test in the original block: bad -> raise, else -> continue.
   rewriter.setInsertionPointToEnd(opBlock);
   rewriter.create<LLVM::CondBrOp>(loc, cond, raise, cont);
+
+  // Resume on the live path so the caller can emit the guarded operation (or
+  // chain another check) after the branch.
+  rewriter.setInsertionPointToStart(cont);
   return mlir::success();
 }
 
@@ -512,6 +517,62 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
       return success();
     }
 
+    // Integer division (@rm{11-5}, @rm{4-5}). Modular division is unsigned, all
+    // other integer division signed; neither exceeds the modulus/range, so no
+    // reduction is needed. When the `division` check is set, guard the divide
+    // with a zero-divisor precheck (and, for signed division, the
+    // `Integer'First / -1` overflow precheck), since an LLVM divide by zero is
+    // undefined and there is no checked-division intrinsic. The prechecks must
+    // precede the divide, which is emitted on the live path that
+    // `emitConstraintRaise` leaves us on.
+    if (isInt && kind == ada::AdaBinaryOp::Div) {
+      mlir::Location loc = op.getLoc();
+      mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
+      bool modular = static_cast<bool>(getModularModulus(
+          op, mlir::cast<ada::QualType>(op.getResult().getType())));
+
+      if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Division)) {
+        auto module = op->getParentOfType<mlir::ModuleOp>();
+        unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
+
+        // Zero divisor raises Constraint_Error, for any integer `/`.
+        mlir::Value zero = rewriter.create<arith::ConstantOp>(
+            loc, rewriter.getIntegerAttr(type, 0));
+        mlir::Value isZero = rewriter.create<arith::CmpIOp>(
+            loc, arith::CmpIPredicate::eq, rhs, zero);
+        if (mlir::failed(
+                emitConstraintRaise(rewriter, loc, module, isZero,
+                                    "__gnat_rcheck_CE_Divide_By_Zero")))
+          return mlir::failure();
+
+        // `Integer'First / -1` overflows the signed range (its result does not
+        // fit); modular division wraps and never overflows.
+        if (!modular) {
+          mlir::Value intMin = rewriter.create<arith::ConstantOp>(
+              loc,
+              rewriter.getIntegerAttr(type, llvm::APInt::getSignedMinValue(w)));
+          mlir::Value negOne = rewriter.create<arith::ConstantOp>(
+              loc, rewriter.getIntegerAttr(type, llvm::APInt::getAllOnes(w)));
+          mlir::Value lhsIsMin = rewriter.create<arith::CmpIOp>(
+              loc, arith::CmpIPredicate::eq, lhs, intMin);
+          mlir::Value rhsIsNegOne = rewriter.create<arith::CmpIOp>(
+              loc, arith::CmpIPredicate::eq, rhs, negOne);
+          mlir::Value ovf =
+              rewriter.create<arith::AndIOp>(loc, lhsIsMin, rhsIsNegOne);
+          if (mlir::failed(
+                  emitConstraintRaise(rewriter, loc, module, ovf,
+                                      "__gnat_rcheck_CE_Overflow_Check")))
+            return mlir::failure();
+        }
+      }
+
+      if (modular)
+        rewriter.replaceOpWithNewOp<arith::DivUIOp>(op, lhs, rhs);
+      else
+        rewriter.replaceOpWithNewOp<arith::DivSIOp>(op, lhs, rhs);
+      return success();
+    }
+
     // Modular arithmetic (@rm{3-5-4}). Values are unsigned, and the stored
     // integer width byte-rounds up to a power of two, so the width's own
     // wraparound realizes the modulus only when it is exactly 2**width (the
@@ -521,15 +582,6 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
               op, mlir::cast<ada::QualType>(op.getResult().getType()))) {
         mlir::Location loc = op.getLoc();
         mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
-
-        // Division is unsigned and never exceeds the modulus (the quotient is
-        // at most the dividend), so it needs only the unsigned operator, no
-        // reduction. The zero-divisor `Division_Check` is left to the runtime
-        // raise plumbing, as for the non-modular case.
-        if (kind == ada::AdaBinaryOp::Div) {
-          rewriter.replaceOpWithNewOp<arith::DivUIOp>(op, lhs, rhs);
-          return success();
-        }
 
         // For any other modulus, +/-/* must be explicitly reduced; the width's
         // wraparound is exact only at modulus == 2**width.
