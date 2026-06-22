@@ -554,8 +554,31 @@ private:
       break;
     case ada_op_div:
       kind = mlir::ada::AdaBinaryOp::Div;
-      if (isInteger)
+      if (isInteger) {
         checks = mlir::ada::AdaChecks::Division;
+        // Resolve the Division_Check against a static divisor at compile time
+        // (@rm{11-5}), GNAT-style: a constant nonzero divisor needs no run-time
+        // check, while a constant zero divisor fails statically. The divisor
+        // may sit behind a representation `ada.coerce`.
+        mlir::Value divisor = rhs;
+        if (auto co = divisor.getDefiningOp<mlir::ada::CoerceOp>())
+          divisor = co.getInput();
+        if (auto cst = divisor.getDefiningOp<mlir::ada::ConstantOp>())
+          if (auto iv = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
+            if (iv.getValue().isZero()) {
+              mlir::emitError(callerLoc, "division by zero");
+              mlir::emitError(callerLoc,
+                              "static expression fails Constraint_Check");
+              return nullptr;
+            }
+            // A nonzero divisor cannot raise Divide_By_Zero, and only a divisor
+            // of -1 can trigger the signed `Integer'First / -1` overflow, so
+            // the check is unnecessary unless the (signed) divisor is exactly
+            // -1.
+            if (modular || !iv.getValue().isAllOnes())
+              checks = mlir::ada::AdaChecks{};
+          }
+      }
       break;
     default:
       mlir::emitError(callerLoc, "invalid binary operator '")
