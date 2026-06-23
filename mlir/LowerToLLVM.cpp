@@ -81,6 +81,28 @@ static mlir::Location attachAdaTypeRef(MLIRContext *ctx, mlir::Location loc,
                                         ada::DITypeRefAttr::get(ctx, adaType)));
 }
 
+/// Build an `arith.constant` of integer `type` holding `value`.
+static mlir::Value constInt(mlir::ConversionPatternRewriter &rewriter,
+                            mlir::Location loc, mlir::Type type,
+                            int64_t value) {
+  return rewriter.create<arith::ConstantOp>(
+      loc, rewriter.getIntegerAttr(type, value));
+}
+static mlir::Value constInt(mlir::ConversionPatternRewriter &rewriter,
+                            mlir::Location loc, mlir::Type type,
+                            const llvm::APInt &value) {
+  return rewriter.create<arith::ConstantOp>(
+      loc, rewriter.getIntegerAttr(type, value));
+}
+
+/// Extract field `index` from an aggregate (struct) value.
+static mlir::Value extractField(mlir::ConversionPatternRewriter &rewriter,
+                                mlir::Location loc, mlir::Value agg,
+                                int64_t index) {
+  return rewriter.create<LLVM::ExtractValueOp>(loc, agg,
+                                               llvm::ArrayRef<int64_t>{index});
+}
+
 /// The modulus of the Ada type named by `qual`, or null when it is not modular.
 /// The modulus is a base-type property (a subtype's `int_info` records only its
 /// range), so walk `base` links from `from` until a nonzero modulus or the
@@ -317,10 +339,8 @@ struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
     // Bounds: read the two fields of the lowered descriptor. `extractvalue` of
     // the producing `insertvalue` folds away under optimization.
     mlir::Value desc = adaptor.getRange();
-    mlir::Value lo = rewriter.create<LLVM::ExtractValueOp>(
-        loc, desc, llvm::ArrayRef<int64_t>{0});
-    mlir::Value hi = rewriter.create<LLVM::ExtractValueOp>(
-        loc, desc, llvm::ArrayRef<int64_t>{1});
+    mlir::Value lo = extractField(rewriter, loc, desc, 0);
+    mlir::Value hi = extractField(rewriter, loc, desc, 1);
 
     // Out of range when below the low bound or above the high bound.
     mlir::Value below, above;
@@ -506,10 +526,8 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
       default:
         return rewriter.notifyMatchFailure(op, "overflow check on non-+-* op");
       }
-      mlir::Value res = rewriter.create<LLVM::ExtractValueOp>(
-          loc, wo, llvm::ArrayRef<int64_t>{0});
-      mlir::Value ovf = rewriter.create<LLVM::ExtractValueOp>(
-          loc, wo, llvm::ArrayRef<int64_t>{1});
+      mlir::Value res = extractField(rewriter, loc, wo, 0);
+      mlir::Value ovf = extractField(rewriter, loc, wo, 1);
       if (mlir::failed(emitConstraintRaise(rewriter, loc, module, ovf,
                                            "__gnat_rcheck_CE_Overflow_Check")))
         return mlir::failure();
@@ -536,8 +554,7 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
         unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
 
         // Zero divisor raises Constraint_Error, for any integer `/`.
-        mlir::Value zero = rewriter.create<arith::ConstantOp>(
-            loc, rewriter.getIntegerAttr(type, 0));
+        mlir::Value zero = constInt(rewriter, loc, type, 0);
         mlir::Value isZero = rewriter.create<arith::CmpIOp>(
             loc, arith::CmpIPredicate::eq, rhs, zero);
         if (mlir::failed(
@@ -548,11 +565,10 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
         // `Integer'First / -1` overflows the signed range (its result does not
         // fit); modular division wraps and never overflows.
         if (!modular) {
-          mlir::Value intMin = rewriter.create<arith::ConstantOp>(
-              loc,
-              rewriter.getIntegerAttr(type, llvm::APInt::getSignedMinValue(w)));
-          mlir::Value negOne = rewriter.create<arith::ConstantOp>(
-              loc, rewriter.getIntegerAttr(type, llvm::APInt::getAllOnes(w)));
+          mlir::Value intMin =
+              constInt(rewriter, loc, type, llvm::APInt::getSignedMinValue(w));
+          mlir::Value negOne =
+              constInt(rewriter, loc, type, llvm::APInt::getAllOnes(w));
           mlir::Value lhsIsMin = rewriter.create<arith::CmpIOp>(
               loc, arith::CmpIPredicate::eq, lhs, intMin);
           mlir::Value rhsIsNegOne = rewriter.create<arith::CmpIOp>(
@@ -606,9 +622,8 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
             base = rewriter.create<arith::MulIOp>(loc, lhs, rhs);
             break;
           }
-          mlir::Value mask = rewriter.create<arith::ConstantOp>(
-              loc,
-              rewriter.getIntegerAttr(type, llvm::APInt::getLowBitsSet(w, k)));
+          mlir::Value mask =
+              constInt(rewriter, loc, type, llvm::APInt::getLowBitsSet(w, k));
           rewriter.replaceOpWithNewOp<arith::AndIOp>(op, base, mask);
           return success();
         } else {
@@ -623,8 +638,7 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
           mlir::Type wide = mlir::IntegerType::get(rewriter.getContext(), ww);
           mlir::Value a = rewriter.create<arith::ExtUIOp>(loc, wide, lhs);
           mlir::Value b = rewriter.create<arith::ExtUIOp>(loc, wide, rhs);
-          mlir::Value mc = rewriter.create<arith::ConstantOp>(
-              loc, rewriter.getIntegerAttr(wide, m.zext(ww)));
+          mlir::Value mc = constInt(rewriter, loc, wide, m.zext(ww));
           mlir::Value r;
           if (kind == ada::AdaBinaryOp::Mult) {
             // The product reaches `(m-1)**2`, so a full `urem` is required.
