@@ -9,9 +9,9 @@
 
 -- MLIR-LABEL: ada.subp @range_check_emit
 -- MLIR:      ada.coerce %arg0 : <i32, @standard.integer> to <i32, @range_check_emit.small>
--- MLIR:      %[[LO:.*]] = arith.constant 1 : i32
--- MLIR:      %[[HI:.*]] = arith.constant 10 : i32
--- MLIR:      ada.range %[[LO]], %[[HI]] : !ada.range<i32, @range_check_emit.small>
+-- MLIR:      %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
+-- MLIR:      %[[HI:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 10
+-- MLIR:      ada.range %[[LO]], %[[HI]] : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_emit.small>
 -- MLIR:      ada.range_check %{{.*}}, %{{.*}} : !ada.qual<i32, @range_check_emit.small>
 
 -- LLVM-LABEL: define i32 @_ada_range_check_emit(

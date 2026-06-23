@@ -24,7 +24,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
@@ -452,25 +451,30 @@ llvm::LogicalResult CoerceOp::verify() {
 // RangeOp
 //===----------------------------------------------------------------------===//
 
-// The bound-operand types are pinned to the range's `boundType` by the op's
-// `TypesMatchWith` constraints; this verifier only restricts that bound type
-// to a scalar machine kind (matching `BinOp`/`CmpOp`).
+// Restrict the range's `boundType` to a scalar machine kind (matching
+// `BinOp`/`CmpOp`) and pin the bounds' machine type to it. The bounds carry the
+// base subtype identity, so the match is on the machine type alone.
 llvm::LogicalResult RangeOp::verify() {
   mlir::Type boundType =
       mlir::cast<ada::RangeType>(getResult().getType()).getBoundType();
   if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(boundType))
     return emitOpError() << "range bound type must be integer or float, got "
                          << boundType;
+  mlir::Type boundMachineType =
+      mlir::cast<ada::QualType>(getLow().getType()).getMlirType();
+  if (boundMachineType != boundType)
+    return emitOpError() << "bound machine type " << boundMachineType
+                         << " does not match range bound type " << boundType;
   return mlir::success();
 }
 
 std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
-  // `m_Constant` matches a `ConstantLike` defining op and binds its folded
-  // value; it leaves `attr` null for a dynamic (runtime) bound.
+  // A compile-time constant bound is defined by an `ada.constant`: read its
+  // value attribute. A dynamic (runtime) bound has none, so it stays null.
   auto constOf = [](mlir::Value v) -> mlir::TypedAttr {
-    mlir::TypedAttr attr;
-    matchPattern(v, mlir::m_Constant(&attr));
-    return attr;
+    if (auto c = v.getDefiningOp<ConstantOp>())
+      return mlir::dyn_cast<mlir::TypedAttr>(c.getValue());
+    return {};
   };
   return {constOf(getLow()), constOf(getHigh())};
 }

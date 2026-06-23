@@ -16,7 +16,6 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -1000,20 +999,15 @@ private:
     return constrainToSubtype(val, coerced, expected, location);
   }
 
-  /// `value` as a bare machine constant of `intType`, an `ada.range` bound.
-  mlir::Value constBound(mlir::IntegerType intType, const llvm::APInt &value,
-                         mlir::Location location) {
-    return builder.create<mlir::arith::ConstantOp>(
-        location,
-        mlir::IntegerAttr::get(intType, value.sextOrTrunc(intType.getWidth())));
-  }
-
-  /// Build an `ada.range` descriptor of subtype `sym` from its bare machine
-  /// bounds (`lo` and `hi` share the bound type).
+  /// Build an `ada.range` descriptor of subtype `sym` from its bounds (`lo` and
+  /// `hi` are `ada.qual` values of the base type and share their type). The
+  /// range's machine `boundType` is the bounds' underlying type.
   mlir::Value emitRange(mlir::Value lo, mlir::Value hi,
                         mlir::FlatSymbolRefAttr sym, mlir::Location location) {
+    auto boundType =
+        mlir::cast<mlir::ada::QualType>(lo.getType()).getMlirType();
     auto rangeType =
-        mlir::ada::RangeType::get(builder.getContext(), lo.getType(), sym);
+        mlir::ada::RangeType::get(builder.getContext(), boundType, sym);
     return builder.create<mlir::ada::RangeOp>(location, rangeType, lo, hi);
   }
 
@@ -1021,9 +1015,10 @@ private:
   /// subtype `sym`, emitted lazily: reuse one already present in the current
   /// block, otherwise emit one here, at the first check that needs it. MLIRGen
   /// builds forward, so any descriptor already in the block precedes this check
-  /// and dominates it; later checks in the same block then reuse it.
+  /// and dominates it; later checks in the same block then reuse it. The bounds
+  /// are `ada.constant`s of `baseQual` (the subtype's base type, RM 3.5).
   mlir::Value staticRangeFor(mlir::FlatSymbolRefAttr sym,
-                             mlir::IntegerType intType, llvm::APInt lo,
+                             mlir::ada::QualType baseQual, llvm::APInt lo,
                              llvm::APInt hi, mlir::Location location) {
     if (mlir::Block *block = builder.getInsertionBlock())
       for (mlir::Operation &op : *block)
@@ -1031,8 +1026,8 @@ private:
           if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
                   .getConstrainedType() == sym)
             return rangeOp.getResult();
-    return emitRange(constBound(intType, lo, location),
-                     constBound(intType, hi, location), sym, location);
+    return emitRange(emitIntConstant(lo, baseQual, location),
+                     emitIntConstant(hi, baseQual, location), sym, location);
   }
 
   /// Emit a Constraint_Check (@rm{11-5}) when `coerced` flows into a
@@ -1073,8 +1068,11 @@ private:
                              hiAttr.getValue(), typeOp.getSymName(), location);
           return coerced;
         }
-      auto intType = mlir::cast<mlir::IntegerType>(target.getMlirType());
-      range = staticRangeFor(target.getAdaType(), intType, loAttr.getValue(),
+      // The bounds have the base type (RM 3.5); it shares the subtype's
+      // machine type, so reuse `target.getMlirType()`.
+      auto baseQual = mlir::ada::QualType::get(
+          builder.getContext(), target.getMlirType(), typeOp.getBaseAttr());
+      range = staticRangeFor(target.getAdaType(), baseQual, loAttr.getValue(),
                              hiAttr.getValue(), location);
     }
     return builder.create<mlir::ada::RangeCheckOp>(location, target, coerced,
@@ -1761,15 +1759,18 @@ private:
       if (mlir::isa<mlir::ada::DeclsOp>(declsOp)) {
         mlir::OpBuilder::InsertionGuard guard(builder);
         builder.setInsertionPoint(declsOp);
-        auto intType = mlir::cast<mlir::IntegerType>(baseOp.getMlirType());
-        // A static bound is a bare constant; a dynamic one is its evaluated
-        // expression, unwrapped to the machine type.
+        // Bounds have the subtype's base type (RM 3.5). A static bound is an
+        // `ada.constant` of it; a dynamic one is its evaluated expression
+        // coerced to it (so both bounds share the base `!ada.qual`).
+        auto baseQual = mlir::ada::QualType::get(
+            builder.getContext(), baseOp.getMlirType(),
+            mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
         auto boundValue = [&](ada_node &expr,
                               mlir::IntegerAttr stat) -> mlir::Value {
           if (stat)
-            return constBound(intType, stat.getValue(), location);
+            return emitIntConstant(stat.getValue(), baseQual, location);
           mlir::Value v = visit_expr(expr);
-          return v ? unwrap(v, loc(expr)) : mlir::Value();
+          return v ? coerce(v, baseQual, loc(expr)) : mlir::Value();
         };
         mlir::Value lo = boundValue(range.low_bound, intInfo.staticLower());
         mlir::Value hi = boundValue(range.high_bound, intInfo.staticUpper());

@@ -5,8 +5,8 @@
 -- the bounds become an `ada.range` in the entry block (here even though the
 -- subtype is unreferenced). The non-static bound is still recorded as `?`.
 -- MLIR-LABEL: ada.subp @subtype_dynamic
--- MLIR:         %[[LO:.*]] = arith.constant 1 : i32
--- MLIR:         ada.range %[[LO]], %{{.*}} : !ada.range<i32, @subtype_dynamic.s>
+-- MLIR:         %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
+-- MLIR:         ada.range %[[LO]], %{{.*}} : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @subtype_dynamic.s>
 -- MLIR:         ada.decls {
 -- MLIR-NEXT:      ada.type @subtype_dynamic.s base @standard.integer : i32 = #ada.int_info<range 1 to ?>
 

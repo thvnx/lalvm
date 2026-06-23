@@ -3,15 +3,15 @@
 // from the descriptor, and a conditional branch to a raise block that calls
 // the GNAT runtime `__gnat_rcheck_CE_Range_Check(file, line)` and is
 // unreachable; the checked value flows through unchanged. Fed as MLIR (no Ada
-// emitter yet).
+// emitter yet). The bound `!ada.qual`s erase to their machine type on lowering.
 
 // RUN: %lalvm --emit=llvm %s | %FileCheck %s
 
 module {
   // CHECK-LABEL: define i32 @_ada_check
-  ada.subp @check(%v: !ada.qual<i32, @positive>, %lo: i32, %hi: i32)
-      -> !ada.qual<i32, @positive> {
-    %r = ada.range %lo, %hi : !ada.range<i32, @positive>
+  ada.subp @check(%v: !ada.qual<i32, @positive>, %lo: !ada.qual<i32, @integer>,
+                  %hi: !ada.qual<i32, @integer>) -> !ada.qual<i32, @positive> {
+    %r = ada.range %lo, %hi : !ada.qual<i32, @integer> -> !ada.range<i32, @positive>
     // CHECK:      %[[LO:.*]] = extractvalue { i32, i32 } %{{.*}}, 0
     // CHECK:      %[[HI:.*]] = extractvalue { i32, i32 } %{{.*}}, 1
     // CHECK:      icmp slt i32 %0, %[[LO]]

@@ -7,7 +7,7 @@
 -- descriptor elaborated at the subtype declaration, via `ada.attr` (lowered to
 -- an `extractvalue` of field 1).
 -- MLIR-LABEL: ada.subp @scalar_attr
--- MLIR:         %[[R:.*]] = ada.range %{{.*}}, %{{.*}} : !ada.range<i32, @scalar_attr.s>
+-- MLIR:         %[[R:.*]] = ada.range %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @scalar_attr.s>
 -- MLIR:         ada.attr "last", %[[R]] : !ada.qual<i32, @scalar_attr.s>
 -- MLIR:         ada.constant : !ada.qual<i32, @scalar_attr.s> = 1
 

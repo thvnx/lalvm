@@ -4,7 +4,7 @@
 -- A nested subprogram referencing an outer dynamic subtype: the range
 -- descriptor is elaborated once in the outer body and reused in the inner one
 -- as an up-level reference, which ClosureConversion lifts into a parameter.
--- MLIR:      ada.range %{{.*}}, %{{.*}} : !ada.range<i32, @range_check_capture.s>
+-- MLIR:      ada.range %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_capture.s>
 -- MLIR:      ada.range_check %{{.*}}, %{{.*}} : !ada.qual<i32, @range_check_capture.s>
 
 -- LLVM:      call void @__gnat_rcheck_CE_Range_Check(
