@@ -8,7 +8,7 @@
 -- CHECK-DAG: !DISubrangeType(name: "s",{{.*}}lowerBound: i32 1, upperBound: ![[N:[0-9]+]])
 -- CHECK-DAG: ![[N]] = !DILocalVariable(name: "n", arg: 1,
 
-function Debug_Info_Subrange_Dynamic (N : Integer) return Integer is
+function Subrange_Dynamic (N : Integer) return Integer is
    subtype S is Integer range 1 .. N;
    procedure Set (X : out S) is
    begin
@@ -18,4 +18,4 @@ function Debug_Info_Subrange_Dynamic (N : Integer) return Integer is
 begin
    Set (V);
    return V;
-end Debug_Info_Subrange_Dynamic;
+end Subrange_Dynamic;

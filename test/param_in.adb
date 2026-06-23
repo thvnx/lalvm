@@ -16,10 +16,8 @@
 -- LLVM-LABEL: define i32 @_ada_param_in(
 -- LLVM-LABEL: define internal i32 @param_in__double(i32
 -- LLVM-NOT:     alloca
--- LLVM:          #dbg_value(i32 %0,
 -- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:          ret i32
--- LLVM:          DILocalVariable(name: "x", arg: 1,
 
 function Param_In return Integer is
    function Double (X : in Integer) return Integer;

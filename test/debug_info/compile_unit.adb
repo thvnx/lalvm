@@ -3,7 +3,7 @@
 -- CHECK: !DICompileUnit(language: DW_LANG_Ada2012
 -- CHECK-SAME:           producer: "lalvm"
 
-procedure Debug_Info is
+procedure Compile_Unit is
 begin
    null;
-end Debug_Info;
+end Compile_Unit;

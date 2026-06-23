@@ -42,15 +42,6 @@
 -- LLVM:          call i1 @enum_type_shadow__inner(
 -- LLVM-LABEL: define internal i1 @enum_type_shadow__inner__inner(
 -- LLVM-LABEL: define internal i1 @enum_type_shadow__inner(
--- Locally-declared Boolean types use the enclosing subprogram as DWARF scope,
--- not the compile unit. Both inner subprograms share the source name "inner"
--- (DW_AT_name), so the scopes are disambiguated by their mangled linkageName.
--- LLVM-DAG: ![[BSCOPE1:[0-9]+]] = distinct !DISubprogram(name: "inner", linkageName: "enum_type_shadow__inner",
--- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE1]],
--- LLVM-DAG: ![[BSCOPE2:[0-9]+]] = distinct !DISubprogram(name: "inner", linkageName: "enum_type_shadow__inner__inner",
--- LLVM-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE2]],
--- LLVM: DILocalVariable(name: "b", arg: 1,
--- LLVM: DILocalVariable(name: "b", arg: 1,
 
 function Enum_Type_Shadow return Boolean is
    function Inner (B : Boolean) return Boolean is

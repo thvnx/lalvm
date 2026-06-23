@@ -11,7 +11,7 @@
 -- CHECK: ![[TYPES]] = !{![[INT:[0-9]+]], ![[INT]]}
 -- CHECK: ![[INT]] = !DIBasicType(name: "integer", size: 32, encoding: DW_ATE_signed)
 
-function Debug_Info_Subroutine_Type (X : Integer) return Integer is
+function Subroutine_Type (X : Integer) return Integer is
 begin
    return X;
-end Debug_Info_Subroutine_Type;
+end Subroutine_Type;

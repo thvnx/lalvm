@@ -21,7 +21,7 @@
 -- CHECK: DW_AT_name ("x")
 -- CHECK: DW_AT_type ({{.*}} "s")
 
-function Debug_Info_Subrange return Integer is
+function Subrange return Integer is
    subtype S is Integer range 1 .. 10;
    procedure Set (X : out S) is
    begin
@@ -31,4 +31,4 @@ function Debug_Info_Subrange return Integer is
 begin
    Set (V);
    return V;
-end Debug_Info_Subrange;
+end Subrange;

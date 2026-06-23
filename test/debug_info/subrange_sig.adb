@@ -9,7 +9,7 @@
 -- CHECK-DAG: ![[SUB:[0-9]+]] = !DISubrangeType(name: "s",{{.*}}lowerBound: i32 1, upperBound: i32 10)
 -- CHECK-DAG: = !{![[SUB]], ![[SUB]]}
 
-function Debug_Info_Subrange_Sig return Integer is
+function Subrange_Sig return Integer is
    subtype S is Integer range 1 .. 10;
    function Id (X : S) return S is
    begin
@@ -18,4 +18,4 @@ function Debug_Info_Subrange_Sig return Integer is
    V : S := 5;
 begin
    return Id (V);
-end Debug_Info_Subrange_Sig;
+end Subrange_Sig;

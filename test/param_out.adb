@@ -19,11 +19,9 @@
 
 -- LLVM-LABEL: define i32 @_ada_param_out(
 -- LLVM-LABEL: define internal void @param_out__get_value(ptr
--- LLVM:          #dbg_declare(ptr %0,
 -- LLVM-NOT:     load
 -- LLVM:          store i32 42, ptr
 -- LLVM:          ret void
--- LLVM:          DILocalVariable(name: "x", arg: 1,
 
 function Param_Out return Integer is
    procedure Get_Value (X : out Integer);

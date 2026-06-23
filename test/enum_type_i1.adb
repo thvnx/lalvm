@@ -1,5 +1,4 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=DWARF
 
 -- 2 literals -> i1; On has position 1.
 -- MLIR-LABEL: ada.subp @enum_type_i1
@@ -8,10 +7,6 @@
 -- MLIR-NEXT:      ada.type @enum_type_i1.switch : i1 = #ada.enum_info<"off" = 0, "on" = 1>
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
-
--- DWARF: !DICompositeType(tag: DW_TAG_enumeration_type, name: "switch"
--- DWARF: !DIEnumerator(name: "off", value: 0)
--- DWARF: !DIEnumerator(name: "on", value: 1)
 
 procedure Enum_Type_I1 is
    type Switch is (Off, On);

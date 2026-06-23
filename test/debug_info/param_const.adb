@@ -15,7 +15,7 @@
 -- CHECK: DW_AT_name ("x")
 -- CHECK: DW_AT_type ({{.*}} "const s")
 
-function Debug_Info_Param_Const return Integer is
+function Param_Const return Integer is
    subtype S is Integer range 1 .. 10;
    function Id (X : S) return S is
    begin
@@ -23,4 +23,4 @@ function Debug_Info_Param_Const return Integer is
    end Id;
 begin
    return Id (5);
-end Debug_Info_Param_Const;
+end Param_Const;

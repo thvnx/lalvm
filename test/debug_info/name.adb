@@ -6,12 +6,12 @@
 -- gets the `_ada_` prefix; the nested procedure uses its simple source name with
 -- a scope-qualified mangled linkage name.
 
--- CHECK-DAG: DW_AT_linkage_name ("_ada_debug_info_name")
--- CHECK-DAG: DW_AT_name ("debug_info_name")
--- CHECK-DAG: DW_AT_linkage_name ("debug_info_name__helper")
+-- CHECK-DAG: DW_AT_linkage_name ("_ada_name")
+-- CHECK-DAG: DW_AT_name ("name")
+-- CHECK-DAG: DW_AT_linkage_name ("name__helper")
 -- CHECK-DAG: DW_AT_name ("helper")
 
-function Debug_Info_Name return Integer is
+function Name return Integer is
    procedure Helper is
    begin
       null;
@@ -19,4 +19,4 @@ function Debug_Info_Name return Integer is
 begin
    Helper;
    return 0;
-end Debug_Info_Name;
+end Name;

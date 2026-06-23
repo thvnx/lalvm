@@ -18,12 +18,10 @@
 
 -- LLVM-LABEL: define i32 @_ada_param_in_out(
 -- LLVM-LABEL: define internal void @param_in_out__increment(ptr
--- LLVM:          #dbg_declare(ptr %0,
 -- LLVM:          load i32, ptr
 -- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:          store i32
 -- LLVM:          ret void
--- LLVM:          DILocalVariable(name: "x", arg: 1,
 
 function Param_In_Out return Integer is
    procedure Increment (X : in out Integer);
