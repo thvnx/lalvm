@@ -40,6 +40,13 @@ std::string bigIntToString(ada_big_integer bigint);
 /// decimal text does not parse.
 std::optional<llvm::APInt> bigIntToAPInt(ada_big_integer bigint);
 
+/// Whether `expr` is a static expression (@rm{4-9}).
+bool isStaticExpr(ada_node &expr);
+
+/// Evaluate `expr` as an integer, or nullopt when it cannot be evaluated
+/// (`eval_as_int` fails, or the result does not parse as an APInt).
+std::optional<llvm::APInt> evalExprAsInt(ada_node &expr);
+
 /// Wrapper that enables printing an ada_node via operator<<.
 /// Usage: llvm::errs() << libadalang::image(&node);
 struct NodePrinter {

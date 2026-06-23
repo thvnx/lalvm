@@ -192,6 +192,20 @@ std::optional<llvm::APInt> libadalang::bigIntToAPInt(ada_big_integer bigint) {
   return llvm::APInt(bits, str, /*radix=*/10);
 }
 
+bool libadalang::isStaticExpr(ada_node &expr) {
+  ada_bool isStatic = false;
+  return ada_expr_p_is_static_expr(&expr, /*imprecise_fallback=*/false,
+                                   &isStatic) &&
+         isStatic;
+}
+
+std::optional<llvm::APInt> libadalang::evalExprAsInt(ada_node &expr) {
+  ada_big_integer bigint;
+  if (!ada_expr_p_eval_as_int(&expr, &bigint))
+    return std::nullopt;
+  return bigIntToAPInt(bigint);
+}
+
 ada_node libadalang::parent(ada_node *node) {
   ada_node par = {};
   ada_ada_node_parent(node, &par);

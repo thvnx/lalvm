@@ -641,10 +641,7 @@ private:
   /// types (including Boolean and Character) are static too but are emitted via
   /// their representation, not `eval_as_int`, so they are left to the caller.
   std::optional<mlir::Value> tryEmitStaticIntExpr(ada_node &expr) {
-    ada_bool isStatic = false;
-    if (!ada_expr_p_is_static_expr(&expr, /*imprecise_fallback=*/false,
-                                   &isStatic) ||
-        !isStatic)
+    if (!libadalang::isStaticExpr(expr))
       return std::nullopt;
     mlir::Location location = loc(expr);
     ada_node type_decl = resolveLiteralType(expr, location);
@@ -654,10 +651,7 @@ private:
     if (!typeOp || !mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
                        typeOp.getTypeInfoAttr()))
       return std::nullopt;
-    ada_big_integer bigint;
-    if (!ada_expr_p_eval_as_int(&expr, &bigint))
-      return std::nullopt;
-    auto value = libadalang::bigIntToAPInt(bigint);
+    auto value = libadalang::evalExprAsInt(expr);
     if (!value) {
       mlir::emitError(location, "failed to evaluate static integer expression");
       return mlir::Value(nullptr);
@@ -1547,15 +1541,12 @@ private:
     mlir::ada::TypeOp typeOp;
     switch (kind) {
     case UniversalKind::Int: {
-      ada_big_integer bigint;
-      if (ada_expr_p_eval_as_int(&expr, &bigint)) {
-        if (auto value = libadalang::bigIntToAPInt(bigint)) {
-          typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
-          if (typeOp) {
-            auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
-            constAttr = mlir::IntegerAttr::get(
-                intType, value->sextOrTrunc(intType.getWidth()));
-          }
+      if (auto value = libadalang::evalExprAsInt(expr)) {
+        typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
+        if (typeOp) {
+          auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
+          constAttr = mlir::IntegerAttr::get(
+              intType, value->sextOrTrunc(intType.getWidth()));
         }
       }
       break;
@@ -1851,17 +1842,10 @@ private:
           ada_node_kind(&type_def) == ada_mod_int_type_def) {
         ada_node expr;
         ada_mod_int_type_def_f_expr(&type_def, &expr);
-        ada_bool isStatic = false;
-        if (!ada_expr_p_is_static_expr(&expr, /*imprecise_fallback=*/false,
-                                       &isStatic) ||
-            !isStatic)
+        if (!libadalang::isStaticExpr(expr))
           return mlir::emitError(
               location, "modular type modulus is not a static expression");
-        ada_big_integer bigint;
-        if (!ada_expr_p_eval_as_int(&expr, &bigint))
-          return mlir::emitError(location,
-                                 "failed to evaluate modular type modulus");
-        auto modulusAP = libadalang::bigIntToAPInt(bigint);
+        auto modulusAP = libadalang::evalExprAsInt(expr);
         if (!modulusAP)
           return mlir::emitError(location, "invalid modular type modulus");
         modulus = minimalWidthIntAttr(*modulusAP);
@@ -2770,9 +2754,8 @@ private:
   /// One range bound as type info metadata: minimalWidthIntAttr of its
   /// static value, or UnitAttr (`?`) when it is missing or not static.
   mlir::Attribute rangeBoundAttr(ada_node &bound) {
-    ada_big_integer bigint;
-    if (!ada_node_is_null(&bound) && ada_expr_p_eval_as_int(&bound, &bigint))
-      if (auto value = libadalang::bigIntToAPInt(bigint))
+    if (!ada_node_is_null(&bound))
+      if (auto value = libadalang::evalExprAsInt(bound))
         return minimalWidthIntAttr(*value);
     return mlir::UnitAttr::get(builder.getContext());
   }
@@ -2912,14 +2895,10 @@ private:
       if (ada_base_type_decl_p_discrete_range(&canon_type, &range) &&
           !ada_node_is_null(&range.low_bound) &&
           !ada_node_is_null(&range.high_bound)) {
-        auto evalBound = [](ada_node &bound) -> std::optional<llvm::APInt> {
-          ada_big_integer bigint;
-          if (!ada_expr_p_eval_as_int(&bound, &bigint))
-            return std::nullopt;
-          return libadalang::bigIntToAPInt(bigint);
-        };
-        std::optional<llvm::APInt> lo = evalBound(range.low_bound);
-        std::optional<llvm::APInt> hi = evalBound(range.high_bound);
+        std::optional<llvm::APInt> lo =
+            libadalang::evalExprAsInt(range.low_bound);
+        std::optional<llvm::APInt> hi =
+            libadalang::evalExprAsInt(range.high_bound);
         if (!lo || !hi) {
           mlir::emitError(diagLoc, "failed to evaluate integer type bounds");
           return {};
