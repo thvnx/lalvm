@@ -132,6 +132,32 @@ static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
   return static_cast<bool>(getModularModulus(from, qual));
 }
 
+/// Whether ordering comparisons on the Ada type named by `qual` are unsigned.
+/// Signed integers order as signed; modular types (@rm{3-5-4}) and enumerations
+/// (Boolean included, ordered by non-negative position) are unsigned. The kind
+/// lives on the root type, so walk `base` links (a subtype records only its
+/// range) and inspect the root's `type_info`.
+static bool isUnsignedOrderQualType(mlir::Operation *from, ada::QualType qual) {
+  auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
+      mlir::SymbolTable::lookupNearestSymbolFrom(
+          from, qual.getAdaType().getRootReference()));
+  ada::TypeOp root;
+  while (typeOp) {
+    root = typeOp;
+    auto baseAttr = typeOp.getBaseAttr();
+    if (!baseAttr)
+      break;
+    typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
+        mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
+  }
+  if (!root)
+    return false;
+  if (auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
+          root.getTypeInfoAttr()))
+    return static_cast<bool>(intInfo.getModulus());
+  return mlir::isa_and_nonnull<ada::EnumTypeInfoAttr>(root.getTypeInfoAttr());
+}
+
 /// Address of a private, NUL-terminated constant holding `fileName`, for the
 /// `file` argument of the runtime raise. lalvm compiles one source unit per
 /// run, so all checks share a single `@lalvm.file` global, created on first
@@ -707,8 +733,13 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
         diag << "unsupported operand type: " << type;
       });
 
-    // Map each relational operator to its integer and float predicate. Integer
-    // comparisons use signed predicates (Ada integer types are signed).
+    // Ordering needs the operand's signedness (equality does not): signed
+    // integers order signed, modular and enumeration types unsigned.
+    bool uns = false;
+    if (auto qual = mlir::dyn_cast<ada::QualType>(op.getLhs().getType()))
+      uns = isUnsignedOrderQualType(op, qual);
+
+    // Map each relational operator to its integer and float predicate.
     //
     // A Boolean '/=' is not an independent operation: @rm{6-6} defines it as
     // the complementary result of '=' ("/=" with a Boolean result cannot even
@@ -726,6 +757,22 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
     case ada::AdaRelationalOp::Neq:
       iPred = arith::CmpIPredicate::ne;
       fPred = arith::CmpFPredicate::UNE;
+      break;
+    case ada::AdaRelationalOp::Lt:
+      iPred = uns ? arith::CmpIPredicate::ult : arith::CmpIPredicate::slt;
+      fPred = arith::CmpFPredicate::OLT;
+      break;
+    case ada::AdaRelationalOp::Lte:
+      iPred = uns ? arith::CmpIPredicate::ule : arith::CmpIPredicate::sle;
+      fPred = arith::CmpFPredicate::OLE;
+      break;
+    case ada::AdaRelationalOp::Gt:
+      iPred = uns ? arith::CmpIPredicate::ugt : arith::CmpIPredicate::sgt;
+      fPred = arith::CmpFPredicate::OGT;
+      break;
+    case ada::AdaRelationalOp::Gte:
+      iPred = uns ? arith::CmpIPredicate::uge : arith::CmpIPredicate::sge;
+      fPred = arith::CmpFPredicate::OGE;
       break;
     }
 

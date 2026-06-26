@@ -597,12 +597,12 @@ private:
   }
 
   /// Emit the relational operation for two precomputed operands.
-  /// `op` is the ada_op node (ada_op_eq or ada_op_neq); `resultType` is the
-  /// Boolean result type resolved from libadalang.
+  /// `op` is the relational `ada_op` node; `resultType` is the Boolean result
+  /// type resolved from libadalang.
   ///
-  /// Only predefined scalar `=`/`/=` are handled, via `ada.cmp`. A Boolean
-  /// `/=` is always the complement of `=` (@rm{6-6}); for the predefined case
-  /// `ada.cmp` lowers it to the complementary predicate.
+  /// Predefined scalar `=`/`/=` and the ordering operators `<`/`<=`/`>`/`>=`
+  /// (@rm{4-5-2}) are handled, via `ada.cmp`. A Boolean `/=` is the complement
+  /// of `=` (@rm{6-6}); `ada.cmp` lowers it to the complementary predicate.
   /// @todo When a type provides a user-defined `"="` (@rm{6-6}), `/=` must be
   ///       lowered as `not ("=" (lhs, rhs))` -- a call to the user `=` negated
   ///       -- rather than as an `ada.cmp`. Needs Boolean `not` support.
@@ -616,6 +616,18 @@ private:
       break;
     case ada_op_neq:
       kind = mlir::ada::AdaRelationalOp::Neq;
+      break;
+    case ada_op_lt:
+      kind = mlir::ada::AdaRelationalOp::Lt;
+      break;
+    case ada_op_lte:
+      kind = mlir::ada::AdaRelationalOp::Lte;
+      break;
+    case ada_op_gt:
+      kind = mlir::ada::AdaRelationalOp::Gt;
+      break;
+    case ada_op_gte:
+      kind = mlir::ada::AdaRelationalOp::Gte;
       break;
     default:
       mlir::emitError(callerLoc, "invalid relational operator '")
@@ -697,6 +709,10 @@ private:
     switch (ada_node_kind(&op)) {
     case ada_op_eq:
     case ada_op_neq:
+    case ada_op_lt:
+    case ada_op_lte:
+    case ada_op_gt:
+    case ada_op_gte:
       if (auto operandType =
               mlir::dyn_cast<mlir::ada::QualType>(lhs.getType())) {
         lhs = coerce(lhs, operandType, loc(binop));

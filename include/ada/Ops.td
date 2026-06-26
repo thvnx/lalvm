@@ -78,7 +78,7 @@ def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
 
 def AdaRelationalOp : I32EnumAttr<"AdaRelationalOp",
     "Ada predefined relational operator kind",
-    [AdaOp_Eq, AdaOp_Neq]> {
+    [AdaOp_Eq, AdaOp_Neq, AdaOp_Lt, AdaOp_Lte, AdaOp_Gt, AdaOp_Gte]> {
   let cppNamespace = "::mlir::ada";
 }
 
