@@ -84,6 +84,16 @@ def AdaRelationalOp : I32EnumAttr<"AdaRelationalOp",
 }
 
 //===----------------------------------------------------------------------===//
+// AdaUnaryOp
+//===----------------------------------------------------------------------===//
+
+def AdaUnaryOp : I32EnumAttr<"AdaUnaryOp",
+    "Ada predefined unary operator kind",
+    [AdaOp_Not]> {
+  let cppNamespace = "::mlir::ada";
+}
+
+//===----------------------------------------------------------------------===//
 // AdaChecks
 //===----------------------------------------------------------------------===//
 
@@ -448,6 +458,30 @@ def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
   }];
 
   let arguments = (ins AdaRelationalOp:$kind, AnyType:$lhs, AnyType:$rhs);
+  let results = (outs AnyType);
+
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// UnOp
+//===----------------------------------------------------------------------===//
+
+def UnOp : Ada_Op<"unop", [Pure, SameOperandsAndResultType]> {
+  let summary = "Ada predefined unary operation";
+  let description = [{
+    Represents an Ada predefined unary operation (@rm{4-5-6}). The operator is
+    encoded as an `AdaUnaryOp` enum attribute. Type-preserving: operand and
+    result share one type, so the quoted-operator spelling carries a single
+    type.
+
+    ```mlir
+    %0 = ada.unop "not" %b : !ada.qual<i1, @standard.boolean>
+    ```
+  }];
+
+  let arguments = (ins AdaUnaryOp:$kind, AnyType:$operand);
   let results = (outs AnyType);
 
   let hasCustomAssemblyFormat = 1;

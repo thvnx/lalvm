@@ -796,6 +796,41 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
   }
 };
 
+// Lowers ada.unop to its arith equivalent. `not` is one's complement: a modular
+// type complements within the modulus, Boolean flips its single bit.
+struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
+  using OpConversionPattern<ada::UnOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::UnOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    switch (op.getKind()) {
+    case ada::AdaUnaryOp::Not: {
+      mlir::Location loc = op.getLoc();
+      mlir::Type type = adaptor.getOperand().getType();
+      mlir::IntegerAttr modulus;
+      if (auto qual = mlir::dyn_cast<ada::QualType>(op.getOperand().getType()))
+        modulus = getModularModulus(op, qual);
+      // A modular `not` complements within the modulus: `(modulus - 1) - X`
+      // (correct for any modulus; a full-width `2**w` one folds to the all-ones
+      // xor). Boolean is a single-bit flip: xor with true.
+      if (modulus) {
+        unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
+        mlir::Value hi = constInt(rewriter, loc, type,
+                                  modulus.getValue().zextOrTrunc(w) - 1);
+        rewriter.replaceOpWithNewOp<arith::SubIOp>(op, hi,
+                                                   adaptor.getOperand());
+      } else {
+        mlir::Value t = constInt(rewriter, loc, type, 1);
+        rewriter.replaceOpWithNewOp<arith::XOrIOp>(op, adaptor.getOperand(), t);
+      }
+      return success();
+    }
+    }
+    return rewriter.notifyMatchFailure(op, "unsupported unary operator");
+  }
+};
+
 // ada.unwrap exposes the builtin value under an ada.qual annotation. The type
 // converter maps ada.qual<T> to T, so the adaptor's operand is already the
 // target type; the op is a no-op and is replaced by its operand.
@@ -1025,9 +1060,10 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
-               UnwrapOpLowering, SubpOpLowering, ConstantOpLowering,
-               CoerceOpLowering, RangeOpLowering, RangeCheckOpLowering,
-               AttrOpLowering>(typeConverter, &getContext());
+               UnOpLowering, UnwrapOpLowering, SubpOpLowering,
+               ConstantOpLowering, CoerceOpLowering, RangeOpLowering,
+               RangeCheckOpLowering, AttrOpLowering>(typeConverter,
+                                                     &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));

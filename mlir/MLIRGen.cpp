@@ -754,6 +754,62 @@ private:
     return emitBinOp(op, lhs, rhs, isInteger, modular);
   }
 
+  /// Codegen a unary operation (@rm{4-5-6}) as `ada.unop`. Operand and result
+  /// share the operator's type, so the operand is coerced to the resolved
+  /// result type (which also takes a subtype operand to its base).
+  mlir::Value mlirGenUnOp(ada_node &unop) {
+    ada_node operandNode;
+    ada_un_op_f_expr(&unop, &operandNode);
+    mlir::Value operand = visit_expr(operandNode);
+    if (!operand)
+      return nullptr;
+
+    ada_node op;
+    ada_un_op_f_op(&unop, &op);
+
+    mlir::ada::AdaUnaryOp kind;
+    switch (ada_node_kind(&op)) {
+    case ada_op_not:
+      kind = mlir::ada::AdaUnaryOp::Not;
+      break;
+    default:
+      mlir::emitError(loc(unop), "invalid unary operator '")
+          << libadalang::image(&op) << "'";
+      return nullptr;
+    }
+
+    ada_node type_decl{};
+    if (!ada_expr_p_expression_type(&unop, &type_decl) ||
+        ada_node_is_null(&type_decl)) {
+      mlir::emitError(loc(unop), "failed to resolve type of unary operation");
+      return nullptr;
+    }
+    auto resultType = getAdaQualType(type_decl, loc(unop));
+    if (!resultType)
+      return nullptr;
+
+    // `not` is defined only for Boolean and modular types (@rm{4-5-6}):
+    // Boolean is `i1`; a modular type's `int_info` carries the modulus.
+    // Libadalang already rejects other operands; this guards the dialect.
+    bool boolOrModular = resultType.getMlirType().isInteger(1);
+    if (!boolOrModular)
+      if (mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, loc(unop)))
+        if (auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+                typeOp.getTypeInfoAttr()))
+          boolOrModular = static_cast<bool>(info.getModulus());
+    if (!boolOrModular) {
+      mlir::emitError(loc(unop),
+                      "operator \"not\" requires a Boolean or modular operand");
+      return nullptr;
+    }
+
+    operand = coerce(operand, resultType, loc(unop));
+    if (!operand)
+      return nullptr;
+    return builder.create<mlir::ada::UnOp>(loc(unop), operand.getType(), kind,
+                                           operand);
+  }
+
   /// Resolve the type of a literal expression. For universal types
   /// (universal_int_type_ / universal_real_type_), falls back to the expected
   /// type from the surrounding context. Returns a null node on failure.
@@ -1147,8 +1203,8 @@ private:
   /// @todo Support equality and relational operators on enumeration values.
   /// @todo Support enumeration attributes ('Pos, 'Val, 'Succ, 'Pred, 'Image,
   ///       'Value).
-  /// @todo Support the remaining Boolean operators: `not`, and short-circuit
-  ///       `and then` / `or else` (`and`/`or`/`xor` are done).
+  /// @todo Support the short-circuit Boolean operators `and then` / `or else`
+  ///       (`and`/`or`/`xor`/`not` are done).
   mlir::Value mlirGenEnumLit(ada_node &enumLitDecl, ada_node &useExpr) {
     auto location = loc(useExpr);
 
@@ -1483,6 +1539,8 @@ private:
     // relational kinds to ada.cmp.
     case ada_relation_op:
       return mlirGenBinOp(expr);
+    case ada_un_op:
+      return mlirGenUnOp(expr);
     case ada_call_expr:
       return mlirGenCallExprValue(expr);
     case ada_attribute_ref:

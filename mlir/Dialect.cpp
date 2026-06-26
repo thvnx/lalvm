@@ -698,6 +698,59 @@ llvm::LogicalResult CmpOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// UnOp
+//===----------------------------------------------------------------------===//
+
+/// Parses the quoted-operator form (mirrors `ada.binop`); the operand and
+/// result share one type (`SameOperandsAndResultType`):
+///   %0 = ada.unop "not" %b : !ada.qual<i1, standard.boolean>
+mlir::ParseResult UnOp::parse(mlir::OpAsmParser &parser,
+                              mlir::OperationState &result) {
+  std::string sym;
+  SMLoc symLoc = parser.getCurrentLocation();
+  if (parser.parseString(&sym))
+    return mlir::failure();
+
+  auto kind = ada::symbolizeAdaUnaryOp(sym);
+  if (!kind)
+    return parser.emitError(symLoc, "unknown unary operator '") << sym << "'";
+
+  result.addAttribute("kind",
+                      ada::AdaUnaryOpAttr::get(parser.getContext(), *kind));
+
+  mlir::OpAsmParser::UnresolvedOperand operand;
+  Type type;
+  if (parser.parseOperand(operand) ||
+      parser.parseOptionalAttrDict(result.attributes) ||
+      parser.parseColonType(type))
+    return mlir::failure();
+
+  if (parser.resolveOperand(operand, type, result.operands))
+    return mlir::failure();
+  result.addTypes(type);
+  return mlir::success();
+}
+
+void UnOp::print(mlir::OpAsmPrinter &p) {
+  p << " ";
+  p.printString(ada::stringifyAdaUnaryOp(getKind()));
+  p << " " << getOperand();
+  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"kind"});
+  p << " : " << getResult().getType();
+}
+
+llvm::LogicalResult UnOp::verify() {
+  // SameOperandsAndResultType guarantees the operand shares the result type.
+  mlir::Type type = getOperand().getType();
+  if (auto typedType = mlir::dyn_cast<ada::QualType>(type))
+    type = typedType.getMlirType();
+  if (!mlir::isa<mlir::IntegerType>(type))
+    return emitOpError() << "unsupported operand type " << type
+                         << "; expected integer (Boolean)";
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // UnwrapOp
 //===----------------------------------------------------------------------===//
 
