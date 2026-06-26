@@ -527,8 +527,8 @@ private:
     return nullptr;
   }
 
-  /// Emit the arithmetic operation for two precomputed operands.
-  /// `op` is the ada_op node (ada_op_plus, ada_op_minus, etc.).
+  /// Emit the arithmetic or Boolean logical operation for two precomputed
+  /// operands. `op` is the ada_op node (ada_op_plus, ada_op_and, etc.).
   mlir::Value emitBinOp(ada_node &op, mlir::Value lhs, mlir::Value rhs,
                         bool isInteger = false, bool modular = false) {
     auto callerLoc = loc(op);
@@ -536,6 +536,16 @@ private:
     mlir::ada::AdaBinaryOp kind;
     auto checks = mlir::ada::AdaChecks{};
     switch (ada_node_kind(&op)) {
+    // Boolean logical operators (@rm{4-5-1}): bitwise on `i1`, no checks.
+    case ada_op_and:
+      kind = mlir::ada::AdaBinaryOp::And;
+      break;
+    case ada_op_or:
+      kind = mlir::ada::AdaBinaryOp::Or;
+      break;
+    case ada_op_xor:
+      kind = mlir::ada::AdaBinaryOp::Xor;
+      break;
     case ada_op_plus:
       kind = mlir::ada::AdaBinaryOp::Plus;
       if (signedInt)
@@ -723,9 +733,10 @@ private:
       break;
     }
 
-    // Arithmetic operators (@rm{4-5-3}..@rm{4-5-5}): operands and result share
-    // one type. Coerce both operands to the result type so
-    // SameOperandsAndResultType is satisfied when the sides differ.
+    // Arithmetic (@rm{4-5-3}..@rm{4-5-5}) and Boolean logical (@rm{4-5-1})
+    // operators: operands and result share one type. Coerce both operands to
+    // the result type so SameOperandsAndResultType is satisfied when the sides
+    // differ.
     if (resultType) {
       lhs = coerce(lhs, resultType, loc(binop));
       rhs = coerce(rhs, resultType, loc(binop));
@@ -1136,8 +1147,8 @@ private:
   /// @todo Support equality and relational operators on enumeration values.
   /// @todo Support enumeration attributes ('Pos, 'Val, 'Succ, 'Pred, 'Image,
   ///       'Value).
-  /// @todo Support Boolean logical operators (and, or, xor, not, and then,
-  ///       or else).
+  /// @todo Support the remaining Boolean operators: `not`, and short-circuit
+  ///       `and then` / `or else` (`and`/`or`/`xor` are done).
   mlir::Value mlirGenEnumLit(ada_node &enumLitDecl, ada_node &useExpr) {
     auto location = loc(useExpr);
 

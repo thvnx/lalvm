@@ -712,6 +712,16 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
     case ada::AdaBinaryOp::Div:
       lower(isInt, arith::DivSIOp{}, arith::DivFOp{});
       break;
+    // Boolean logical operators are bitwise on `i1` (integer-only, no float).
+    case ada::AdaBinaryOp::And:
+      rewriter.replaceOpWithNewOp<arith::AndIOp>(op, adaptor.getOperands());
+      break;
+    case ada::AdaBinaryOp::Or:
+      rewriter.replaceOpWithNewOp<arith::OrIOp>(op, adaptor.getOperands());
+      break;
+    case ada::AdaBinaryOp::Xor:
+      rewriter.replaceOpWithNewOp<arith::XOrIOp>(op, adaptor.getOperands());
+      break;
     }
     return success();
   }

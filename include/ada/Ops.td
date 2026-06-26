@@ -68,7 +68,8 @@ def AdaOp_Not     : I32EnumAttrCase<"Not",     22, "not">;
 
 def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
     "Ada predefined binary operator kind",
-    [AdaOp_Plus, AdaOp_Minus, AdaOp_Mult, AdaOp_Div]> {
+    [AdaOp_And, AdaOp_Or, AdaOp_Xor,
+     AdaOp_Plus, AdaOp_Minus, AdaOp_Mult, AdaOp_Div]> {
   let cppNamespace = "::mlir::ada";
 }
 
