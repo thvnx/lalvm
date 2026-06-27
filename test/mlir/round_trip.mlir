@@ -51,9 +51,8 @@ module {
     // CHECK: %[[SUM:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @integer>
     %0 = ada.binop "+" %a, %b : !ada.qual<i32, @integer>
 
-    // The functional form parses, but prints back in the short form.
     // CHECK: ada.binop "*" %arg0, %arg1 : !ada.qual<i32, @integer>
-    %1 = ada.binop "*" %a, %b : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
+    %1 = ada.binop "*" %a, %b : !ada.qual<i32, @integer>
 
     // CHECK: ada.cmp "=" %arg0, %arg1 : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i1, @boolean>
     %2 = ada.cmp "=" %a, %b : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i1, @boolean>

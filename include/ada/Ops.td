@@ -417,20 +417,24 @@ def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
 
     An optional `checks<...>` group lists the run-time checks the operation
     must perform (`overflow` for signed-integer `+`/`-`/`*`); it is printed only
-    when nonempty. Two assembly formats are accepted:
+    when nonempty. Operands and result share one type:
 
     ```mlir
-    %0 = ada.binop "+" %a, %b : i32                       // all types identical
-    %0 = ada.binop "+" %a, %b checks<overflow> : i32      // with a check
-    %0 = ada.binop "+" %a, %b : (i32, i32) -> i32         // functional form
+    %0 = ada.binop "+" %a, %b : i32
+    %0 = ada.binop "+" %a, %b checks<overflow> : i32
     ```
   }];
 
   let arguments = (ins AdaBinaryOp:$kind, AnyType:$lhs, AnyType:$rhs,
                        OptionalAttr<AdaChecks>:$checks);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$result);
 
-  let hasCustomAssemblyFormat = 1;
+  // The operator keyword and the optional `checks<...>` group are the only
+  // pieces not expressible declaratively; the rest is the shared-type form.
+  let assemblyFormat = [{
+    custom<Operator>($kind) $lhs `,` $rhs custom<Checks>($checks) attr-dict
+    `:` type($result)
+  }];
   let hasVerifier = 1;
 }
 
@@ -460,7 +464,11 @@ def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
   let arguments = (ins AdaRelationalOp:$kind, AnyType:$lhs, AnyType:$rhs);
   let results = (outs AnyType);
 
-  let hasCustomAssemblyFormat = 1;
+  // Functional form, since the Boolean result type differs from the operands.
+  let assemblyFormat = [{
+    custom<Operator>($kind) $lhs `,` $rhs attr-dict `:`
+    functional-type(operands, results)
+  }];
   let hasVerifier = 1;
 }
 
@@ -482,9 +490,11 @@ def UnOp : Ada_Op<"unop", [Pure, SameOperandsAndResultType]> {
   }];
 
   let arguments = (ins AdaUnaryOp:$kind, AnyType:$operand);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$result);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    custom<Operator>($kind) $operand attr-dict `:` type($result)
+  }];
   let hasVerifier = 1;
 }
 

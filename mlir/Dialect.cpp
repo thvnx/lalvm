@@ -542,85 +542,97 @@ llvm::LogicalResult AttrOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// BinOp
+// Operator assembly-format directives
 //===----------------------------------------------------------------------===//
 
-/// Accepts two equivalent text formats:
-///   %0 = ada.binop "+" %a, %b : i32              (all types identical)
-///   %0 = ada.binop "+" %a, %b : (i32, i32) -> i32  (functional form)
-mlir::ParseResult BinOp::parse(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
+// `custom<Operator>($kind)`: the predefined operator as a quoted keyword
+// (`"+"`, `"="`, `"not"`) -- the symbol/enum mapping is the only part of these
+// ops not expressible declaratively. One directive, overloaded per operator
+// enum, shared by `binop`, `cmp`, and `unop`.
+static mlir::ParseResult parseOperator(mlir::OpAsmParser &parser,
+                                       ada::AdaBinaryOpAttr &kind) {
   std::string sym;
-  SMLoc symLoc = parser.getCurrentLocation();
+  SMLoc loc = parser.getCurrentLocation();
   if (parser.parseString(&sym))
     return mlir::failure();
-
-  auto kind = ada::symbolizeAdaBinaryOp(sym);
-  if (!kind)
-    return parser.emitError(symLoc, "unknown binary operator '") << sym << "'";
-
-  result.addAttribute("kind",
-                      ada::AdaBinaryOpAttr::get(parser.getContext(), *kind));
-
-  SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
-  SMLoc operandsLoc = parser.getCurrentLocation();
-  if (parser.parseOperandList(operands, /*requiredOperandCount=*/2))
+  auto k = ada::symbolizeAdaBinaryOp(sym);
+  if (!k)
+    return parser.emitError(loc, "unknown binary operator '") << sym << "'";
+  kind = ada::AdaBinaryOpAttr::get(parser.getContext(), *k);
+  return mlir::success();
+}
+static mlir::ParseResult parseOperator(mlir::OpAsmParser &parser,
+                                       ada::AdaRelationalOpAttr &kind) {
+  std::string sym;
+  SMLoc loc = parser.getCurrentLocation();
+  if (parser.parseString(&sym))
     return mlir::failure();
-
-  // Optional `checks<overflow|...>` group (the run-time checks to perform),
-  // `|`-separated to match the bit enum's own spelling.
-  if (succeeded(parser.parseOptionalKeyword("checks"))) {
-    auto checks = ada::AdaChecks{};
-    if (parser.parseLess())
-      return mlir::failure();
-    do {
-      llvm::StringRef flag;
-      SMLoc flagLoc = parser.getCurrentLocation();
-      if (parser.parseKeyword(&flag))
-        return mlir::failure();
-      auto bit = ada::symbolizeAdaChecks(flag);
-      if (!bit)
-        return parser.emitError(flagLoc, "unknown check '") << flag << "'";
-      checks = checks | *bit;
-    } while (succeeded(parser.parseOptionalVerticalBar()));
-    if (parser.parseGreater())
-      return mlir::failure();
-    result.addAttribute("checks",
-                        ada::AdaChecksAttr::get(parser.getContext(), checks));
-  }
-
-  Type type;
-  if (parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseColonType(type))
+  auto k = ada::symbolizeAdaRelationalOp(sym);
+  if (!k)
+    return parser.emitError(loc, "unknown relational operator '") << sym << "'";
+  kind = ada::AdaRelationalOpAttr::get(parser.getContext(), *k);
+  return mlir::success();
+}
+static mlir::ParseResult parseOperator(mlir::OpAsmParser &parser,
+                                       ada::AdaUnaryOpAttr &kind) {
+  std::string sym;
+  SMLoc loc = parser.getCurrentLocation();
+  if (parser.parseString(&sym))
     return mlir::failure();
-
-  // Functional form: `(i32, i32) -> i32` — resolve operands and result
-  // separately.
-  if (FunctionType funcType = llvm::dyn_cast<FunctionType>(type)) {
-    if (parser.resolveOperands(operands, funcType.getInputs(), operandsLoc,
-                               result.operands))
-      return mlir::failure();
-    result.addTypes(funcType.getResults());
-    return mlir::success();
-  }
-
-  if (parser.resolveOperands(operands, type, result.operands))
-    return mlir::failure();
-  result.addTypes(type);
+  auto k = ada::symbolizeAdaUnaryOp(sym);
+  if (!k)
+    return parser.emitError(loc, "unknown unary operator '") << sym << "'";
+  kind = ada::AdaUnaryOpAttr::get(parser.getContext(), *k);
   return mlir::success();
 }
 
-void BinOp::print(mlir::OpAsmPrinter &p) {
-  p << " ";
-  p.printString(ada::stringifyAdaBinaryOp(getKind()));
-  p << " " << getOperands();
-  if (ada::AdaChecksAttr checksAttr = getChecksAttr();
-      checksAttr && checksAttr.getValue() != ada::AdaChecks{})
-    p << " checks<" << ada::stringifyAdaChecks(checksAttr.getValue()) << ">";
-  p.printOptionalAttrDict((*this)->getAttrs(),
-                          /*elidedAttrs=*/{"kind", "checks"});
-  p << " : " << getResult().getType();
+static void printOperator(mlir::OpAsmPrinter &p, mlir::Operation *,
+                          ada::AdaBinaryOpAttr kind) {
+  p.printString(ada::stringifyAdaBinaryOp(kind.getValue()));
 }
+static void printOperator(mlir::OpAsmPrinter &p, mlir::Operation *,
+                          ada::AdaRelationalOpAttr kind) {
+  p.printString(ada::stringifyAdaRelationalOp(kind.getValue()));
+}
+static void printOperator(mlir::OpAsmPrinter &p, mlir::Operation *,
+                          ada::AdaUnaryOpAttr kind) {
+  p.printString(ada::stringifyAdaUnaryOp(kind.getValue()));
+}
+
+// `custom<Checks>($checks)`: the optional `checks<overflow|...>` group on
+// `ada.binop` (`|`-separated, matching the bit enum's spelling). An absent
+// group leaves the attribute null.
+static mlir::ParseResult parseChecks(mlir::OpAsmParser &parser,
+                                     ada::AdaChecksAttr &checks) {
+  if (failed(parser.parseOptionalKeyword("checks")))
+    return mlir::success();
+  auto bits = ada::AdaChecks{};
+  if (parser.parseLess())
+    return mlir::failure();
+  do {
+    llvm::StringRef flag;
+    SMLoc flagLoc = parser.getCurrentLocation();
+    if (parser.parseKeyword(&flag))
+      return mlir::failure();
+    auto bit = ada::symbolizeAdaChecks(flag);
+    if (!bit)
+      return parser.emitError(flagLoc, "unknown check '") << flag << "'";
+    bits = bits | *bit;
+  } while (succeeded(parser.parseOptionalVerticalBar()));
+  if (parser.parseGreater())
+    return mlir::failure();
+  checks = ada::AdaChecksAttr::get(parser.getContext(), bits);
+  return mlir::success();
+}
+static void printChecks(mlir::OpAsmPrinter &p, mlir::Operation *,
+                        ada::AdaChecksAttr checks) {
+  if (checks && checks.getValue() != ada::AdaChecks{})
+    p << "checks<" << ada::stringifyAdaChecks(checks.getValue()) << ">";
+}
+
+//===----------------------------------------------------------------------===//
+// BinOp
+//===----------------------------------------------------------------------===//
 
 llvm::LogicalResult BinOp::verify() {
   // SameOperandsAndResultType guarantees all operands share this type.
@@ -636,48 +648,6 @@ llvm::LogicalResult BinOp::verify() {
 //===----------------------------------------------------------------------===//
 // CmpOp
 //===----------------------------------------------------------------------===//
-
-/// Parses the functional form, since the Boolean result type differs from the
-/// operand type (mirrors `ada.binop`'s functional spelling):
-///   %0 = ada.cmp "=" %a, %b : (i32, i32) -> i1
-mlir::ParseResult CmpOp::parse(mlir::OpAsmParser &parser,
-                               mlir::OperationState &result) {
-  std::string sym;
-  SMLoc symLoc = parser.getCurrentLocation();
-  if (parser.parseString(&sym))
-    return mlir::failure();
-
-  auto kind = ada::symbolizeAdaRelationalOp(sym);
-  if (!kind)
-    return parser.emitError(symLoc, "unknown relational operator '")
-           << sym << "'";
-
-  result.addAttribute(
-      "kind", ada::AdaRelationalOpAttr::get(parser.getContext(), *kind));
-
-  SmallVector<mlir::OpAsmParser::UnresolvedOperand, 2> operands;
-  SMLoc operandsLoc = parser.getCurrentLocation();
-  FunctionType funcType;
-  if (parser.parseOperandList(operands, /*requiredOperandCount=*/2) ||
-      parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
-      parser.parseType(funcType))
-    return mlir::failure();
-
-  if (parser.resolveOperands(operands, funcType.getInputs(), operandsLoc,
-                             result.operands))
-    return mlir::failure();
-  result.addTypes(funcType.getResults());
-  return mlir::success();
-}
-
-void CmpOp::print(mlir::OpAsmPrinter &p) {
-  p << " ";
-  p.printString(ada::stringifyAdaRelationalOp(getKind()));
-  p << " " << getOperands();
-  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"kind"});
-  p << " : (" << getLhs().getType() << ", " << getRhs().getType() << ") -> "
-    << getResult().getType();
-}
 
 llvm::LogicalResult CmpOp::verify() {
   // SameTypeOperands guarantees both operands share this type.
@@ -700,44 +670,6 @@ llvm::LogicalResult CmpOp::verify() {
 //===----------------------------------------------------------------------===//
 // UnOp
 //===----------------------------------------------------------------------===//
-
-/// Parses the quoted-operator form (mirrors `ada.binop`); the operand and
-/// result share one type (`SameOperandsAndResultType`):
-///   %0 = ada.unop "not" %b : !ada.qual<i1, standard.boolean>
-mlir::ParseResult UnOp::parse(mlir::OpAsmParser &parser,
-                              mlir::OperationState &result) {
-  std::string sym;
-  SMLoc symLoc = parser.getCurrentLocation();
-  if (parser.parseString(&sym))
-    return mlir::failure();
-
-  auto kind = ada::symbolizeAdaUnaryOp(sym);
-  if (!kind)
-    return parser.emitError(symLoc, "unknown unary operator '") << sym << "'";
-
-  result.addAttribute("kind",
-                      ada::AdaUnaryOpAttr::get(parser.getContext(), *kind));
-
-  mlir::OpAsmParser::UnresolvedOperand operand;
-  Type type;
-  if (parser.parseOperand(operand) ||
-      parser.parseOptionalAttrDict(result.attributes) ||
-      parser.parseColonType(type))
-    return mlir::failure();
-
-  if (parser.resolveOperand(operand, type, result.operands))
-    return mlir::failure();
-  result.addTypes(type);
-  return mlir::success();
-}
-
-void UnOp::print(mlir::OpAsmPrinter &p) {
-  p << " ";
-  p.printString(ada::stringifyAdaUnaryOp(getKind()));
-  p << " " << getOperand();
-  p.printOptionalAttrDict((*this)->getAttrs(), /*elidedAttrs=*/{"kind"});
-  p << " : " << getResult().getType();
-}
 
 llvm::LogicalResult UnOp::verify() {
   // SameOperandsAndResultType guarantees the operand shares the result type.
