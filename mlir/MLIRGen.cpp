@@ -244,6 +244,11 @@ private:
   // loop's source name (empty when unnamed) for `exit Loop_Name`.
   llvm::SmallVector<std::pair<mlir::Block *, std::string>> loopStack;
 
+  // Goto labels (@rm{5-8}): canonical label defining-name node -> the CFG block
+  // it marks. Created lazily so a forward `goto` and its `<<label>>` converge on
+  // one block; keys are unique per label, so no cross-subprogram collision.
+  llvm::DenseMap<ada_base_node, mlir::Block *> labelBlocks;
+
   // Canonical defining-name node -> its unique qualified dialect symbol. Keyed
   // on the canonical node so a subprogram spec and body (or a private type's
   // partial and full view) collapse to one entry; this is the declaration-time
@@ -417,6 +422,10 @@ private:
       return mlirGenLoop(node, {});
     case ada_exit_stmt:
       return mlirGenExit(node);
+    case ada_goto_stmt:
+      return mlirGenGoto(node);
+    case ada_label:
+      return mlirGenLabel(node);
     case ada_named_stmt: {
       // Named statement: "Name: ... end Name;". The name lives on the wrapping
       // named_stmt; the actual statement is f_stmt: a loop or a block.
@@ -459,6 +468,7 @@ private:
     // other contexts (e.g. a list of declarations) a terminated insertion block
     // is an artifact of the previously emitted op, not unreachable code.
     bool inStmtList = ada_node_kind(&node) == ada_stmt_list;
+    bool warnedDead = false;
     unsigned i, count = ada_node_children_count(&node);
     for (i = 0; i < count; ++i) {
       ada_node child;
@@ -468,15 +478,18 @@ private:
       }
       if (ada_node_is_null(&child))
         continue;
-      // A terminator (e.g. an Ada return) ends its block, so the statements
-      // that follow it in the sequence are unreachable. Warn and stop: emitting
-      // dead code is pointless and would leave a predecessor-less block that
-      // trips later passes. (Once real control flow exists, blocks opened after
-      // a terminator gain predecessors from branches and are no longer dead.)
-      if (inStmtList && currentBlockTerminated()) {
-        mlir::emitWarning(loc(child), "unreachable code");
-        break;
+      // A terminator (return, goto) ends its block, so following statements are
+      // unreachable, except a label: a live branch target that reopens the flow
+      // (@rm{5-8}). Visit labels; warn once and skip the rest.
+      if (inStmtList && currentBlockTerminated() &&
+          ada_node_kind(&child) != ada_label) {
+        if (!warnedDead) {
+          mlir::emitWarning(loc(child), "unreachable code");
+          warnedDead = true;
+        }
+        continue;
       }
+      warnedDead = false;
       if (mlir::failed(visit(child)))
         return mlir::failure();
     }
@@ -2486,6 +2499,45 @@ private:
   void branchToMergeIfOpen(mlir::Block *mergeBlock, mlir::Location location) {
     if (!currentBlockTerminated())
       builder.create<mlir::cf::BranchOp>(location, mergeBlock);
+  }
+
+  /// The CFG block a goto label marks (@rm{5-8}), created on first reference and
+  /// appended to the current subprogram region, so a forward `goto` and its
+  /// later `<<label>>` agree on one block. Leaves the insertion point unchanged.
+  mlir::Block *getOrCreateLabelBlock(ada_node defName) {
+    ada_base_node key = canonicalDefName(defName).node;
+    mlir::Block *&blk = labelBlocks[key];
+    if (!blk) {
+      blk = new mlir::Block();
+      builder.getInsertionBlock()->getParent()->push_back(blk);
+    }
+    return blk;
+  }
+
+  /// Emit a `goto L` (@rm{5-8}): branch to L's block. The current block is now
+  /// terminated; statements up to the next label are unreachable.
+  mlir::LogicalResult mlirGenGoto(ada_node &goto_stmt) {
+    ada_node nameNode, defName;
+    ada_goto_stmt_f_label_name(&goto_stmt, &nameNode);
+    if (!ada_name_p_referenced_defining_name(
+            &nameNode, /*imprecise_fallback=*/0, &defName) ||
+        ada_node_is_null(&defName))
+      return mlir::emitError(loc(goto_stmt), "unresolved goto label");
+    builder.create<mlir::cf::BranchOp>(loc(goto_stmt),
+                                       getOrCreateLabelBlock(defName));
+    return mlir::success();
+  }
+
+  /// Emit a `<<L>>` label (@rm{5-8}): fall through into L's block (when the
+  /// prior statement left the flow open) and resume emission there.
+  mlir::LogicalResult mlirGenLabel(ada_node &label) {
+    ada_node decl, nameNode;
+    ada_label_f_decl(&label, &decl);
+    ada_label_decl_f_name(&decl, &nameNode);
+    mlir::Block *blk = getOrCreateLabelBlock(nameNode);
+    branchToMergeIfOpen(blk, loc(label));
+    builder.setInsertionPointToEnd(blk);
+    return mlir::success();
   }
 
   /// Emit an if statement (@rm{5-3}) as an unstructured CFG. Each guard (the
