@@ -376,7 +376,7 @@ private:
   /// (`visit`) and the declaration walker (`emitDecl`) both route through this,
   /// so a resolution error is reported once, at the entry point, before codegen
   /// descends into the unresolved subtree.
-  llvm::LogicalResult checkResolution(ada_node &node) {
+  mlir::LogicalResult checkResolution(ada_node &node) {
     ada_bool isEntryPoint = 0;
     if (ada_ada_node_p_xref_entry_point(&node, &isEntryPoint) && isEntryPoint &&
         libadalang::emitSolverDiagnostics(&node))
@@ -1610,7 +1610,7 @@ private:
   /// type required by context; for unevaluated cases it falls back to
   /// `visit_static_expr`, recovering the expression via
   /// `ada_defining_name_p_basic_decl` on the map key.
-  llvm::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
+  mlir::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
 
@@ -1786,7 +1786,7 @@ private:
   /// never eval_as_int (which yields positions; rep order equals position
   /// order, @rm{13-4}); an unresolvable bound is dynamic (`?`).
   /// @todo Record float subtype constraints once float_info models bounds.
-  llvm::LogicalResult mlirGenSubtypeDecl(ada_node &type_decl, bool external) {
+  mlir::LogicalResult mlirGenSubtypeDecl(ada_node &type_decl, bool external) {
     auto location = loc(type_decl);
     ada_node canon;
     if (!ada_base_type_decl_p_canonical_type(
@@ -1925,7 +1925,7 @@ private:
   /// local qualified symbol built from the enclosing scope (see declareSymbol).
   ///
   /// @todo FixedTypeInfoAttr, RecordTypeInfoAttr, etc.
-  llvm::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
+  mlir::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
                                       bool external = false) {
     auto location = loc(type_decl);
 
@@ -2126,7 +2126,7 @@ private:
   ///            `single_task_declaration`, and `single_protected_declaration`
   ///            forms are not handled.
   ///
-  llvm::LogicalResult mlirGenObjectDecl(ada_node &object_decl) {
+  mlir::LogicalResult mlirGenObjectDecl(ada_node &object_decl) {
     auto declLoc = loc(object_decl);
 
     ada_node type_expr;
@@ -2210,11 +2210,11 @@ private:
   /// (required once a nested subprogram captures it) and is bound before a
   /// later nested subprogram is emitted, while a symbol is still available by
   /// name to the locals around it.
-  llvm::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
+  mlir::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
     // Visit every declaration in source order, invoking `fn`.
     auto forEachDecl =
-        [&](llvm::function_ref<llvm::LogicalResult(ada_node &)> fn)
-        -> llvm::LogicalResult {
+        [&](llvm::function_ref<mlir::LogicalResult(ada_node &)> fn)
+        -> mlir::LogicalResult {
       unsigned listCount = ada_node_children_count(&decls);
       for (unsigned i = 0; i < listCount; ++i) {
         ada_node list;
@@ -2234,7 +2234,7 @@ private:
 
     // Emit one declaration at the current insertion point; no-op for kinds we
     // don't handle.
-    auto emitDecl = [&](ada_node &decl) -> llvm::LogicalResult {
+    auto emitDecl = [&](ada_node &decl) -> mlir::LogicalResult {
       if (mlir::failed(checkResolution(decl)))
         return mlir::failure();
       switch (ada_node_kind(&decl)) {
@@ -2478,7 +2478,7 @@ private:
   /// (@rm{5-3}). A branch that does not already terminate (e.g. via `return`)
   /// falls through to the merge block. If every path terminates, the merge
   /// block is unreachable and is erased.
-  llvm::LogicalResult mlirGenIf(ada_node &if_stmt) {
+  mlir::LogicalResult mlirGenIf(ada_node &if_stmt) {
     // Collect the guards: the `if` plus each `elsif`, as (condition, stmts).
     llvm::SmallVector<std::pair<ada_node, ada_node>, 4> guards;
     ada_node cond, thenStmts;
@@ -2901,13 +2901,13 @@ private:
 
   /// Emit a procedure call statement. The callee is resolved from the
   /// referenced defining name via `subpDecls` (see mlirGenCallExpr).
-  llvm::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
+  mlir::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
     ada_node call;
     ada_call_stmt_f_call(&call_stmt, &call);
     return mlirGenCallExpr(call) ? mlir::success() : mlir::failure();
   }
 
-  llvm::LogicalResult mlirGenAssign(ada_node &assign_stmt) {
+  mlir::LogicalResult mlirGenAssign(ada_node &assign_stmt) {
     ada_node dest_node, expr_node;
     ada_assign_stmt_f_dest(&assign_stmt, &dest_node);
     ada_assign_stmt_f_expr(&assign_stmt, &expr_node);
@@ -2947,7 +2947,7 @@ private:
   }
 
   /// Emit a return operation. This will return failure if any generation fails.
-  llvm::LogicalResult mlirGenReturn(ada_node &return_stmt) {
+  mlir::LogicalResult mlirGenReturn(ada_node &return_stmt) {
     auto location = loc(return_stmt);
 
     ada_node return_expr;
