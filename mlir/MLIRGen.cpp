@@ -761,15 +761,15 @@ private:
       lhs = coerce(lhs, resultType, loc(binop));
       rhs = coerce(rhs, resultType, loc(binop));
     }
-    // Read the arithmetic kind from the result type's `int_info`: present iff
-    // an integer type, with a modulus iff modular. Floats and enums have no
-    // `int_info`, so they are flagged neither.
+    // Integer iff the result type has an `int_info`; modular iff a `base` link
+    // carries a modulus (a subtype's own `int_info` has only its range). Floats
+    // and enums have no `int_info`, so they are flagged neither.
     bool isInteger = false, modular = false;
     if (mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, loc(binop)))
-      if (auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+      if (mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
               typeOp.getTypeInfoAttr())) {
         isInteger = true;
-        modular = static_cast<bool>(info.getModulus());
+        modular = isModularTypeOp(typeOp);
       }
     return emitBinOp(op, lhs, rhs, isInteger, modular);
   }
@@ -809,14 +809,13 @@ private:
       return nullptr;
 
     // `not` is defined only for Boolean and modular types (@rm{4-5-6}):
-    // Boolean is `i1`; a modular type's `int_info` carries the modulus.
-    // Libadalang already rejects other operands; this guards the dialect.
+    // Boolean is `i1`; a modular type (or a subtype of one) carries a modulus
+    // on its base. Libadalang already rejects other operands; this guards the
+    // dialect.
     bool boolOrModular = resultType.getMlirType().isInteger(1);
     if (!boolOrModular)
       if (mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, loc(unop)))
-        if (auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
-                typeOp.getTypeInfoAttr()))
-          boolOrModular = static_cast<bool>(info.getModulus());
+        boolOrModular = isModularTypeOp(typeOp);
     if (!boolOrModular) {
       mlir::emitError(loc(unop),
                       "operator \"not\" requires a Boolean or modular operand");
@@ -1209,6 +1208,25 @@ private:
       }
     }
     return it->second;
+  }
+
+  /// Whether `typeOp` is a modular type or a subtype of one (@rm{3-5-4}). The
+  /// modulus lives on the base (a subtype's `int_info` has only its range), so
+  /// walk `base` links until one carries a modulus, like `getModularModulus`
+  /// in `LowerToLLVM`.
+  bool isModularTypeOp(mlir::ada::TypeOp typeOp) {
+    while (typeOp) {
+      if (auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+              typeOp.getTypeInfoAttr()))
+        if (info.getModulus())
+          return true;
+      auto base = typeOp.getBaseAttr();
+      if (!base)
+        break;
+      typeOp = mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
+          mlir::ada::lookupSymbolFrom(typeOp, base.getValue()));
+    }
+    return false;
   }
 
   /// Emit an enum literal as its integer representation (Ada @rm{13-4}).
