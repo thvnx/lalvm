@@ -240,6 +240,10 @@ private:
   // innermost scope.
   llvm::SmallVector<std::string> scopeStack;
 
+  // Enclosing loops, innermost last: the block to branch to on `exit`, and the
+  // loop's source name (empty when unnamed) for `exit Loop_Name`.
+  llvm::SmallVector<std::pair<mlir::Block *, std::string>> loopStack;
+
   // Canonical defining-name node -> its unique qualified dialect symbol. Keyed
   // on the canonical node so a subprogram spec and body (or a private type's
   // partial and full view) collapse to one entry; this is the declaration-time
@@ -405,14 +409,30 @@ private:
       return mlirGenCallStmt(node);
     case ada_if_stmt:
       return mlirGenIf(node);
+    // `while`, bare `loop`, and `for` are distinct node kinds, all deriving
+    // from BaseLoopStmt (@rm{5-5}).
+    case ada_loop_stmt:
+    case ada_while_loop_stmt:
+    case ada_for_loop_stmt:
+      return mlirGenLoop(node, {});
+    case ada_exit_stmt:
+      return mlirGenExit(node);
     case ada_named_stmt: {
-      // Named block statement: "Name: [declare] begin ... end Name;"
-      // The name lives on the wrapping named_stmt; the actual block is f_stmt.
+      // Named statement: "Name: ... end Name;". The name lives on the wrapping
+      // named_stmt; the actual statement is f_stmt: a loop or a block.
       ada_node decl, nameNode, stmt;
       ada_named_stmt_f_decl(&node, &decl);
       ada_named_stmt_decl_f_name(&decl, &nameNode);
       ada_named_stmt_f_stmt(&node, &stmt);
-      return mlirGenBlock(stmt, libadalang::getName(&nameNode));
+      std::string name = libadalang::getName(&nameNode);
+      switch (ada_node_kind(&stmt)) {
+      case ada_loop_stmt:
+      case ada_while_loop_stmt:
+      case ada_for_loop_stmt:
+        return mlirGenLoop(stmt, name);
+      default:
+        return mlirGenBlock(stmt, name);
+      }
     }
     case ada_begin_block:
     case ada_decl_block:
@@ -2288,6 +2308,15 @@ private:
     // Enter the subprogram's naming scope for the declarations in its body.
     scopeStack.push_back(mlir::SymbolTable::getSymbolName(op).str());
     auto scopeGuard = llvm::make_scope_exit([&] { scopeStack.pop_back(); });
+
+    // A loop cannot be exited across a subprogram boundary (@rm{5-7}), so the
+    // loop stack is subprogram-local: clear it for this body (a nested subp may
+    // be emitted inside an enclosing loop) and restore it on exit. This differs
+    // from `scopeStack`, which stays cumulative for nested qualified names.
+    auto savedLoops = std::move(loopStack);
+    loopStack.clear();
+    auto loopStackGuard =
+        llvm::make_scope_exit([&] { loopStack = std::move(savedLoops); });
     mlir::Block *entryBlock = &op->getRegion(0).front();
 
     // Collect (id, mode, typeDecl) triples for all parameters.
@@ -2537,6 +2566,124 @@ private:
     } else {
       builder.setInsertionPointToEnd(mergeBlock);
     }
+    return mlir::success();
+  }
+
+  /// Emit a loop statement (@rm{5-5}) as an unstructured CFG. `while C` gets a
+  /// header that tests C and branches to the body or the merge; a bare `loop`
+  /// has none, its body branching to itself so `exit` is the only way out. The
+  /// merge block and source name are pushed on `loopStack` for `exit`.
+  /// `for` loops are not yet supported.
+  mlir::LogicalResult mlirGenLoop(ada_node &loopNode, llvm::StringRef name) {
+    ada_node spec;
+    ada_base_loop_stmt_f_spec(&loopNode, &spec);
+    bool isWhile =
+        !ada_node_is_null(&spec) && ada_node_kind(&spec) == ada_while_loop_spec;
+    if (!ada_node_is_null(&spec) && !isWhile) {
+      mlir::emitError(loc(loopNode), "`for` loops are not yet supported");
+      return mlir::failure();
+    }
+
+    ada_node body;
+    ada_base_loop_stmt_f_stmts(&loopNode, &body);
+
+    // Split off the (empty) merge block, then insert the loop blocks before it:
+    // entry -> [header ->] body -> merge.
+    mlir::Block *entryBlock = builder.getInsertionBlock();
+    mlir::Block *mergeBlock =
+        entryBlock->splitBlock(builder.getInsertionPoint());
+    mlir::Block *bodyBlock = builder.createBlock(mergeBlock);
+
+    // `while` tests the condition in a header each iteration; a bare loop has
+    // none and re-enters the body directly.
+    mlir::Block *headerBlock = bodyBlock;
+    if (isWhile) {
+      headerBlock = builder.createBlock(bodyBlock);
+      ada_node cond;
+      ada_while_loop_spec_f_expr(&spec, &cond);
+      builder.setInsertionPointToEnd(headerBlock);
+      mlir::Value c = visit_expr(cond);
+      if (!c)
+        return mlir::failure();
+      mlir::Value condI1 = unwrap(c, loc(cond));
+      if (!condI1)
+        return mlir::failure();
+      builder.create<mlir::cf::CondBranchOp>(loc(cond), condI1, bodyBlock,
+                                             mergeBlock);
+    }
+
+    builder.setInsertionPointToEnd(entryBlock);
+    builder.create<mlir::cf::BranchOp>(loc(loopNode), headerBlock);
+
+    // Body, with the loop on `loopStack` for `exit`; close with the back-edge
+    // to the header unless the body already terminated.
+    builder.setInsertionPointToEnd(bodyBlock);
+    loopStack.push_back({mergeBlock, name.str()});
+    auto loopGuard = llvm::make_scope_exit([&] { loopStack.pop_back(); });
+    if (mlir::failed(visit(body)))
+      return mlir::failure();
+    branchToMergeIfOpen(headerBlock, loc(loopNode));
+
+    if (mergeBlock->hasNoPredecessors()) {
+      // Bare loop with no reachable `exit`: the merge is dead. Leave a
+      // terminated insertion point so following code reads as unreachable
+      // (mirrors `mlirGenIf`).
+      mergeBlock->erase();
+      builder.setInsertionPointToEnd(bodyBlock);
+    } else {
+      builder.setInsertionPointToEnd(mergeBlock);
+    }
+    return mlir::success();
+  }
+
+  /// Emit an `exit` statement (@rm{5-7}): branch to the target loop's merge,
+  /// found on `loopStack` (innermost, or by name for `exit Loop_Name`). `exit
+  /// when C` branches to the merge when C holds, else continues the body.
+  mlir::LogicalResult mlirGenExit(ada_node &exit_stmt) {
+    if (loopStack.empty()) {
+      mlir::emitError(loc(exit_stmt), "exit outside of a loop");
+      return mlir::failure();
+    }
+
+    mlir::Block *target = nullptr;
+    ada_node nameNode;
+    ada_exit_stmt_f_loop_name(&exit_stmt, &nameNode);
+    if (ada_node_is_null(&nameNode)) {
+      target = loopStack.back().first; // innermost
+    } else {
+      std::string name = libadalang::getName(&nameNode);
+      for (auto &entry : llvm::reverse(loopStack))
+        if (llvm::StringRef(entry.second).equals_insensitive(name)) {
+          target = entry.first;
+          break;
+        }
+      if (!target) {
+        mlir::emitError(loc(exit_stmt), "no enclosing loop named '")
+            << name << "'";
+        return mlir::failure();
+      }
+    }
+
+    ada_node cond;
+    ada_exit_stmt_f_cond_expr(&exit_stmt, &cond);
+    if (ada_node_is_null(&cond)) {
+      builder.create<mlir::cf::BranchOp>(loc(exit_stmt), target);
+      return mlir::success();
+    }
+
+    // `exit when C`: continue the body in a fresh block taken when C is false.
+    mlir::Block *current = builder.getInsertionBlock();
+    mlir::Block *contBlock = current->splitBlock(builder.getInsertionPoint());
+    builder.setInsertionPointToEnd(current);
+    mlir::Value c = visit_expr(cond);
+    if (!c)
+      return mlir::failure();
+    mlir::Value condI1 = unwrap(c, loc(cond));
+    if (!condI1)
+      return mlir::failure();
+    builder.create<mlir::cf::CondBranchOp>(loc(exit_stmt), condI1, target,
+                                           contBlock);
+    builder.setInsertionPointToEnd(contBlock);
     return mlir::success();
   }
 
