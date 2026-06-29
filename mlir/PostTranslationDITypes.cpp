@@ -15,6 +15,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DIBuilder.h"
@@ -101,9 +102,34 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
 
-  // Build enum DI types directly from surviving ada.type ops.
+  // An enum gets a DIE only if a surviving DI entity references it via an empty
+  // DICompositeType stub (named by sym_name) on a variable or a subprogram
+  // signature, matching GNAT. So Standard.Boolean, when its only use is a
+  // transient result like `X = 0`, gets no DIE.
+  llvm::StringSet<> referenced;
+  auto noteEnumStub = [&](llvm::DIType *t) {
+    auto *ct = llvm::dyn_cast_or_null<llvm::DICompositeType>(stripConst(t));
+    if (ct && ct->getTag() == llvm::dwarf::DW_TAG_enumeration_type &&
+        ct->getElements().empty())
+      referenced.insert(ct->getName());
+  };
+  for (llvm::Function &f : llvmModule) {
+    if (auto *sp = f.getSubprogram())
+      if (auto *st = sp->getType(); st && st->getRawTypeArray())
+        for (llvm::DIType *t : st->getTypeArray())
+          noteEnumStub(t);
+    for (llvm::BasicBlock &bb : f)
+      for (llvm::Instruction &i : bb)
+        for (llvm::DbgVariableRecord &dvr :
+             llvm::filterDbgVars(i.getDbgRecordRange()))
+          noteEnumStub(dvr.getVariable()->getType());
+  }
+
+  // Build enum DI types directly from the referenced surviving ada.type ops.
   llvm::StringMap<llvm::DICompositeType *> enumTypeByName;
   for (mlir::ada::TypeOp typeOp : enumTypeOps) {
+    if (!referenced.contains(typeOp.getSymName()))
+      continue;
     auto enumInfo =
         mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
     auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
