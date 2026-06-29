@@ -245,8 +245,8 @@ private:
   llvm::SmallVector<std::pair<mlir::Block *, std::string>> loopStack;
 
   // Goto labels (@rm{5-8}): canonical label defining-name node -> the CFG block
-  // it marks. Created lazily so a forward `goto` and its `<<label>>` converge on
-  // one block; keys are unique per label, so no cross-subprogram collision.
+  // it marks. Created lazily so a forward `goto` and its `<<label>>` converge
+  // on one block; keys are unique per label, so no cross-subprogram collision.
   llvm::DenseMap<ada_base_node, mlir::Block *> labelBlocks;
 
   // Canonical defining-name node -> its unique qualified dialect symbol. Keyed
@@ -1743,6 +1743,17 @@ private:
   /// Representation value of an ordinary enum literal: its `p_enum_rep`
   /// (honoring @rm{13-4} representation clauses). Returns nullopt and emits a
   /// diagnostic on failure. For a character type use `charLiteralRep`.
+  ///
+  /// @todo Carry the rep as an `llvm::APInt`, not `int64_t`: support the full
+  ///       `System.Min_Int .. System.Max_Int` range (@rm{13-4}), not just i64.
+  ///       `EnumTypeInfoAttr` would then store APInt-valued codes, like the
+  ///       universal-int work.
+  /// @todo @rm{13-4} requires the codes to be distinct and to satisfy the
+  ///       type's predefined ordering (each code exceeds its predecessor's).
+  ///       A value is its code, so ordering compares codes; once negative
+  ///       codes exist (above), that must be a signed comparison.
+  ///       `isUnsignedOrderQualType` (`LowerToLLVM`) treats enums as unsigned,
+  ///       correct only for the default non-negative positional codes.
   std::optional<int64_t> enumLiteralRep(ada_node &lit,
                                         mlir::Location location) {
     ada_big_integer bigint;
@@ -2501,9 +2512,10 @@ private:
       builder.create<mlir::cf::BranchOp>(location, mergeBlock);
   }
 
-  /// The CFG block a goto label marks (@rm{5-8}), created on first reference and
-  /// appended to the current subprogram region, so a forward `goto` and its
-  /// later `<<label>>` agree on one block. Leaves the insertion point unchanged.
+  /// The CFG block a goto label marks (@rm{5-8}), created on first reference
+  /// and appended to the current subprogram region, so a forward `goto` and its
+  /// later `<<label>>` agree on one block. Leaves the insertion point
+  /// unchanged.
   mlir::Block *getOrCreateLabelBlock(ada_node defName) {
     ada_base_node key = canonicalDefName(defName).node;
     mlir::Block *&blk = labelBlocks[key];
@@ -3112,15 +3124,13 @@ private:
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
-    // Enumeration types (@rm{3-5-1}): an ordinary enum uses the smallest
-    // integer width that holds its representation values as non-negative
-    // signed integers (see the width computation below). A character
-    // type is sized to its kind instead (Latin-1 -> i8, wider -> i16/i32): only
-    // the referenced character literals are materialized (see charLiteralRep),
-    // so maxRep is the max referenced code point, not the type's true upper
-    // bound.
-    // TODO: negative representation values (@rm{13-4}) are not yet handled; the
-    // width assumes a non-negative range.
+    // Enumeration types (@rm{3-5-1}): an ordinary enum uses the smallest signed
+    // integer width holding its representation values, which a representation
+    // clause (@rm{13-4}) can spread beyond 0 .. count-1, including negative
+    // (see the width computation below). A character type is sized to its kind
+    // instead (Latin-1 -> i8, wider -> i16/i32): only the referenced character
+    // literals are materialized (see charLiteralRep), so maxRep is the max
+    // referenced code point, not the type's true upper bound.
     ada_node type_def;
     if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
         ada_node_is_null(&type_def))
@@ -3151,7 +3161,7 @@ private:
       ada_enum_type_def_f_enum_literals(&type_def, &literals);
       unsigned count = ada_node_children_count(&literals);
       bool isChar = isCharacterType(canon_type);
-      int64_t maxRep = 0;
+      int64_t minRep = 0, maxRep = 0;
       for (unsigned i = 0; i < count; ++i) {
         ada_node lit;
         if (ada_node_child(&literals, i, &lit) == 0)
@@ -3160,24 +3170,29 @@ private:
                                             : enumLiteralRep(lit, diagLoc);
         if (!rep)
           return {};
+        minRep = std::min(minRep, *rep);
         maxRep = std::max(maxRep, *rep);
       }
       if (isChar) {
-        // Sized to the character kind, not the literals seen (see above).
+        // Sized to the character kind, not the literals seen (see above);
+        // character reps are non-negative code points.
         if (maxRep <= 255)
           return builder.getIntegerType(8);
         if (maxRep <= 65535)
           return builder.getIntegerType(16);
         return builder.getIntegerType(32);
       }
-      // Ordinary enum: smallest width holding 0 .. maxRep as non-negative
-      // *signed* values. MLIR prints and extends signless integers as signed,
-      // so the top rep must not set the sign bit. Boolean and single-literal
-      // enums stay i1, MLIR's special-cased bool.
-      if (maxRep <= 1)
+      // Ordinary enum: smallest *signed* width holding minRep .. maxRep. MLIR
+      // prints and extends signless integers as signed, so a representation
+      // clause's negative or large values are covered by both bounds, not just
+      // the top. Boolean and single-literal enums stay i1, MLIR's bool.
+      if (minRep >= 0 && maxRep <= 1)
         return builder.getIntegerType(1);
-      return builder.getIntegerType(
-          llvm::bit_width(static_cast<uint64_t>(maxRep)) + 1);
+      // Reps are int64 (`enumLiteralRep` bounds them), so this is at most i64.
+      unsigned bits = std::max(
+          llvm::APInt(64, minRep, /*isSigned=*/true).getSignificantBits(),
+          llvm::APInt(64, maxRep, /*isSigned=*/true).getSignificantBits());
+      return builder.getIntegerType(bits);
     }
 
     // Signed integer types (@rm{3-5-4}): the width derives from the base
