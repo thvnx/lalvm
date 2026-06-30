@@ -2351,14 +2351,19 @@ private:
     scopeStack.push_back(mlir::SymbolTable::getSymbolName(op).str());
     auto scopeGuard = llvm::make_scope_exit([&] { scopeStack.pop_back(); });
 
-    // A loop cannot be exited across a subprogram boundary (@rm{5-7}), so the
-    // loop stack is subprogram-local: clear it for this body (a nested subp may
-    // be emitted inside an enclosing loop) and restore it on exit. This differs
-    // from `scopeStack`, which stays cumulative for nested qualified names.
+    // Neither a loop nor a goto label is reachable across a subprogram boundary
+    // (@rm{5-7}, @rm{5-8}), so both are subprogram-local: clear them for this
+    // body (a nested subp may be emitted inside an enclosing loop) and restore
+    // on exit. This differs from `scopeStack`, which stays cumulative for
+    // nested qualified names.
     auto savedLoops = std::move(loopStack);
+    auto savedLabels = std::move(labelBlocks);
     loopStack.clear();
-    auto loopStackGuard =
-        llvm::make_scope_exit([&] { loopStack = std::move(savedLoops); });
+    labelBlocks.clear();
+    auto frameGuard = llvm::make_scope_exit([&] {
+      loopStack = std::move(savedLoops);
+      labelBlocks = std::move(savedLabels);
+    });
     mlir::Block *entryBlock = &op->getRegion(0).front();
 
     // Collect (id, mode, typeDecl) triples for all parameters.
