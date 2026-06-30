@@ -13,6 +13,7 @@
 #include "mlir/IR/Location.h"
 #include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
@@ -77,6 +78,51 @@ static llvm::DIType *preserveConst(llvm::DIBuilder &db, llvm::DIType *current,
   if (d && d->getTag() == llvm::dwarf::DW_TAG_const_type)
     return db.createQualifiedType(llvm::dwarf::DW_TAG_const_type, newType);
   return newType;
+}
+
+// Both builders replace placeholder DIEs (an enum stub / a subrange typedef)
+// the same way, on local variables and in subprogram signatures. `replacement`
+// maps a const-stripped placeholder type to its full type, or returns null when
+// the type is not a placeholder; the `in`-parameter const wrapper is preserved.
+
+/// Retype local variables whose type is a placeholder.
+static void rewriteVariableTypes(
+    llvm::DIBuilder &db, llvm::Module &llvmModule,
+    llvm::function_ref<llvm::DIType *(llvm::DIType *)> replace) {
+  for (auto &f : llvmModule)
+    for (auto &bb : f)
+      for (auto &i : bb)
+        for (llvm::DbgVariableRecord &dvr :
+             llvm::filterDbgVars(i.getDbgRecordRange())) {
+          auto *vt = dvr.getVariable()->getType();
+          if (auto *full = replace(stripConst(vt)))
+            retypeLocalVariable(db, dvr, preserveConst(db, vt, full));
+        }
+}
+
+/// Rewrite placeholder types in subprogram signatures (the DISubroutineType
+/// type array), so the signature matches the parameter/return DIEs and leaves
+/// no placeholder behind.
+static void rewriteSignatureTypes(
+    llvm::DIBuilder &db, llvm::Module &llvmModule,
+    llvm::function_ref<llvm::DIType *(llvm::DIType *)> replace) {
+  for (llvm::Function &f : llvmModule) {
+    auto *sp = f.getSubprogram();
+    if (!sp || !sp->getType() || !sp->getType()->getRawTypeArray())
+      continue;
+    llvm::SmallVector<llvm::Metadata *> elems;
+    bool changed = false;
+    for (llvm::DIType *t : sp->getType()->getTypeArray()) {
+      if (auto *full = replace(stripConst(t))) {
+        elems.push_back(preserveConst(db, t, full));
+        changed = true;
+      } else {
+        elems.push_back(t);
+      }
+    }
+    if (changed)
+      sp->replaceType(db.createSubroutineType(db.getOrCreateTypeArray(elems)));
+  }
 }
 
 void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
@@ -173,26 +219,20 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
     enumTypeByName[typeOp.getSymName()] = enumType;
   }
 
-  // Replace empty DICompositeType stubs (emitted by AdaDebugInfoPass as
-  // placeholders for enum types) with the full DICompositeType built above.
-  for (auto &f : llvmModule) {
-    for (auto &bb : f) {
-      for (auto &i : bb) {
-        for (llvm::DbgVariableRecord &dvr :
-             llvm::filterDbgVars(i.getDbgRecordRange())) {
-          auto *vt = dvr.getVariable()->getType();
-          auto *ct =
-              llvm::dyn_cast_or_null<llvm::DICompositeType>(stripConst(vt));
-          if (!ct || !ct->getElements().empty())
-            continue;
-          auto it = enumTypeByName.find(ct->getName());
-          if (it == enumTypeByName.end())
-            continue;
-          retypeLocalVariable(db, dvr, preserveConst(db, vt, it->second));
-        }
-      }
-    }
-  }
+  // Replace the empty enum stubs (emitted by AdaDebugInfoPass as placeholders)
+  // with the full DICompositeType built above, on both variables and subprogram
+  // signatures, matching by the enum's sym_name.
+  auto replace = [&](llvm::DIType *t) -> llvm::DIType * {
+    auto *ct = llvm::dyn_cast_or_null<llvm::DICompositeType>(t);
+    if (ct && ct->getTag() == llvm::dwarf::DW_TAG_enumeration_type &&
+        ct->getElements().empty())
+      if (auto it = enumTypeByName.find(ct->getName());
+          it != enumTypeByName.end())
+        return it->second;
+    return nullptr;
+  };
+  rewriteVariableTypes(db, llvmModule, replace);
+  rewriteSignatureTypes(db, llvmModule, replace);
 
   db.finalize();
 }
@@ -340,49 +380,17 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
   }
 
   // Replace the typedef placeholders (emitted by AdaDebugInfoPass) with the
-  // full DISubrangeType built above, matching by the subtype's sym_name.
-  for (auto &f : llvmModule) {
-    for (auto &bb : f) {
-      for (auto &i : bb) {
-        for (llvm::DbgVariableRecord &dvr :
-             llvm::filterDbgVars(i.getDbgRecordRange())) {
-          auto *vt = dvr.getVariable()->getType();
-          auto *dt =
-              llvm::dyn_cast_or_null<llvm::DIDerivedType>(stripConst(vt));
-          if (!dt)
-            continue;
-          auto it = subrangeByName.find(dt->getName());
-          if (it == subrangeByName.end())
-            continue;
-          retypeLocalVariable(db, dvr, preserveConst(db, vt, it->second));
-        }
-      }
-    }
-  }
-
-  // Rewrite subprogram signatures: a return or parameter type still pointing at
-  // the typedef placeholder becomes the subrange, so the DISubroutineType
-  // matches the parameter DIEs and leaves no placeholder behind.
-  for (llvm::Function &f : llvmModule) {
-    auto *sp = f.getSubprogram();
-    if (!sp || !sp->getType() || !sp->getType()->getRawTypeArray())
-      continue;
-    llvm::SmallVector<llvm::Metadata *> elems;
-    bool changed = false;
-    for (llvm::DIType *t : sp->getType()->getTypeArray()) {
-      if (auto *deriv = llvm::dyn_cast_or_null<llvm::DIDerivedType>(t)) {
-        auto it = subrangeByName.find(deriv->getName());
-        if (it != subrangeByName.end()) {
-          elems.push_back(it->second);
-          changed = true;
-          continue;
-        }
-      }
-      elems.push_back(t);
-    }
-    if (changed)
-      sp->replaceType(db.createSubroutineType(db.getOrCreateTypeArray(elems)));
-  }
+  // full DISubrangeType built above, on both variables and subprogram
+  // signatures, matching by the subtype's sym_name.
+  auto replace = [&](llvm::DIType *t) -> llvm::DIType * {
+    if (auto *dt = llvm::dyn_cast_or_null<llvm::DIDerivedType>(t))
+      if (auto it = subrangeByName.find(dt->getName());
+          it != subrangeByName.end())
+        return it->second;
+    return nullptr;
+  };
+  rewriteVariableTypes(db, llvmModule, replace);
+  rewriteSignatureTypes(db, llvmModule, replace);
 
   db.finalize();
 }
