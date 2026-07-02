@@ -200,4 +200,28 @@ def DISubrangeBoundsAttr : AttrDef<Ada_Dialect, "DISubrangeBounds"> {
   let assemblyFormat = "`<` (`lower` $lower^)? (`upper` $upper^)? `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// AdaParamModeAttr
+//===----------------------------------------------------------------------===//
+
+// Mode of a subprogram parameter (@rm{6-1}), an `ada.mode` arg attr on
+// `ada.subp`. `out` and `in out` (both by-reference `memref` args, otherwise
+// indistinguishable) carry it; `in` (by value, the default) is left implicit.
+def AdaMode_In : I32EnumAttrCase<"In", 0, "in">;
+def AdaMode_InOut : I32EnumAttrCase<"InOut", 1, "in_out">;
+def AdaMode_Out : I32EnumAttrCase<"Out", 2, "out">;
+
+def AdaParamMode : I32EnumAttr<"AdaParamMode", "Ada parameter mode (@rm{6-1})",
+    [AdaMode_In, AdaMode_InOut, AdaMode_Out]> {
+  // The `EnumAttr` below generates `AdaParamModeAttr`; suppress the duplicate
+  // class this enum would otherwise emit by default.
+  let genSpecializedAttr = 0;
+  let cppNamespace = "::mlir::ada";
+}
+
+// A registered dialect attr (unlike the operator enums, which surface only via
+// op assembly directives), so it round-trips as a standalone `ada.mode` arg
+// attr `#ada<mode out>`.
+def AdaParamModeAttr : EnumAttr<Ada_Dialect, AdaParamMode, "mode">;
+
 #endif // ADA_ATTRS

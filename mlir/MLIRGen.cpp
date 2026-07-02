@@ -215,11 +215,6 @@ private:
   // references before MLIRGen runs.
   llvm::DenseMap<ada_base_node, mlir::Value> declValues;
 
-  // Tracks alloca pointers for ObjectDecl variables declared without an
-  // initializer that have not yet been written to. Used to detect reads before
-  // first assignment. Erased on the first memref.store to the alloca.
-  llvm::DenseSet<mlir::Value> uninitAllocas;
-
   // Named numbers (@rm{3-3-2}): maps each DefiningName node to the
   // pre-evaluated arith.constant (null when the expression could not be folded
   // at declaration time, e.g. composite real expressions). Use-site resolution
@@ -523,6 +518,25 @@ private:
     return val;
   }
 
+  /// Whether reading `val` (a memref-backed variable) here precedes its first
+  /// write: no `memref.store` or by-reference `ada.call` user yet (IR is built
+  /// in source order, so only prior writes are present). Covers `out` params
+  /// and uninitialized object decls; `in out` params are caller-initialized.
+  bool isReadBeforeFirstWrite(mlir::Value val) {
+    if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(val)) {
+      auto subp =
+          mlir::dyn_cast<mlir::ada::SubpOp>(arg.getOwner()->getParentOp());
+      auto mode = subp ? subp.getArgAttrOfType<mlir::ada::AdaParamModeAttr>(
+                             arg.getArgNumber(), "ada.mode")
+                       : mlir::ada::AdaParamModeAttr();
+      if (!mode || mode.getValue() != mlir::ada::AdaParamMode::Out)
+        return false;
+    }
+    return llvm::none_of(val.getUsers(), [](mlir::Operation *op) {
+      return mlir::isa<mlir::memref::StoreOp, mlir::ada::CallOp>(op);
+    });
+  }
+
   /// Emit a variable reference. Resolves via Libadalang cross-reference to
   /// the unique DefiningName node, then looks up the bound value.
   /// For ObjectDecl variables (alloca-backed), emits a memref.load.
@@ -531,7 +545,7 @@ private:
   mlir::Value mlirGenVariable(ada_node &expr) {
     if (mlir::Value val = findVarValue(expr)) {
       if (auto memrefTy = mlir::dyn_cast<mlir::MemRefType>(val.getType())) {
-        if (uninitAllocas.contains(val))
+        if (isReadBeforeFirstWrite(val))
           mlir::emitWarning(loc(expr), "variable '")
               << libadalang::getName(&expr, false)
               << "' is read before first assignment";
@@ -1356,9 +1370,6 @@ private:
           mlir::Value ptr = resolveVarPtr(r_expr);
           if (!ptr)
             return nullptr;
-          // After the call the variable is considered initialized: `out`
-          // formals are contractually written by the callee (@rm{6-4-1}).
-          uninitAllocas.erase(ptr);
           args.push_back(ptr);
         } else {
           mlir::Value val = visit_expr(r_expr);
@@ -2228,8 +2239,7 @@ private:
           auto storeOp =
               builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
           setAdaNameLoc(storeOp, nameAttr);
-        } else
-          uninitAllocas.insert(ptr);
+        }
         declare(id, ptr);
       }
     }
@@ -2413,8 +2423,16 @@ private:
       // Ensure the ada.type op is emitted so AdaDebugInfoPass can look it up.
       lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
       arg.setLoc(mlir::NameLoc::get(nameAttr, srcLoc));
-      if (entry.mode == ada_mode_out)
-        uninitAllocas.insert(arg);
+      // Record `out` / `in out` mode as an `ada.mode` arg attr (`in` is the
+      // implicit default); the uninitialized-read check and later passes read
+      // it back to tell the two by-reference modes apart.
+      if (entry.mode == ada_mode_out || entry.mode == ada_mode_in_out)
+        mlir::cast<mlir::ada::SubpOp>(op).setArgAttr(
+            arg.getArgNumber(), "ada.mode",
+            mlir::ada::AdaParamModeAttr::get(
+                builder.getContext(), entry.mode == ada_mode_out
+                                          ? mlir::ada::AdaParamMode::Out
+                                          : mlir::ada::AdaParamMode::InOut));
       declare(entry.id, arg);
     }
 
@@ -2440,11 +2458,6 @@ private:
         builder.create<mlir::ada::ReturnOp>(
             mlir::UnknownLoc::get(builder.getContext()), mlir::Value{});
     }
-
-    // Block arguments are subprogram-local; erase any that were marked
-    // uninitialized so entries don't accumulate across nested subprograms.
-    for (mlir::Value arg : entryBlock->getArguments())
-      uninitAllocas.erase(arg);
 
     return op;
   }
@@ -3029,7 +3042,6 @@ private:
 
     builder.create<mlir::memref::StoreOp>(
         propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
-    uninitAllocas.erase(ptr);
     return mlir::success();
   }
 

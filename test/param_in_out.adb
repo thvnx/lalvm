@@ -7,7 +7,7 @@
 -- MLIR-LABEL: ada.subp @param_in_out
 -- MLIR:         %[[N_PTR:.*]] = ada.alloca : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         ada.decls {
--- MLIR:           ada.subp private @param_in_out.increment(%arg0: memref<!ada.qual<i32, @standard.integer>>)
+-- MLIR:           ada.subp private @param_in_out.increment(%arg0: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>})
 -- MLIR:             %[[V:.*]] = memref.load %arg0[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:             %[[R:.*]] = ada.binop "+" %[[V]], {{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
 -- MLIR:             memref.store %[[R]], %arg0[] : memref<!ada.qual<i32, @standard.integer>>

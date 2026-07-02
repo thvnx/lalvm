@@ -75,17 +75,22 @@ void ClosureConversionPass::runOnOperation() {
         makeRegionIsolatedFromAbove(rewriter, subp.getBody());
 
     if (!captures.empty()) {
-      // Extend the function type with the captured values' types. This assumes
-      // the subprogram carries no arg_attrs: MLIRGen sets none (parameter names
-      // ride on the block arguments' NameLoc), so there is nothing to keep in
-      // sync. If ada.subp ever gains arg_attrs, extend them with one entry per
-      // capture here, or the FunctionOpInterface verifier will reject the
-      // arg-count/attr-count mismatch.
+      // Extend the function type with the captured values' types, then keep
+      // arg_attrs in sync: MLIRGen marks by-reference parameters with an
+      // `ada.mode` arg attr, so the lifted captures each need an (empty) entry
+      // or the FunctionOpInterface verifier rejects the arg-count/attr-count
+      // mismatch.
       FunctionType fnType = subp.getFunctionType();
       llvm::SmallVector<Type> inputs(fnType.getInputs());
       for (Value capture : captures)
         inputs.push_back(capture.getType());
       subp.setFunctionType(FunctionType::get(ctx, inputs, fnType.getResults()));
+
+      if (ArrayAttr argAttrs = subp.getArgAttrsAttr()) {
+        llvm::SmallVector<Attribute> attrs(argAttrs.begin(), argAttrs.end());
+        attrs.append(captures.size(), DictionaryAttr::get(ctx));
+        subp.setArgAttrsAttr(ArrayAttr::get(ctx, attrs));
+      }
 
       // The new block arguments (the lifted parameters) are the last
       // `captures.size()` arguments of the entry block.
