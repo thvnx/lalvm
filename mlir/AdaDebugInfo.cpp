@@ -243,6 +243,19 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
   return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
 }
 
+/// Collect every DILabelRef marker in a location's FusedLoc tree. A location
+/// can carry more than one when consecutive labels resolve to the same anchor
+/// op.
+static void collectLabelRefs(Location loc,
+                             SmallVectorImpl<ada::DILabelRefAttr> &out) {
+  if (auto fused = dyn_cast<FusedLoc>(loc)) {
+    if (auto m = dyn_cast<ada::DILabelRefAttr>(fused.getMetadata()))
+      out.push_back(m);
+    for (Location inner : fused.getLocations())
+      collectLabelRefs(inner, out);
+  }
+}
+
 /// Rebuild `sp` overriding its name, flags, and subroutine type, preserving
 /// every other field (notably linkageName). DISubprogramAttr has no copy-with,
 /// so the full get() is unavoidable; this keeps the boilerplate in one place.
@@ -312,7 +325,7 @@ struct AdaDebugInfoPass
     // signature. Element 0 is the return type (null = void/procedure), carried
     // by LowerToLLVM as a DITypeRef nested one level under the DISubprogram's
     // FusedLoc; the remaining elements are the parameter types, read from the
-    // entry block-arg locations (the same metadata Pass 5 uses). Runs before
+    // entry block-arg locations (the same metadata Pass 6 uses). Runs before
     // the variable/parameter passes so their DIEs reference the rebuilt
     // subprogram as scope.
     module.walk([&](LLVM::LLVMFuncOp func) {
@@ -350,7 +363,47 @@ struct AdaDebugInfoPass
       func->setLoc(FusedLoc::get(ctx, fused.getLocations(), newSp));
     });
 
-    // Pass 2: record (func, name) pairs for all llvm.alloca ops with NameLoc.
+    // Pass 2: emit a DW_TAG_label for each Ada goto label (@rm{5-8}). Walk the
+    // DILabelRef markers MLIRGen fused onto the label anchor ops, collecting a
+    // DILabel per marker (deduped on (func, name)), then emit an
+    // llvm.intr.dbg.label at each anchor (its address is the label's low_pc).
+    // @todo LLVM 21's DILabel has no column field; take it from the loc once
+    //       DILabel gains one.
+    llvm::SmallVector<std::pair<Operation *, LLVM::DILabelAttr>> labelSites;
+    llvm::DenseSet<std::pair<Operation *, StringAttr>> emittedLabels;
+    module.walk([&](Operation *op) {
+      SmallVector<ada::DILabelRefAttr> refs;
+      collectLabelRefs(op->getLoc(), refs);
+      if (refs.empty())
+        return;
+      auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
+      if (!func)
+        return;
+      LLVM::DISubprogramAttr sp = getSubprogram(func);
+      if (!sp)
+        return;
+      for (ada::DILabelRefAttr ref : refs) {
+        StringAttr name = ref.getName();
+        if (!emittedLabels.insert({func.getOperation(), name}).second)
+          continue;
+        auto [fileAttr, line] = getFileAndLine(ctx, ref.getLoc(), sp);
+        labelSites.push_back(
+            {op, LLVM::DILabelAttr::get(ctx, sp, name, fileAttr, line)});
+      }
+    });
+    for (auto &[op, label] : labelSites) {
+      // The dbg.label needs its own scoped !dbg (a DILocation under the
+      // subprogram), or MLIR-to-LLVM translation drops it; the anchor op's loc
+      // may be unscoped (e.g. an implicit return with an unknown location).
+      Location scoped = FusedLoc::get(
+          ctx,
+          {FileLineColLoc::get(label.getFile().getName(), label.getLine(),
+                               /*column=*/0)},
+          label.getScope());
+      OpBuilder(op).create<LLVM::DbgLabelOp>(scoped, label);
+    }
+
+    // Pass 3: record (func, name) pairs for all llvm.alloca ops with NameLoc.
     // Used to suppress scalar debug entries when an alloca already tracks the
     // variable with dbg.declare.
     using FuncNamePair = std::pair<Operation *, StringAttr>;
@@ -364,7 +417,7 @@ struct AdaDebugInfoPass
         allocaNames.insert({func, nl.getName()});
     });
 
-    // Pass 3: collect debug entries.
+    // Pass 4: collect debug entries.
     struct DebugEntry {
       Operation *op;
       LLVM::DISubprogramAttr subprogram;
@@ -401,7 +454,7 @@ struct AdaDebugInfoPass
           {op, subprogram, nl.getName(), nl.getChildLoc(), isAlloca});
     });
 
-    // Pass 4: emit debug intrinsics.
+    // Pass 5: emit debug intrinsics.
     for (auto &entry : entries) {
       auto [fileAttr, line] =
           getFileAndLine(ctx, entry.innerLoc, entry.subprogram);
@@ -435,7 +488,7 @@ struct AdaDebugInfoPass
                                  entry.op->getResult(0), varInfo);
     }
 
-    // Pass 5: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
+    // Pass 6: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
     // block args with NameLoc (Ada parameters).
     OpBuilder builder(ctx);
     module.walk([&](LLVM::LLVMFuncOp func) {
@@ -521,7 +574,7 @@ struct AdaDebugInfoPass
       }
     });
 
-    // Pass 6: pick the variable carrying each dynamic subrange bound.
+    // Pass 7: pick the variable carrying each dynamic subrange bound.
     // LowerToLLVM tagged each non-constant descriptor bound (an `insertvalue`)
     // with its subtype symbol (a DIDynBoundAttr on the value's location); the
     // insertvalue position (0 low, 1 high) names the bound. When an existing

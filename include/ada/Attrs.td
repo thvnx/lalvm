@@ -159,6 +159,19 @@ def DIScopeRefAttr : AttrDef<Ada_Dialect, "DIScopeRef"> {
   let assemblyFormat = "`<` $scope `>`";
 }
 
+// Source goto label (@rm{5-8}), fused as FusedLoc metadata onto a label block's
+// anchor op so AdaDebugInfoPass can emit a `DW_TAG_label`. Carries the label
+// name and location; the DWARF scope comes from the enclosing subprogram.
+def DILabelRefAttr : AttrDef<Ada_Dialect, "DILabelRef"> {
+  let mnemonic = "di_label";
+  let summary = "Source goto label debug information metadata";
+  let parameters = (ins
+    AttrParameter<"::mlir::StringAttr", "label name">:$name,
+    AttrParameter<"::mlir::LocationAttr", "label location">:$loc
+  );
+  let assemblyFormat = "`<` $name `,` $loc `>`";
+}
+
 // Bare Ada source name of a subprogram, carried as FusedLoc metadata so that
 // AdaDebugInfoPass can set DW_AT_name to the source name while DW_AT_linkage_name
 // keeps the GNAT-mangled symbol. Captured by HoistNestedSymbolOperations before

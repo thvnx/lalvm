@@ -244,6 +244,12 @@ private:
   // on one block; keys are unique per label, so no cross-subprogram collision.
   llvm::DenseMap<ada_base_node, mlir::Block *> labelBlocks;
 
+  // Goto labels (@rm{5-8}) recorded while building the current subprogram body
+  // as (label block, source name, source loc); swept afterward to fuse a
+  // `DILabelRef` marker onto each label's anchor op.
+  llvm::SmallVector<std::tuple<mlir::Block *, mlir::StringAttr, mlir::Location>>
+      pendingLabels;
+
   // Canonical defining-name node -> its unique qualified dialect symbol. Keyed
   // on the canonical node so a subprogram spec and body (or a private type's
   // partial and full view) collapse to one entry; this is the declaration-time
@@ -2368,11 +2374,14 @@ private:
     // nested qualified names.
     auto savedLoops = std::move(loopStack);
     auto savedLabels = std::move(labelBlocks);
+    auto savedLabelMarkers = std::move(pendingLabels);
     loopStack.clear();
     labelBlocks.clear();
+    pendingLabels.clear();
     auto frameGuard = llvm::make_scope_exit([&] {
       loopStack = std::move(savedLoops);
       labelBlocks = std::move(savedLabels);
+      pendingLabels = std::move(savedLabelMarkers);
     });
     mlir::Block *entryBlock = &op->getRegion(0).front();
 
@@ -2457,6 +2466,40 @@ private:
       if (!currentBlockTerminated())
         builder.create<mlir::ada::ReturnOp>(
             mlir::UnknownLoc::get(builder.getContext()), mlir::Value{});
+    }
+
+    // Fuse each recorded label's `DILabelRef` marker onto its anchor op,
+    // keeping the op's own loc as the fused inner.
+    mlir::MLIRContext *ctx = builder.getContext();
+    for (auto &[blk, name, labelLoc] : pendingLabels) {
+      // Find a lowering-surviving anchor for the label's low_pc: skip ops later
+      // passes erase (`ada.null`; a `memref.load`/`store` of a mem2reg-promoted
+      // local) and chase a branch-only block to its target (consecutive labels
+      // form such blocks, which lowering elides). Consecutive labels may thus
+      // share an anchor, each fusing its own marker.
+      mlir::Operation *anchor = nullptr;
+      mlir::Block *b = blk;
+      llvm::SmallPtrSet<mlir::Block *, 4> seen;
+      while (b && seen.insert(b).second) {
+        mlir::Operation *first = nullptr;
+        for (mlir::Operation &o : *b)
+          if (!mlir::isa<mlir::ada::NullOp, mlir::memref::LoadOp,
+                         mlir::memref::StoreOp>(o)) {
+            first = &o;
+            break;
+          }
+        if (auto br = mlir::dyn_cast_or_null<mlir::cf::BranchOp>(first)) {
+          b = br.getDest();
+          continue;
+        }
+        anchor = first;
+        break;
+      }
+      if (!anchor)
+        continue;
+      anchor->setLoc(mlir::FusedLoc::get(
+          ctx, {anchor->getLoc()},
+          mlir::ada::DILabelRefAttr::get(ctx, name, labelLoc)));
     }
 
     return op;
@@ -2567,6 +2610,12 @@ private:
     mlir::Block *blk = getOrCreateLabelBlock(nameNode);
     branchToMergeIfOpen(blk, loc(label));
     builder.setInsertionPointToEnd(blk);
+    // A DWARF label needs no op of its own: record (block, name, loc) now and,
+    // after the body, fuse a `DILabelRef` marker onto the block's next
+    // lowering-surviving op (the label's low_pc anchor).
+    pendingLabels.push_back(
+        {blk, builder.getStringAttr(libadalang::getName(&nameNode)),
+         loc(label)});
     return mlir::success();
   }
 
