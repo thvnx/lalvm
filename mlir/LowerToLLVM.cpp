@@ -36,6 +36,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "llvm/Support/Path.h"
 #include <memory>
 #include <utility>
 
@@ -215,7 +216,7 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
   llvm::StringRef fileName;
   unsigned line = 0;
   if (auto flc = mlir::dyn_cast<mlir::FileLineColLoc>(loc)) {
-    fileName = flc.getFilename();
+    fileName = llvm::sys::path::filename(flc.getFilename().getValue());
     line = flc.getLine();
   }
   mlir::Value file = emitFileNamePtr(rewriter, loc, module, fileName);
