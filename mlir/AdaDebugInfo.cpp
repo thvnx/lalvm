@@ -243,6 +243,16 @@ static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
   return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
 }
 
+/// Returns `op`'s enclosing llvm.func and its DISubprogram. The subprogram is
+/// null when either lookup fails, so callers test it alone.
+static std::pair<LLVM::LLVMFuncOp, LLVM::DISubprogramAttr>
+enclosingFuncAndSubprogram(Operation *op) {
+  auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
+  if (!func)
+    return {};
+  return {func, getSubprogram(func)};
+}
+
 /// Collect every DILabelRef marker in a location's FusedLoc tree. A location
 /// can carry more than one when consecutive labels resolve to the same anchor
 /// op.
@@ -376,10 +386,7 @@ struct AdaDebugInfoPass
       collectLabelRefs(op->getLoc(), refs);
       if (refs.empty())
         return;
-      auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
-      if (!func)
-        return;
-      LLVM::DISubprogramAttr sp = getSubprogram(func);
+      auto [func, sp] = enclosingFuncAndSubprogram(op);
       if (!sp)
         return;
       for (ada::DILabelRefAttr ref : refs) {
@@ -432,11 +439,7 @@ struct AdaDebugInfoPass
       if (!nl)
         return;
 
-      auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
-      if (!func)
-        return;
-
-      auto subprogram = getSubprogram(func);
+      auto [func, subprogram] = enclosingFuncAndSubprogram(op);
       if (!subprogram)
         return;
 
@@ -615,10 +618,7 @@ struct AdaDebugInfoPass
       if (!dynBound)
         return;
       FlatSymbolRefAttr sym = dynBound.getMetadata().getSubtype();
-      auto func = ins->getParentOfType<LLVM::LLVMFuncOp>();
-      if (!func)
-        return;
-      auto subprogram = getSubprogram(func);
+      auto [func, subprogram] = enclosingFuncAndSubprogram(ins);
       if (!subprogram)
         return;
       auto intType = dyn_cast<IntegerType>(ins.getValue().getType());
