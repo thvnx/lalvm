@@ -419,6 +419,10 @@ struct AttrOpLowering : public OpConversionPattern<ada::AttrOp> {
 
 // OpRewritePattern: no ada.qual operands or results; plain erasure needs no
 // type converter.
+//
+// @todo Erasing drops the `null;` source location, the only anchor for that
+// line in the IR. To let a debugger break on a bare `null;` line (as GNAT
+// does), lower it to a location-carrying nop instead of erasing it.
 struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
   using OpRewritePattern<ada::NullOp>::OpRewritePattern;
 
