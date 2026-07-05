@@ -1986,94 +1986,105 @@ private:
   /// @todo FixedTypeInfoAttr, RecordTypeInfoAttr, etc.
   mlir::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
                                       bool external = false) {
-    auto location = loc(type_decl);
-
     if (ada_node_kind(&type_decl) == ada_subtype_decl)
       return mlirGenSubtypeDecl(type_decl, external);
-
     // Universal types (@rm{3-4-1}) and numeric types
     // (@rm{3-5-4}, @rm{3-5-6}, @rm{3-5-7}).
     if (libadalang::isUniversalTypeDecl(type_decl) ||
-        libadalang::isNumericTypeDecl(type_decl)) {
-      auto typeName = resolveTypeDeclName(type_decl, external);
-      if (mlir::failed(typeName))
+        libadalang::isNumericTypeDecl(type_decl))
+      return mlirGenNumericTypeDecl(type_decl, external);
+    return mlirGenEnumTypeDecl(type_decl, external);
+  }
+
+  /// Emit a universal or numeric type declaration as an `ada.type` carrying
+  /// integer/float `type_info` (and, for a subtype, a link to its base).
+  mlir::LogicalResult mlirGenNumericTypeDecl(ada_node &type_decl,
+                                             bool external) {
+    auto location = loc(type_decl);
+    auto typeName = resolveTypeDeclName(type_decl, external);
+    if (mlir::failed(typeName))
+      return mlir::failure();
+
+    mlir::Type mlirType;
+    mlir::IntegerAttr modulus;
+    ada_node type_def;
+    if (ada_type_decl_f_type_def(&type_decl, &type_def) &&
+        !ada_node_is_null(&type_def) &&
+        ada_node_kind(&type_def) == ada_mod_int_type_def) {
+      ada_node expr;
+      ada_mod_int_type_def_f_expr(&type_def, &expr);
+      if (!libadalang::isStaticExpr(expr))
+        return mlir::emitError(
+            location, "modular type modulus is not a static expression");
+      auto modulusAP = libadalang::evalExprAsInt(expr);
+      if (!modulusAP)
+        return mlir::emitError(location, "invalid modular type modulus");
+      modulus = minimalWidthIntAttr(*modulusAP);
+      // Width holds 0 .. modulus-1, byte-rounded to a power of two (up to
+      // i128: GNAT's System.Max_Binary_Modulus is 2**128 with 128-bit ints).
+      unsigned need = modulusAP->ceilLogBase2();
+      unsigned width = need <= 8    ? 8
+                       : need <= 16 ? 16
+                       : need <= 32 ? 32
+                       : need <= 64 ? 64
+                                    : 128;
+      mlirType = builder.getIntegerType(width);
+    } else {
+      mlirType = getMLIRTypeFromDecl(type_decl, location);
+      if (!mlirType)
         return mlir::failure();
-
-      mlir::Type mlirType;
-      mlir::IntegerAttr modulus;
-      ada_node type_def;
-      if (ada_type_decl_f_type_def(&type_decl, &type_def) &&
-          !ada_node_is_null(&type_def) &&
-          ada_node_kind(&type_def) == ada_mod_int_type_def) {
-        ada_node expr;
-        ada_mod_int_type_def_f_expr(&type_def, &expr);
-        if (!libadalang::isStaticExpr(expr))
-          return mlir::emitError(
-              location, "modular type modulus is not a static expression");
-        auto modulusAP = libadalang::evalExprAsInt(expr);
-        if (!modulusAP)
-          return mlir::emitError(location, "invalid modular type modulus");
-        modulus = minimalWidthIntAttr(*modulusAP);
-        // Width holds 0 .. modulus-1, byte-rounded to a power of two (up to
-        // i128: GNAT's System.Max_Binary_Modulus is 2**128 with 128-bit ints).
-        unsigned need = modulusAP->ceilLogBase2();
-        unsigned width = need <= 8    ? 8
-                         : need <= 16 ? 16
-                         : need <= 32 ? 32
-                         : need <= 64 ? 64
-                                      : 128;
-        mlirType = builder.getIntegerType(width);
-      } else {
-        mlirType = getMLIRTypeFromDecl(type_decl, location);
-        if (!mlirType)
-          return mlir::failure();
-      }
-
-      mlir::Attribute typeInfo;
-      if (mlir::isa<mlir::FloatType>(mlirType)) {
-        std::optional<uint32_t> digits = evalFloatDigits(type_decl, location);
-        if (!digits)
-          return mlir::failure();
-        typeInfo =
-            mlir::ada::FloatTypeInfoAttr::get(builder.getContext(), *digits);
-      } else {
-        // Record the declared range as metadata: static bounds as values,
-        // dynamic bounds as UnitAttr (printed `?`). Universal integer is
-        // unconstrained and keeps the bare attribute: its placeholder range
-        // in LAL's Standard (-1 .. 1 standing for an infinite range) must
-        // not be recorded.
-        mlir::Attribute lower, upper;
-        if (!libadalang::isUniversalTypeDecl(type_decl)) {
-          ada_internal_discrete_range range;
-          if (ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
-              !ada_node_is_null(&range.low_bound) &&
-              !ada_node_is_null(&range.high_bound)) {
-            lower = rangeBoundAttr(range.low_bound);
-            upper = rangeBoundAttr(range.high_bound);
-          }
-        }
-        typeInfo = mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(),
-                                                       modulus, lower, upper);
-      }
-
-      // Link the canonical base type when this declaration is not its own
-      // (subtypes, @rm{3-2-2}). Looking the base up emits it first, so the
-      // reference always resolves.
-      mlir::FlatSymbolRefAttr base;
-      ada_node canon_type;
-      if (ada_base_type_decl_p_canonical_type(
-              &type_decl, &libadalang::kNullOrigin, &canon_type) &&
-          !ada_node_is_null(&canon_type) && canon_type.node != type_decl.node) {
-        if (mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon_type, location))
-          base = mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr());
-      }
-
-      auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
-                                                      mlirType, typeInfo, base);
-      typeDecls[type_decl.node] = typeOp;
-      return mlir::success();
     }
 
+    mlir::Attribute typeInfo;
+    if (mlir::isa<mlir::FloatType>(mlirType)) {
+      std::optional<uint32_t> digits = evalFloatDigits(type_decl, location);
+      if (!digits)
+        return mlir::failure();
+      typeInfo =
+          mlir::ada::FloatTypeInfoAttr::get(builder.getContext(), *digits);
+    } else {
+      // Record the declared range as metadata: static bounds as values,
+      // dynamic bounds as UnitAttr (printed `?`). Universal integer is
+      // unconstrained and keeps the bare attribute: its placeholder range
+      // in LAL's Standard (-1 .. 1 standing for an infinite range) must
+      // not be recorded.
+      mlir::Attribute lower, upper;
+      if (!libadalang::isUniversalTypeDecl(type_decl)) {
+        ada_internal_discrete_range range;
+        if (ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
+            !ada_node_is_null(&range.low_bound) &&
+            !ada_node_is_null(&range.high_bound)) {
+          lower = rangeBoundAttr(range.low_bound);
+          upper = rangeBoundAttr(range.high_bound);
+        }
+      }
+      typeInfo = mlir::ada::IntegerTypeInfoAttr::get(builder.getContext(),
+                                                     modulus, lower, upper);
+    }
+
+    // Link the canonical base type when this declaration is not its own
+    // (subtypes, @rm{3-2-2}). Looking the base up emits it first, so the
+    // reference always resolves.
+    mlir::FlatSymbolRefAttr base;
+    ada_node canon_type;
+    if (ada_base_type_decl_p_canonical_type(
+            &type_decl, &libadalang::kNullOrigin, &canon_type) &&
+        !ada_node_is_null(&canon_type) && canon_type.node != type_decl.node) {
+      if (mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon_type, location))
+        base = mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr());
+    }
+
+    auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
+                                                    mlirType, typeInfo, base);
+    typeDecls[type_decl.node] = typeOp;
+    return mlir::success();
+  }
+
+  /// Emit an enumeration type declaration (@rm{3-5-1}) as an `ada.type`
+  /// carrying `enum_info` (enumerator names and representation values). Fails
+  /// when the declaration is not a supported enum kind.
+  mlir::LogicalResult mlirGenEnumTypeDecl(ada_node &type_decl, bool external) {
+    auto location = loc(type_decl);
     ada_node type_def{};
     if (!libadalang::isEnumTypeDecl(type_decl) ||
         !ada_type_decl_f_type_def(&type_decl, &type_def))
@@ -3180,7 +3191,8 @@ private:
   /// to the canonical base type, derives integer widths from its range and
   /// float widths from its digits, and matches the remaining (universal)
   /// types by name.
-  /// diagLoc is used only for the "unsupported type" warning.
+  /// diagLoc is the caller's diagnostic site (typically the use location) for
+  /// any error the mapping emits.
   mlir::Type getMLIRTypeFromDecl(ada_node &type_decl, mlir::Location diagLoc) {
     // Follow the subtype chain to the canonical (base) type so that subtypes
     // of Integer map to the same MLIR type as Integer itself.
@@ -3190,143 +3202,164 @@ private:
         ada_node_is_null(&canon_type))
       canon_type = type_decl;
 
-    // Enumeration types (@rm{3-5-1}): an ordinary enum uses the smallest signed
-    // integer width holding its representation values, which a representation
-    // clause (@rm{13-4}) can spread beyond 0 .. count-1, including negative
-    // (see the width computation below). A character type is sized to its kind
-    // instead (Latin-1 -> i8, wider -> i16/i32): only the referenced character
-    // literals are materialized (see charLiteralRep), so maxRep is the max
-    // referenced code point, not the type's true upper bound.
+    // Each helper returns nullopt when its kind does not apply, so the type
+    // falls through to the next mapping and finally to the universal-by-name
+    // carrier. A present null Type means an error was diagnosed.
+    if (auto t = getModularMLIRType(canon_type, diagLoc))
+      return *t;
+    if (auto t = getEnumMLIRType(canon_type, diagLoc))
+      return *t;
+    if (auto t = getIntegerMLIRType(canon_type, diagLoc))
+      return *t;
+    if (auto t = getFloatMLIRType(canon_type, diagLoc))
+      return *t;
+    return getUniversalMLIRType(canon_type, diagLoc);
+  }
+
+  /// Modular type (@rm{3-5-4}): reuse the width chosen at declaration and
+  /// stored on the `TypeOp`. Nullopt if not modular.
+  std::optional<mlir::Type> getModularMLIRType(ada_node &canon_type,
+                                               mlir::Location diagLoc) {
     ada_node type_def;
     if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
-        ada_node_is_null(&type_def))
-      type_def = {};
+        ada_node_is_null(&type_def) ||
+        ada_node_kind(&type_def) != ada_mod_int_type_def)
+      return std::nullopt;
+    auto it = typeDecls.find(canon_type.node);
+    if (it == typeDecls.end()) {
+      mlir::emitError(diagLoc, "modular type used before its declaration");
+      return mlir::Type{};
+    }
+    return it->second.getMlirType();
+  }
 
-    if (!ada_node_is_null(&type_def) &&
-        ada_node_kind(&type_def) == ada_mod_int_type_def) {
-      auto it = typeDecls.find(canon_type.node);
-      if (it == typeDecls.end()) {
-        mlir::emitError(diagLoc, "modular type used before its declaration");
-        return {};
-      }
+  /// Enumeration type (@rm{3-5-1}). Nullopt if not an enum.
+  std::optional<mlir::Type> getEnumMLIRType(ada_node &canon_type,
+                                            mlir::Location diagLoc) {
+    ada_node type_def;
+    if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
+        ada_node_is_null(&type_def) ||
+        ada_node_kind(&type_def) != ada_enum_type_def)
+      return std::nullopt;
+
+    // Reuse the stored type once emitted, rather than rescanning the literals.
+    if (auto it = typeDecls.find(canon_type.node); it != typeDecls.end())
       return it->second.getMlirType();
+
+    // Width covers the range of representation values, not the literal count:
+    // character types (@rm{3-5-2}) materialize only their referenced literals,
+    // and representation clauses (@rm{13-4}) can assign values beyond the
+    // count.
+    ada_node literals;
+    ada_enum_type_def_f_enum_literals(&type_def, &literals);
+    unsigned count = ada_node_children_count(&literals);
+    bool isChar = isCharacterType(canon_type);
+    int64_t minRep = 0, maxRep = 0;
+    for (unsigned i = 0; i < count; ++i) {
+      ada_node lit;
+      if (ada_node_child(&literals, i, &lit) == 0)
+        continue;
+      std::optional<int64_t> rep =
+          isChar ? charLiteralRep(lit, diagLoc) : enumLiteralRep(lit, diagLoc);
+      if (!rep)
+        return mlir::Type{};
+      minRep = std::min(minRep, *rep);
+      maxRep = std::max(maxRep, *rep);
     }
-
-    if (!ada_node_is_null(&type_def) &&
-        ada_node_kind(&type_def) == ada_enum_type_def) {
-      // Once the type is emitted, reuse the stored MLIR type rather than
-      // rescanning the literals on every use (as the modular branch does).
-      if (auto it = typeDecls.find(canon_type.node); it != typeDecls.end())
-        return it->second.getMlirType();
-
-      // Width covers the range of representation values, not the literal count:
-      // character types (@rm{3-5-2}) only materialize their referenced
-      // literals, and representation clauses (@rm{13-4}) can assign values
-      // beyond the count.
-      ada_node literals;
-      ada_enum_type_def_f_enum_literals(&type_def, &literals);
-      unsigned count = ada_node_children_count(&literals);
-      bool isChar = isCharacterType(canon_type);
-      int64_t minRep = 0, maxRep = 0;
-      for (unsigned i = 0; i < count; ++i) {
-        ada_node lit;
-        if (ada_node_child(&literals, i, &lit) == 0)
-          continue;
-        std::optional<int64_t> rep = isChar ? charLiteralRep(lit, diagLoc)
-                                            : enumLiteralRep(lit, diagLoc);
-        if (!rep)
-          return {};
-        minRep = std::min(minRep, *rep);
-        maxRep = std::max(maxRep, *rep);
-      }
-      if (isChar) {
-        // Sized to the character kind, not the literals seen (see above);
-        // character reps are non-negative code points.
-        if (maxRep <= 255)
-          return builder.getIntegerType(8);
-        if (maxRep <= 65535)
-          return builder.getIntegerType(16);
-        return builder.getIntegerType(32);
-      }
-      // Ordinary enum: smallest *signed* width holding minRep .. maxRep. MLIR
-      // prints and extends signless integers as signed, so a representation
-      // clause's negative or large values are covered by both bounds, not just
-      // the top. Boolean and single-literal enums stay i1, MLIR's bool.
-      if (minRep >= 0 && maxRep <= 1)
-        return builder.getIntegerType(1);
-      // Reps are int64 (`enumLiteralRep` bounds them), so this is at most i64.
-      unsigned bits = std::max(
-          llvm::APInt(64, minRep, /*isSigned=*/true).getSignificantBits(),
-          llvm::APInt(64, maxRep, /*isSigned=*/true).getSignificantBits());
-      return builder.getIntegerType(bits);
+    // Character types size to their kind, from the max *referenced* code point
+    // (see charLiteralRep), not the type's true upper bound; reps are
+    // non-negative.
+    if (isChar) {
+      if (maxRep <= 255)
+        return builder.getIntegerType(8);
+      if (maxRep <= 65535)
+        return builder.getIntegerType(16);
+      return builder.getIntegerType(32);
     }
+    // Ordinary enum: smallest *signed* width holding minRep .. maxRep (MLIR
+    // extends signless integers as signed). Boolean and single-literal enums
+    // stay i1.
+    if (minRep >= 0 && maxRep <= 1)
+      return builder.getIntegerType(1);
+    unsigned bits = std::max(
+        llvm::APInt(64, minRep, /*isSigned=*/true).getSignificantBits(),
+        llvm::APInt(64, maxRep, /*isSigned=*/true).getSignificantBits());
+    return builder.getIntegerType(bits);
+  }
 
-    // Signed integer types (@rm{3-5-4}): the width derives from the base
-    // type's range instead of matching predefined type names. The bounds are
-    // static by definition; the smallest signed width holding both is rounded
-    // up to a power-of-two byte width (i8 .. i128; only enums get tight
-    // widths). Modular types are handled above. Universal types must skip
-    // the derivation: Libadalang's synthetic Standard gives
-    // universal_int_type_ a placeholder range of -1 .. 1 (it stands for an
-    // infinite range and only serves name resolution); they take their
-    // carrier type from the name table instead.
+  /// Signed integer type (@rm{3-5-4}): width from the base type's (static)
+  /// range rather than the predefined name, rounded up to a power-of-two byte
+  /// width (i8 .. i128; only enums get tight widths). Universal types skip this
+  /// and fall to the name carrier: Libadalang's synthetic Standard gives
+  /// universal_int_type_ a placeholder -1 .. 1 range (standing for an infinite
+  /// range, only for name resolution). Nullopt when `canon_type` is not a
+  /// non-universal integer type.
+  std::optional<mlir::Type> getIntegerMLIRType(ada_node &canon_type,
+                                               mlir::Location diagLoc) {
     ada_bool is_int = false;
-    if (!libadalang::isUniversalTypeDecl(canon_type) &&
-        ada_base_type_decl_p_is_int_type(&canon_type, &libadalang::kNullOrigin,
-                                         &is_int) &&
-        is_int) {
-      ada_internal_discrete_range range;
-      if (ada_base_type_decl_p_discrete_range(&canon_type, &range) &&
-          !ada_node_is_null(&range.low_bound) &&
-          !ada_node_is_null(&range.high_bound)) {
-        std::optional<llvm::APInt> lo =
-            libadalang::evalExprAsInt(range.low_bound);
-        std::optional<llvm::APInt> hi =
-            libadalang::evalExprAsInt(range.high_bound);
-        if (!lo || !hi) {
-          mlir::emitError(diagLoc, "failed to evaluate integer type bounds");
-          return {};
-        }
-        unsigned bits =
-            std::max(lo->getSignificantBits(), hi->getSignificantBits());
-        if (bits > 128) {
-          mlir::emitError(diagLoc,
-                          "unsupported integer type wider than 128 bits");
-          return {};
-        }
-        return builder.getIntegerType(llvm::bit_ceil(std::max(bits, 8u)));
-      }
+    if (libadalang::isUniversalTypeDecl(canon_type) ||
+        !ada_base_type_decl_p_is_int_type(&canon_type, &libadalang::kNullOrigin,
+                                          &is_int) ||
+        !is_int)
+      return std::nullopt;
+    ada_internal_discrete_range range;
+    if (!ada_base_type_decl_p_discrete_range(&canon_type, &range) ||
+        ada_node_is_null(&range.low_bound) ||
+        ada_node_is_null(&range.high_bound))
+      return std::nullopt;
+    std::optional<llvm::APInt> lo = libadalang::evalExprAsInt(range.low_bound);
+    std::optional<llvm::APInt> hi = libadalang::evalExprAsInt(range.high_bound);
+    if (!lo || !hi) {
+      mlir::emitError(diagLoc, "failed to evaluate integer type bounds");
+      return mlir::Type{};
     }
+    unsigned bits =
+        std::max(lo->getSignificantBits(), hi->getSignificantBits());
+    if (bits > 128) {
+      mlir::emitError(diagLoc, "unsupported integer type wider than 128 bits");
+      return mlir::Type{};
+    }
+    return builder.getIntegerType(llvm::bit_ceil(std::max(bits, 8u)));
+  }
 
-    // Floating-point types (@rm{3-5-7}): the representation derives from the
-    // declared decimal precision instead of matching predefined type names:
-    // digits <= 6 -> f32, <= 15 -> f64, <= 18 -> f80 (x86 extended), else
-    // f128 (unreachable while evalFloatDigits caps digits at 18; kept for
-    // targets with a larger System.Max_Digits). Universal real keeps its
-    // name-table carrier.
+  /// Floating-point type (@rm{3-5-7}): width from the declared digits rather
+  /// than the predefined name (<= 6 f32, <= 15 f64, <= 18 f80 x86-extended,
+  /// else f128, which is unreachable while evalFloatDigits caps digits at 18
+  /// but kept for a larger System.Max_Digits). Universal real falls to the name
+  /// carrier.
+  /// Nullopt when `canon_type` is not a non-universal float type.
+  std::optional<mlir::Type> getFloatMLIRType(ada_node &canon_type,
+                                             mlir::Location diagLoc) {
     ada_bool is_float = false;
-    if (!libadalang::isUniversalTypeDecl(canon_type) &&
-        ada_base_type_decl_p_is_float_type(
-            &canon_type, &libadalang::kNullOrigin, &is_float) &&
-        is_float) {
-      std::optional<uint32_t> digits = evalFloatDigits(canon_type, diagLoc);
-      if (!digits)
-        return {};
-      if (*digits == 0) {
-        mlir::emitError(diagLoc, "floating-point type without digits");
-        return {};
-      }
-      if (*digits <= 6)
-        return builder.getF32Type();
-      if (*digits <= 15)
-        return builder.getF64Type();
-      if (*digits <= 18)
-        return mlir::Float80Type::get(builder.getContext());
-      return mlir::Float128Type::get(builder.getContext());
+    if (libadalang::isUniversalTypeDecl(canon_type) ||
+        !ada_base_type_decl_p_is_float_type(
+            &canon_type, &libadalang::kNullOrigin, &is_float) ||
+        !is_float)
+      return std::nullopt;
+    std::optional<uint32_t> digits = evalFloatDigits(canon_type, diagLoc);
+    if (!digits)
+      return mlir::Type{};
+    if (*digits == 0) {
+      mlir::emitError(diagLoc, "floating-point type without digits");
+      return mlir::Type{};
     }
+    if (*digits <= 6)
+      return builder.getF32Type();
+    if (*digits <= 15)
+      return builder.getF64Type();
+    if (*digits <= 18)
+      return mlir::Float80Type::get(builder.getContext());
+    return mlir::Float128Type::get(builder.getContext());
+  }
 
-    // f_name gives the defining identifier of the type declaration, whose
-    // lower-cased text we use to drive the mapping below.
+  /// Terminal fallback: map the type by its (lower-cased) defining name. Only
+  /// the universal types resolve here, to deliberately wide carriers
+  /// (unbounded/exact conceptually, and not reading like machine types). Values
+  /// are still bounded by the literal path (int64; reals text-parsed to
+  /// double); revisit with the APInt literal work. Any other name is
+  /// unsupported (a diagnosed error).
+  mlir::Type getUniversalMLIRType(ada_node &canon_type,
+                                  mlir::Location diagLoc) {
     ada_node type_name;
     if (!ada_base_type_decl_f_name(&canon_type, &type_name) ||
         ada_node_is_null(&type_name)) {
@@ -3335,10 +3368,6 @@ private:
     }
 
     std::string name = libadalang::getName(&type_name);
-    // Universal types are conceptually unbounded/exact; the carriers just
-    // need to be wide (and to not read like machine types). Values are still
-    // limited by the literal path (int64; reals text-parsed to double);
-    // revisit alongside the APInt literal effort.
     if (name == libadalang::kUniversalIntTypeName)
       return builder.getIntegerType(512);
     if (name == libadalang::kUniversalRealTypeName)
