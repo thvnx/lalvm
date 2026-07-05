@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
 -- Three i8 enum types at the same scope. DILocalVariable for "green_color"
 -- must reference the color DICompositeType, not direction or flag (which

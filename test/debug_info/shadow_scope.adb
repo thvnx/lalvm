@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
 -- Locally-declared enum types use the enclosing subprogram as their DWARF
 -- scope, not the compile unit. Both nested subprograms share the source name

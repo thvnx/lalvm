@@ -1,5 +1,5 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
--- RUN: %lalvm --emit=llvm %s | %llc -filetype=obj -o %t.o
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -g --emit=llvm %s | %llc -filetype=obj -o %t.o
 -- RUN: %llvm-dwarfdump --debug-info %t.o | %FileCheck %s
 
 -- A goto label (RM 5.8) produces a DW_TAG_label with its source name and a code

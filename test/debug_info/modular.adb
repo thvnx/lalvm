@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %llc -filetype=obj -o %t.o
+-- RUN: %lalvm -g --emit=llvm %s | %llc -filetype=obj -o %t.o
 -- RUN: %llvm-dwarfdump --debug-info %t.o | %FileCheck %s
 
 -- Modular-typed local variables produce DW_TAG_variable entries in DWARF,

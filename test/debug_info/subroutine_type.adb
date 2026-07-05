@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
 -- The subprogram's DISubroutineType lists the return type as element 0,
 -- followed by the parameter types. For `function F (X : Integer) return

@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
 -- An `out` parameter is passed by reference, so it is described with
 -- #dbg_declare on the incoming pointer, with a DILocalVariable arg: 1.

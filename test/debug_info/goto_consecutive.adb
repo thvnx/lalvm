@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %llc -filetype=obj -o %t.o
+-- RUN: %lalvm -g --emit=llvm %s | %llc -filetype=obj -o %t.o
 -- RUN: %llvm-dwarfdump --debug-info %t.o | %FileCheck %s
 
 -- Two consecutive goto labels each get their own DW_TAG_label. The first

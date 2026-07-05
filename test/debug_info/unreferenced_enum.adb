@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
 -- A predefined type's DIE is emitted only when a surviving entity references it
 -- (matching GNAT). Here the only Boolean is the transient result of `X = 0`

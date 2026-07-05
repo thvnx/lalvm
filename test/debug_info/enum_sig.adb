@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --implicit-check-not='name: "enum_sig.color"'
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s --implicit-check-not='name: "enum_sig.color"'
 
 -- An enum used as a parameter and return type is described by the full
 -- DW_TAG_enumeration_type in the subprogram's DISubroutineType, not a

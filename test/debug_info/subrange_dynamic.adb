@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
 -- A dynamic subtype bound (`range 1 .. N`) points the DISubrangeType's upper
 -- bound at the bound object's own variable (`N`), as GNAT does, rather than an

@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %llc -filetype=obj -o %t.o
+-- RUN: %lalvm -g --emit=llvm %s | %llc -filetype=obj -o %t.o
 -- RUN: %llvm-dwarfdump --debug-info %t.o | %FileCheck %s
 
 -- A goto label on a null statement (RM 5.1). `ada.null` is erased in lowering,

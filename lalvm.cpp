@@ -100,6 +100,11 @@ static cl::opt<unsigned> optLevel("O", cl::Prefix, cl::init(0),
                                   cl::value_desc("level"),
                                   cl::cat(lalvmCategory));
 
+// Debug info is emitted only under -g; without it the DI passes are skipped.
+// Source locations still ride on ops (diagnostics, exception messages).
+static cl::opt<bool> debugInfo("g", cl::desc("Generate debug information"),
+                               cl::init(false), cl::cat(lalvmCategory));
+
 /// Register the standard codegen flags (-mcpu, -mattr, --relocation-model,
 /// --code-model, ...) shared with llc; consumed when building the target
 /// machine for --emit=obj/asm.
@@ -177,17 +182,25 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
     return error;
 
   mlir::PassManager pm(module.get()->getName());
-  // Attach Ada DICompileUnitAttr so DIScopeForLLVMFuncOpPass uses Ada metadata.
-  pm.addPass(mlir::ada::createDICompileUnitAdaPass());
+  // The DI passes run only under -g. The Ada DI markers earlier passes fuse
+  // onto locations stay, but are inert without these consumers: translation
+  // drops them and, with no DISubprogram scope, emits no !dbg.
+  if (debugInfo)
+    // Attach Ada DICompileUnitAttr so DIScopeForLLVMFuncOpPass uses Ada
+    // metadata.
+    pm.addPass(mlir::ada::createDICompileUnitAdaPass());
   // Hoist nested symbol ops (subprograms and types) to module level and apply
   // GNAT ABI name mangling to subprograms.
   pm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
   // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
-  // Attach DI scope metadata so debuggers can map LLVM IR back to source lines.
-  pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
-  // Emit debug intrinsics for Ada objects and parameters.
-  pm.addPass(mlir::ada::createAdaDebugInfoPass());
+  if (debugInfo) {
+    // Attach DI scope metadata so debuggers can map LLVM IR back to source
+    // lines.
+    pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+    // Emit debug intrinsics for Ada objects and parameters.
+    pm.addPass(mlir::ada::createAdaDebugInfoPass());
+  }
 
   if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
     return 1;
@@ -292,14 +305,16 @@ static int emitLLVMIR(mlir::MLIRContext &context,
       llvmContext, llvm::MDString::get(
                        llvmContext, "lalvm (LLVM " LLVM_VERSION_STRING ")")));
 
-  // Request DWARF 5 so the backend emits the modern `.debug_names`
-  // accelerator table instead of the deprecated GNU `.debug_pubnames`
-  // (the name-table kind stays at its default; the DWARF version is the
-  // selector, see `DwarfCompileUnit::hasDwarfPubSections`).
-  llvmModule->addModuleFlag(llvm::Module::Max, "Dwarf Version", 5);
+  if (debugInfo) {
+    // Request DWARF 5 so the backend emits the modern `.debug_names`
+    // accelerator table instead of the deprecated GNU `.debug_pubnames`
+    // (the name-table kind stays at its default; the DWARF version is the
+    // selector, see `DwarfCompileUnit::hasDwarfPubSections`).
+    llvmModule->addModuleFlag(llvm::Module::Max, "Dwarf Version", 5);
 
-  mlir::ada::buildEnumDITypes(*llvmModule, *module);
-  mlir::ada::buildSubrangeDITypes(*llvmModule, *module);
+    mlir::ada::buildEnumDITypes(*llvmModule, *module);
+    mlir::ada::buildSubrangeDITypes(*llvmModule, *module);
+  }
 
   // Initialize the host target backend.
   llvm::InitializeNativeTarget();

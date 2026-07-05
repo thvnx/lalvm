@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
 -- A 2-literal enum lowers to a DWARF DW_TAG_enumeration_type carrying both
 -- enumerators with their representation values.

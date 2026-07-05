@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --implicit-check-not=DIDerivedType
+-- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s --implicit-check-not=DIDerivedType
 
 -- A constrained subtype used as a parameter and return type is described by the
 -- subrange in the subprogram's DISubroutineType (not the typedef placeholder),

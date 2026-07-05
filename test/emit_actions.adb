@@ -2,7 +2,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 -- RUN: %lalvm --emit=asm  %s -o - | %FileCheck %s --check-prefix=ASM
--- RUN: %lalvm --emit=obj  %s -o %t.o
+-- RUN: %lalvm -g --emit=obj  %s -o %t.o
 -- RUN: %llvm-dwarfdump --debug-info %t.o | %FileCheck %s --check-prefix=OBJ
 
 -- Every --emit action for one subprogram: the AST dump, the Ada dialect MLIR,
