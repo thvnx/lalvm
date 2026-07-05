@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Compile an Ada file with lalvm and link it using the GNAT runtime.
 # Usage: ./lalvm-make <file.adb>
+# The lalvm binary defaults to `lalvm` on PATH; override with LALVM=<path>.
 #
 # Steps:
 #   1. gnatmake <file.adb>     — build with GNAT to get a .ali (and discard .o)
@@ -24,6 +25,7 @@ if [[ ! -f "$ADB" ]]; then
   exit 1
 fi
 
+LALVM="${LALVM:-lalvm}"
 BASE=$(basename "$ADB" .adb)
 OBJ="${BASE}.o"
 ALI="${BASE}.ali"
@@ -33,7 +35,7 @@ run gnatmake -q -f "$ADB"
 
 # Step 2 — replace the .o with one produced by lalvm.
 run mv "$OBJ" "${BASE}.gnat.o"
-run lalvm --emit=obj "$ADB" -o "$OBJ"
+run "$LALVM" --emit=obj "$ADB" -o "$OBJ"
 
 # Step 3 — bind.
 run gnatbind -x "$ALI"
