@@ -29,10 +29,14 @@ flowchart TD
 ```
 
 - `--emit=ast` stops after Libadalang and dumps the AST.
-- `--emit=mlir` runs MLIRGen then `mem2reg` and dumps the Ada dialect.
+- `--emit=mlir` runs MLIRGen (and `mem2reg` at `-O1`) and dumps the Ada dialect.
 - `--emit=llvm` runs the full lowering chain above, then translates to LLVM IR.
 - `--emit=obj` / `--emit=asm` run the LLVM backend on that IR to write an object
   file or target assembly for the host target.
+
+`mem2reg` runs only at `-O1`; the default `-O0` leaves locals in memory. The
+debug-info passes (`DICompileUnitAda`, `DIScopeForLLVMFuncOp`, `AdaDebugInfo`)
+run only under `-g`. The diagram above shows the full `-O1 -g` pipeline.
 
 ## Building
 
@@ -65,6 +69,8 @@ Options:
 - `--x {Ada,mlir}`: input type (default: Ada; inferred from `.mlir` extension)
 - `-o <file>`: output file (default: stdout for text dumps; the input basename
   with a `.o`/`.s` extension for `obj`/`asm`)
+- `-O {0,1}`: optimization level (default `0`; `1` runs `mem2reg`)
+- `-g`: generate DWARF debug info (off by default)
 - standard LLVM codegen flags (`-mcpu`, `-mattr`, `--relocation-model`, ...)
   apply to `--emit=obj`/`asm`
 
@@ -84,9 +90,10 @@ end Compute;
 ```
 
 ```sh
-lalvm --emit=ast  compute.adb   # Libadalang AST dump
-lalvm --emit=mlir compute.adb   # Ada MLIR dialect
-lalvm --emit=llvm compute.adb   # LLVM IR
+lalvm --emit=ast  compute.adb      # Libadalang AST dump
+lalvm --emit=mlir compute.adb      # Ada MLIR dialect (-O0: locals in memory)
+lalvm --emit=mlir -O1 compute.adb  # Ada MLIR dialect (mem2reg promotes locals)
+lalvm --emit=llvm compute.adb      # LLVM IR
 ```
 
 MLIR output:
@@ -108,9 +115,10 @@ module @compute {
 
 Nested subprograms are kept in an `ada.decls` symbol container under their
 enclosing subprogram and carry a qualified `private` name; closure conversion
-and hoisting flatten them to module level on the `--emit=llvm` path. Here
-`mem2reg` has already promoted the `Result` local, so the call result flows
-straight into the `return`.
+and hoisting flatten them to module level on the `--emit=llvm` path. The output
+above is from `-O1`, where `mem2reg` has promoted the `Result` local so the call
+result flows straight into the `return`; at the default `-O0` it stays in memory
+as an `ada.alloca` with a store and load.
 
 ## Generating machine code
 
@@ -150,8 +158,10 @@ called from C using the same name mangling convention.
 
 ## Debug info
 
-LALVM emits DWARF 5 debug info with `DW_LANG_Ada2012`. Source locations are
-attached to every MLIR operation and carried through to LLVM IR.
+Debug info is emitted only under `-g`; without it no `.debug_*` sections are
+produced (source locations still ride on every op for diagnostics and exception
+messages). With `-g`, LALVM emits DWARF 5 with `DW_LANG_Ada2012`, carried from
+the MLIR op locations through to LLVM IR.
 
 Each named Ada object (variable, constant, named number, parameter) carries a
 `NameLoc` in the Ada dialect, which `AdaDebugInfoPass` consumes to emit
@@ -160,7 +170,8 @@ numbers). Enum types produce `DICompositeType` entries with one `DIEnumerator`
 per literal. Constrained integer subtypes produce `DISubrangeType` entries with
 their bounds: constants for static bounds, and a referenced `DILocalVariable`
 for a dynamic bound (currently a subprogram parameter; see the limitations in
-`AdaDebugInfoPass`).
+`AdaDebugInfoPass`). Ada `goto` labels get a `DW_TAG_label` (via
+`llvm.intr.dbg.label`), so a debugger can break on a labeled statement.
 
 To inspect source locations in the MLIR output:
 
@@ -200,6 +211,8 @@ are not yet implemented.
 - Assignments, `return`, `null`
 - Procedure calls
 - `if` statements
+- Loop statements: `while` and bare `loop`, with `exit` (named or plain)
+- `goto` statements and labels
 - Block statements (`begin`/`end` and `declare`/`begin`/`end`)
 
 **Declarations:**
@@ -221,9 +234,10 @@ are not yet implemented.
 - Integer subtypes with static or dynamic range constraints
   (`subtype S is Integer range 1 .. N`); widths derived from the declared range
 
-**Debug info:** DWARF 5, `DW_LANG_Ada2012`, source locations on all ops,
-`dbg.declare`/`dbg.value` for variables and constants, `DICompositeType`
-for enum types, `DISubrangeType` for constrained integer subtypes
+**Debug info** (under `-g`): DWARF 5, `DW_LANG_Ada2012`, source locations on all
+ops, `dbg.declare`/`dbg.value` for variables and constants, `DICompositeType`
+for enum types, `DISubrangeType` for constrained integer subtypes, `DW_TAG_label`
+for `goto` labels
 
 ## Architecture
 
