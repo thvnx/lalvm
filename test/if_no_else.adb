@@ -1,5 +1,5 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- If statement with no else (RM 5.3): the false edge goes to the merge block,
 -- and the then-branch falls through to it (cf.br). The local R is live across

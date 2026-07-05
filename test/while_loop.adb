@@ -1,5 +1,5 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- while loop (RM 5.5): a header block tests the condition and branches to the
 -- body or the merge; the body branches back to the header. While_Loop(5) = 15.

@@ -1,5 +1,5 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- Each identifier gets its own evaluation of the init expression (RM 3.3.1).
 -- MLIR-LABEL: ada.subp @local_var_multi_name

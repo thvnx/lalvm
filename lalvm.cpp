@@ -93,6 +93,13 @@ static cl::opt<std::string> outputFilename("o",
                                            cl::init("-"),
                                            cl::cat(lalvmCategory));
 
+// Optimization level. -O1 enables mem2reg (promoting locals to SSA); -O0, the
+// default, leaves locals in memory so they stay breakable and inspectable.
+static cl::opt<unsigned> optLevel("O", cl::Prefix, cl::init(0),
+                                  cl::desc("Optimization level"),
+                                  cl::value_desc("level"),
+                                  cl::cat(lalvmCategory));
+
 /// Register the standard codegen flags (-mcpu, -mattr, --relocation-model,
 /// --code-model, ...) shared with llc; consumed when building the target
 /// machine for --emit=obj/asm.
@@ -132,6 +139,10 @@ static int loadMLIR(libadalang::AdaAST &ast, mlir::MLIRContext &context,
 }
 
 static int applyMLIRPasses(mlir::OwningOpRef<mlir::ModuleOp> &module) {
+  // -O0 leaves locals in memory (see optLevel); mem2reg promotion runs from
+  // -O1.
+  if (optLevel < 1)
+    return 0;
   // Separate PM so --mlir-print-ir-before=mem2reg captures pre-promotion IR.
   mlir::PassManager pm(module.get()->getName());
   pm.addPass(mlir::createMem2Reg());

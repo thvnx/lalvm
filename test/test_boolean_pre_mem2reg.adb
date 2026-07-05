@@ -1,8 +1,8 @@
--- RUN: %lalvm --emit=mlir --mlir-print-ir-before=mem2reg %s 2>&1 1>/dev/null | %FileCheck %s
+-- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
--- Verify the alloca-based IR that mem2reg promotes. --mlir-print-ir-before=mem2reg
--- captures the module before SSA promotion; B's alloca and store are visible here
--- but absent from the normal --emit=mlir output (which is post-mem2reg).
+-- Verify the alloca-based IR at -O0 (the default): locals stay in memory, so
+-- B's alloca and store are visible. -O1 runs mem2reg to promote them to SSA,
+-- leaving just the constant (see test_boolean.adb).
 -- CHECK-LABEL: ada.subp @test_boolean_pre_mem2reg
 -- CHECK:         %[[C:.*]] = ada.constant : !ada.qual<i1, @standard.boolean> = true
 -- CHECK-NEXT:    %[[PTR:.*]] = ada.alloca : memref<!ada.qual<i1, @standard.boolean>>

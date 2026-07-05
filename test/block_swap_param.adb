@@ -1,5 +1,5 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- The Swap block dissolves, but U and V are `in out` parameters backed by the
 -- caller's storage, so they stay as `memref`/`ptr` and the swap propagates

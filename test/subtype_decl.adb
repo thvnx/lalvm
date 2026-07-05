@@ -1,5 +1,5 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- A subtype's ada.type links its base type and is emitted eagerly into the
 -- local ada.decls, at its declaration point. type_info records only the

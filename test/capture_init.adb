@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- The capturing call lives in an object initializer (`Y := I (True)`), which is
 -- emitted into the body *before* the `ada.decls` holding `I`; closure

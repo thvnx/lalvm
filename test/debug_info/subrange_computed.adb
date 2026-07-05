@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s
 
 -- A *computed* dynamic bound (`N * 2`) has no source object to reference, so the
 -- DISubrangeType's upper bound points at an artificial variable (`s'last`) that

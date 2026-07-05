@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 
 -- Backward `goto` (RM 5.8) forms a loop by hand: `<<Top>>` is the back-edge
 -- target, `goto Fin` exits, `goto Top` re-enters. `<<Fin>>` follows the
