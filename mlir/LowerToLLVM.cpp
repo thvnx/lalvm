@@ -521,22 +521,43 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
   matchAndRewrite(ada::BinOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type type = adaptor.getLhs().getType();
-    bool isInt = mlir::isa<mlir::IntegerType>(type);
-    if (!isInt && !mlir::isa<mlir::FloatType>(type))
+    if (!mlir::isa<mlir::IntegerType>(type) &&
+        !mlir::isa<mlir::FloatType>(type))
       return rewriter.notifyMatchFailure(op, [type](Diagnostic &diag) {
         diag << "unsupported operand type: " << type;
       });
-    ada::AdaBinaryOp kind = op.getKind();
 
-    // Signed-integer +/-/* carrying the overflow flag lower to the LLVM checked
-    // intrinsic and trap to the GNAT runtime on overflow (@rm{4-5}). A
-    // provably-safe compile-time constant skips the check and uses the plain
-    // arith op below (which LLVM folds); so do floats, modular, /, and
-    // unflagged ops.
+    // Try each specialized lowering in turn; a helper returns nullopt when it
+    // does not apply, so the op falls through to the plain arith lowering.
+    if (auto r = lowerCheckedArithmetic(op, adaptor, rewriter))
+      return *r;
+    if (auto r = lowerModularArithmetic(op, adaptor, rewriter))
+      return *r;
+    lowerPlainArithmetic(op, adaptor, rewriter);
+    return success();
+  }
+
+private:
+  // Integer arithmetic that can trap a Constraint_Error: signed +/-/* with the
+  // overflow flag, and integer division. Returns nullopt for anything else
+  // (floats, modular +/-/*, unflagged or const-foldable +/-/*), leaving it to a
+  // later lowering.
+  std::optional<LogicalResult>
+  lowerCheckedArithmetic(ada::BinOp op, OpAdaptor adaptor,
+                         ConversionPatternRewriter &rewriter) const {
+    Type type = adaptor.getLhs().getType();
+    if (!mlir::isa<mlir::IntegerType>(type))
+      return std::nullopt;
+    ada::AdaBinaryOp kind = op.getKind();
     ada::AdaChecks checks = {};
     if (ada::AdaChecksAttr a = op.getChecksAttr())
       checks = a.getValue();
-    if (isInt && ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) &&
+
+    // Signed +/-/* carrying the overflow flag lower to the LLVM checked
+    // intrinsic and trap to the GNAT runtime on overflow (@rm{4-5}). An
+    // unflagged or provably-safe compile-time-constant +/-/* is left to the
+    // plain lowering, which LLVM folds.
+    if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) &&
         !evalConstInt(op.getResult())) {
       mlir::Location loc = op.getLoc();
       auto module = op->getParentOfType<mlir::ModuleOp>();
@@ -574,7 +595,7 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
     // undefined and there is no checked-division intrinsic. The prechecks must
     // precede the divide, which is emitted on the live path that
     // `emitConstraintRaise` leaves us on.
-    if (isInt && kind == ada::AdaBinaryOp::Div) {
+    if (kind == ada::AdaBinaryOp::Div) {
       mlir::Location loc = op.getLoc();
       mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
       bool modular = static_cast<bool>(getModularModulus(
@@ -620,91 +641,109 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
       return success();
     }
 
-    // Modular arithmetic (@rm{3-5-4}). Values are unsigned, and the stored
-    // integer width byte-rounds up to a power of two, so the width's own
-    // wraparound realizes the modulus only when it is exactly 2**width (the
-    // common `Interfaces.Unsigned_*` / `mod 256` families).
-    if (isInt) {
-      if (mlir::IntegerAttr modAttr = getModularModulus(
-              op, mlir::cast<ada::QualType>(op.getResult().getType()))) {
-        mlir::Location loc = op.getLoc();
-        mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
+    return std::nullopt;
+  }
 
-        // For any other modulus, +/-/* must be explicitly reduced; the width's
-        // wraparound is exact only at modulus == 2**width.
-        llvm::APInt m = modAttr.getValue();
-        unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
+  // Modular arithmetic (@rm{3-5-4}). Values are unsigned, and the stored
+  // integer width byte-rounds up to a power of two, so the width's own
+  // wraparound realizes the modulus only when it is exactly 2**width (the
+  // common `Interfaces.Unsigned_*` / `mod 256` families). Returns nullopt for a
+  // non-modular op and for that 2**width case, letting the plain lowering emit
+  // the bare arith op whose wraparound is already exact.
+  std::optional<LogicalResult>
+  lowerModularArithmetic(ada::BinOp op, OpAdaptor adaptor,
+                         ConversionPatternRewriter &rewriter) const {
+    Type type = adaptor.getLhs().getType();
+    if (!mlir::isa<mlir::IntegerType>(type))
+      return std::nullopt;
+    mlir::IntegerAttr modAttr = getModularModulus(
+        op, mlir::cast<ada::QualType>(op.getResult().getType()));
+    if (!modAttr)
+      return std::nullopt;
+    ada::AdaBinaryOp kind = op.getKind();
+    mlir::Location loc = op.getLoc();
+    mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
 
-        if (m.isPowerOf2() && m.logBase2() == w) {
-          // Width-based wraparound is already exact; fall through to `lower`.
-        } else if (m.isPowerOf2()) {
-          // Power-of-two modulus narrower than the width: mask the low k bits.
-          // Correct for +/-/* alike, since 2**w is a multiple of 2**k.
-          unsigned k = m.logBase2();
-          mlir::Value base;
-          switch (kind) {
-          case ada::AdaBinaryOp::Plus:
-            base = rewriter.create<arith::AddIOp>(loc, lhs, rhs);
-            break;
-          case ada::AdaBinaryOp::Minus:
-            base = rewriter.create<arith::SubIOp>(loc, lhs, rhs);
-            break;
-          default: // Mult
-            base = rewriter.create<arith::MulIOp>(loc, lhs, rhs);
-            break;
-          }
-          mlir::Value mask =
-              constInt(rewriter, loc, type, llvm::APInt::getLowBitsSet(w, k));
-          rewriter.replaceOpWithNewOp<arith::AndIOp>(op, base, mask);
-          return success();
-        } else {
-          // Non-binary modulus: compute in a doubled width so the width's own
-          // wraparound cannot contaminate the reduction, then truncate back.
-          //
-          // `2*w` is sufficient and safe: the representation width covers the
-          // modulus (`modulus <= 2**w`), so the largest intermediate
-          // `(m-1)**2 < 2**(2w)` fits exactly, and `m` (at most `w+1` signed
-          // bits) always zero-extends *up* to the wider type, never narrows.
-          unsigned ww = 2 * w;
-          mlir::Type wide = mlir::IntegerType::get(rewriter.getContext(), ww);
-          mlir::Value a = rewriter.create<arith::ExtUIOp>(loc, wide, lhs);
-          mlir::Value b = rewriter.create<arith::ExtUIOp>(loc, wide, rhs);
-          mlir::Value mc = constInt(rewriter, loc, wide, m.zext(ww));
-          mlir::Value r;
-          if (kind == ada::AdaBinaryOp::Mult) {
-            // The product reaches `(m-1)**2`, so a full `urem` is required.
-            mlir::Value t = rewriter.create<arith::MulIOp>(loc, a, b);
-            r = rewriter.create<arith::RemUIOp>(loc, t, mc);
-          } else {
-            // Addition and subtraction land at most one modulus outside the
-            // range (`a + b < 2m`; `a + m - b` in `1 .. 2m-1`), so a single
-            // conditional `- m` reduces them (a division-free correction).
-            // Subtraction forms `a + m - b` first to stay non-negative (a bare
-            // `a - b` would underflow).
-            mlir::Value s;
-            if (kind == ada::AdaBinaryOp::Plus)
-              s = rewriter.create<arith::AddIOp>(loc, a, b);
-            else
-              s = rewriter.create<arith::SubIOp>(
-                  loc, rewriter.create<arith::AddIOp>(loc, a, mc), b);
-            mlir::Value ge = rewriter.create<arith::CmpIOp>(
-                loc, arith::CmpIPredicate::uge, s, mc);
-            mlir::Value sub = rewriter.create<arith::SubIOp>(loc, s, mc);
-            r = rewriter.create<arith::SelectOp>(loc, ge, sub, s);
-          }
-          rewriter.replaceOpWithNewOp<arith::TruncIOp>(op, type, r);
-          return success();
-        }
+    // For any other modulus, +/-/* must be explicitly reduced; the width's
+    // wraparound is exact only at modulus == 2**width.
+    llvm::APInt m = modAttr.getValue();
+    unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
+
+    if (m.isPowerOf2() && m.logBase2() == w)
+      return std::nullopt; // width-based wraparound is already exact
+
+    if (m.isPowerOf2()) {
+      // Power-of-two modulus narrower than the width: mask the low k bits.
+      // Correct for +/-/* alike, since 2**w is a multiple of 2**k.
+      unsigned k = m.logBase2();
+      mlir::Value base;
+      switch (kind) {
+      case ada::AdaBinaryOp::Plus:
+        base = rewriter.create<arith::AddIOp>(loc, lhs, rhs);
+        break;
+      case ada::AdaBinaryOp::Minus:
+        base = rewriter.create<arith::SubIOp>(loc, lhs, rhs);
+        break;
+      default: // Mult
+        base = rewriter.create<arith::MulIOp>(loc, lhs, rhs);
+        break;
       }
+      mlir::Value mask =
+          constInt(rewriter, loc, type, llvm::APInt::getLowBitsSet(w, k));
+      rewriter.replaceOpWithNewOp<arith::AndIOp>(op, base, mask);
+      return success();
     }
 
+    // Non-binary modulus: compute in a doubled width so the width's own
+    // wraparound cannot contaminate the reduction, then truncate back.
+    //
+    // `2*w` is sufficient and safe: the representation width covers the
+    // modulus (`modulus <= 2**w`), so the largest intermediate
+    // `(m-1)**2 < 2**(2w)` fits exactly, and `m` (at most `w+1` signed
+    // bits) always zero-extends *up* to the wider type, never narrows.
+    unsigned ww = 2 * w;
+    mlir::Type wide = mlir::IntegerType::get(rewriter.getContext(), ww);
+    mlir::Value a = rewriter.create<arith::ExtUIOp>(loc, wide, lhs);
+    mlir::Value b = rewriter.create<arith::ExtUIOp>(loc, wide, rhs);
+    mlir::Value mc = constInt(rewriter, loc, wide, m.zext(ww));
+    mlir::Value r;
+    if (kind == ada::AdaBinaryOp::Mult) {
+      // The product reaches `(m-1)**2`, so a full `urem` is required.
+      mlir::Value t = rewriter.create<arith::MulIOp>(loc, a, b);
+      r = rewriter.create<arith::RemUIOp>(loc, t, mc);
+    } else {
+      // Addition and subtraction land at most one modulus outside the
+      // range (`a + b < 2m`; `a + m - b` in `1 .. 2m-1`), so a single
+      // conditional `- m` reduces them (a division-free correction).
+      // Subtraction forms `a + m - b` first to stay non-negative (a bare
+      // `a - b` would underflow).
+      mlir::Value s;
+      if (kind == ada::AdaBinaryOp::Plus)
+        s = rewriter.create<arith::AddIOp>(loc, a, b);
+      else
+        s = rewriter.create<arith::SubIOp>(
+            loc, rewriter.create<arith::AddIOp>(loc, a, mc), b);
+      mlir::Value ge =
+          rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::uge, s, mc);
+      mlir::Value sub = rewriter.create<arith::SubIOp>(loc, s, mc);
+      r = rewriter.create<arith::SelectOp>(loc, ge, sub, s);
+    }
+    rewriter.replaceOpWithNewOp<arith::TruncIOp>(op, type, r);
+    return success();
+  }
+
+  // Plain lowering for ops needing no check or reduction: the arithmetic
+  // operators on integers or floats, and the bitwise Boolean operators on i1.
+  void lowerPlainArithmetic(ada::BinOp op, OpAdaptor adaptor,
+                            ConversionPatternRewriter &rewriter) const {
+    bool isInt = mlir::isa<mlir::IntegerType>(adaptor.getLhs().getType());
     auto lower = [&](bool intType, auto iOp, auto fOp) {
       if (intType)
         rewriter.replaceOpWithNewOp<decltype(iOp)>(op, adaptor.getOperands());
       else
         rewriter.replaceOpWithNewOp<decltype(fOp)>(op, adaptor.getOperands());
     };
-    switch (kind) {
+    switch (op.getKind()) {
     case ada::AdaBinaryOp::Plus:
       lower(isInt, arith::AddIOp{}, arith::AddFOp{});
       break;
@@ -728,7 +767,6 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
       rewriter.replaceOpWithNewOp<arith::XOrIOp>(op, adaptor.getOperands());
       break;
     }
-    return success();
   }
 };
 
