@@ -105,6 +105,20 @@ static cl::opt<unsigned> optLevel("O", cl::Prefix, cl::init(0),
 static cl::opt<bool> debugInfo("g", cl::desc("Generate debug information"),
                                cl::init(false), cl::cat(lalvmCategory));
 
+// Record the invocation in `llvm.commandline` metadata (emitted into the
+// object's `.GCC.command.line` section). Off by default: it embeds input/output
+// paths, hurting build reproducibility. The joined command line is captured in
+// `main`.
+//
+// @todo A DWARF variant would record into the compile unit's `flags` field,
+//       which MLIR's `DICompileUnitAttr` does not expose (only `producer`), so
+//       it is blocked on an upstream MLIR change.
+static cl::opt<bool>
+    recordCommandLine("record-command-line",
+                      cl::desc("Record the invocation in llvm.commandline"),
+                      cl::init(false), cl::cat(lalvmCategory));
+static std::string commandLine;
+
 /// Register the standard codegen flags (-mcpu, -mattr, --relocation-model,
 /// --code-model, ...) shared with llc; consumed when building the target
 /// machine for --emit=obj/asm.
@@ -305,6 +319,15 @@ static int emitLLVMIR(mlir::MLIRContext &context,
       llvmContext, llvm::MDString::get(
                        llvmContext, "lalvm (LLVM " LLVM_VERSION_STRING ")")));
 
+  // Under -record-command-line, stamp the invocation into `llvm.commandline`
+  // (see the flag). The backend lowers it to the object's command-line section.
+  if (recordCommandLine) {
+    llvm::NamedMDNode *cmd =
+        llvmModule->getOrInsertNamedMetadata("llvm.commandline");
+    cmd->addOperand(llvm::MDNode::get(
+        llvmContext, llvm::MDString::get(llvmContext, commandLine)));
+  }
+
   if (debugInfo) {
     // Request DWARF 5 so the backend emits the modern `.debug_names`
     // accelerator table instead of the deprecated GNU `.debug_pubnames`
@@ -376,6 +399,12 @@ int main(int argc, char **argv) {
   // own options.
   cl::HideUnrelatedOptions(lalvmCategory);
   cl::ParseCommandLineOptions(argc, argv, "Ada to LLVM Compiler\n");
+
+  // Join the raw invocation for `--record-command-line` (cl leaves argv
+  // intact); emitted into `llvm.commandline` in `emitLLVMIR`.
+  if (recordCommandLine)
+    for (int i = 0; i < argc; ++i)
+      commandLine += (i ? " " : "") + std::string(argv[i]);
 
   if (emitAction == Action::None) {
     llvm::errs()
