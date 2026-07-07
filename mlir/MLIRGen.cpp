@@ -1279,7 +1279,7 @@ private:
   mlir::Value mlirGenEnumLit(ada_node &enumLitDecl, ada_node &useExpr) {
     auto location = loc(useExpr);
 
-    // Get the literal's canonical name for the NameLoc.
+    // Get the literal's canonical name to look up its representation value.
     ada_node lit_name_node;
     if (!ada_enum_literal_decl_f_name(&enumLitDecl, &lit_name_node) ||
         ada_node_is_null(&lit_name_node)) {
@@ -1319,7 +1319,9 @@ private:
     auto typedType = qualTypeFor(typeOp, mlirType);
     auto constOp =
         builder.create<mlir::ada::ConstantOp>(location, typedType, attr);
-    setAdaNameLoc(mlir::Value(constOp), builder.getStringAttr(litName));
+    // No NameLoc: an enum literal is not a named object, and naming the
+    // constant would shadow the debug name of a variable initialized from it
+    // (after mem2reg promotes the variable to this constant).
     return constOp.getResult();
   }
 
