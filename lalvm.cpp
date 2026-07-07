@@ -453,8 +453,15 @@ int main(int argc, char **argv) {
   case Action::EmitMLIR: {
     if (int error = applyMLIRPasses(module))
       return error;
+    // Under -g, show the debug info in the dump (source locations and local
+    // scope), so the NameLocs and DI markers are visible without the explicit
+    // --mlir-print-debuginfo / --mlir-print-local-scope flags.
+    mlir::OpPrintingFlags flags;
+    if (debugInfo)
+      flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/false)
+          .useLocalScope();
     return writeTextOutput([&](llvm::raw_ostream &os) {
-      module->print(os);
+      module->print(os, flags);
       os << "\n";
     });
   }
