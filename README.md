@@ -61,11 +61,11 @@ mode, assertions enabled).
 ## Usage
 
 ```
-lalvm --emit=<action> [--x=<input-type>] [-o <file>] <input-file>
+lalvm [--emit=<action>] [--x=<input-type>] [-o <file>] <input-file>
 ```
 
 Options:
-- `--emit {ast,mlir,llvm,obj,asm}`: output format (required)
+- `--emit {ast,mlir,llvm,obj,asm}`: output format (default: `obj`)
 - `--x {Ada,mlir}`: input type (default: Ada; inferred from `.mlir` extension)
 - `-o <file>`: output file (default: stdout for text dumps; the input basename
   with a `.o`/`.s` extension for `obj`/`asm`)

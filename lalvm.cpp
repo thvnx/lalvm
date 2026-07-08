@@ -74,17 +74,17 @@ static cl::opt<enum InputType> inputType(
     cl::cat(lalvmCategory));
 
 namespace {
-enum Action { None, EmitAST, EmitMLIR, EmitLLVMIR, EmitObject, EmitAssembly };
+enum Action { EmitAST, EmitMLIR, EmitLLVMIR, EmitObject, EmitAssembly };
 } // namespace
 
 static cl::opt<enum Action> emitAction(
-    "emit", cl::desc("Select the kind of output desired"),
+    "emit", cl::desc("Output format (default: obj)"),
     cl::values(clEnumValN(EmitAST, "ast", "output the AST dump")),
     cl::values(clEnumValN(EmitMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(EmitLLVMIR, "llvm", "output the LLVM IR dump")),
     cl::values(clEnumValN(EmitObject, "obj", "output an object file")),
     cl::values(clEnumValN(EmitAssembly, "asm", "output target assembly")),
-    cl::cat(lalvmCategory));
+    cl::init(EmitObject), cl::cat(lalvmCategory));
 
 static cl::opt<std::string> outputFilename("o",
                                            cl::desc("Output filename "
@@ -414,12 +414,6 @@ int main(int argc, char **argv) {
   if (recordCommandLine)
     for (int i = 0; i < argc; ++i)
       commandLine += (i ? " " : "") + std::string(argv[i]);
-
-  if (emitAction == Action::None) {
-    llvm::errs()
-        << "No action specified (parsing only?), use --emit=<action>\n";
-    return 1;
-  }
 
   bool isMLIRInput = inputType == InputType::MLIR ||
                      llvm::StringRef(inputFilename).ends_with(".mlir");
