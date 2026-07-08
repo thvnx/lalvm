@@ -447,6 +447,12 @@ private:
     case ada_begin_block:
     case ada_decl_block:
       return mlirGenBlock(node, {});
+    case ada_with_clause:
+    case ada_use_package_clause:
+    case ada_use_type_clause:
+      // Context clauses (@rm{10-1-2}): resolved by libadalang, no codegen.
+      // Return without descending, so their names do not warn as unhandled.
+      return mlir::success();
     case ada_compilation_unit:
     case ada_ada_node_list:
     case ada_library_item:
