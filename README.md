@@ -61,7 +61,7 @@ mode, assertions enabled).
 ## Usage
 
 ```
-lalvm [--emit=<action>] [--x=<input-type>] [-o <file>] <input-file>
+lalvm [--emit=<action>] [-P <project.gpr>] [-o <file>] <input-file>
 ```
 
 Options:
@@ -69,8 +69,12 @@ Options:
 - `--x {Ada,mlir}`: input type (default: Ada; inferred from `.mlir` extension)
 - `-o <file>`: output file (default: stdout for text dumps; the input basename
   with a `.o`/`.s` extension for `obj`/`asm`)
+- `-P <project.gpr>` (alias `--project`): load a GPR project so `with`ed units
+  resolve through its unit provider (otherwise the single file is parsed alone)
 - `-O {0,1}`: optimization level (default `0`; `1` runs `mem2reg`)
 - `-g`: generate DWARF debug info (off by default)
+- `--record-command-line`: record the invocation in `llvm.commandline` (off by
+  default; it embeds input/output paths)
 - standard LLVM codegen flags (`-mcpu`, `-mattr`, `--relocation-model`, ...)
   apply to `--emit=obj`/`asm`
 
