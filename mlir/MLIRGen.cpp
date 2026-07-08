@@ -649,6 +649,10 @@ private:
       }
       break;
     default:
+      // @todo Support the short-circuit forms `and then` / `or else`
+      //       (@rm{4-5-1}): unlike `and`/`or`/`xor` they need short-circuit
+      //       evaluation (a CFG branch), so they cannot lower as an eager
+      //       BinOp here.
       mlir::emitError(callerLoc, "invalid binary operator '")
           << libadalang::image(&op) << "'";
       return nullptr;
@@ -1273,15 +1277,9 @@ private:
   /// Libadalang is only consulted for the literal name and the enclosing type.
   ///
   /// @param enumLitDecl `EnumLiteralDecl` for the literal; supplies the
-  ///                    canonical name used for the `NameLoc` and for the
-  ///                    lookup in the `ada.type` op metadata.
+  ///                    canonical name used to look up the rep value in the
+  ///                    `ada.type` op metadata.
   /// @param useExpr     Use-site expression node; provides the source location.
-  ///
-  /// @todo Support equality and relational operators on enumeration values.
-  /// @todo Support enumeration attributes ('Pos, 'Val, 'Succ, 'Pred, 'Image,
-  ///       'Value).
-  /// @todo Support the short-circuit Boolean operators `and then` / `or else`
-  ///       (`and`/`or`/`xor`/`not` are done).
   mlir::Value mlirGenEnumLit(ada_node &enumLitDecl, ada_node &useExpr) {
     auto location = loc(useExpr);
 
@@ -1508,6 +1506,8 @@ private:
     ada_node attrId;
     ada_attribute_ref_f_attribute(&expr, &attrId);
     std::string name = libadalang::getName(&attrId, /*canonical=*/true);
+    // @todo Support the other scalar/enumeration attributes (@rm{3-5-5}):
+    //       'Pos, 'Val, 'Succ, 'Pred, 'Image, 'Value.
     if (name != "first" && name != "last") {
       mlir::emitError(location, "unsupported attribute '") << name << "'";
       return nullptr;
