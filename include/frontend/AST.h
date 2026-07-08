@@ -62,11 +62,15 @@ class AdaAST {
   ada_analysis_context context = nullptr;
   ada_analysis_unit unit = nullptr;
   ada_node root = {};
+  // Freed after the context, whose unit provider references it.
+  ada_gpr_project project = nullptr;
   bool valid = true;
 
 public:
-  AdaAST(llvm::StringRef inputFilename);
-  AdaAST(const AdaAST &);
+  /// With a `projectFile`, resolve units via its GPR provider; otherwise parse
+  /// the single file from its buffer.
+  AdaAST(llvm::StringRef inputFilename, llvm::StringRef projectFile = {});
+  AdaAST(const AdaAST &) = delete; // raw handles; a copy would double-free
   ~AdaAST();
 
   ada_analysis_unit &getAnalysisUnit() { return unit; }

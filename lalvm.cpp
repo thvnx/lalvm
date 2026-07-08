@@ -93,6 +93,15 @@ static cl::opt<std::string> outputFilename("o",
                                            cl::init("-"),
                                            cl::cat(lalvmCategory));
 
+// GPR project: resolve `with`ed units / separate specs via its unit provider.
+// Empty = single file from buffer.
+static cl::opt<std::string>
+    projectFile("P", cl::desc("GPR project file for unit resolution"),
+                cl::value_desc("project.gpr"), cl::init(""),
+                cl::cat(lalvmCategory));
+static cl::alias projectFileAlias("project", cl::desc("Alias for -P"),
+                                  cl::aliasopt(projectFile));
+
 // Optimization level. -O1 enables mem2reg (promoting locals to SSA); -O0, the
 // default, leaves locals in memory so they stay breakable and inspectable.
 static cl::opt<unsigned> optLevel("O", cl::Prefix, cl::init(0),
@@ -421,7 +430,7 @@ int main(int argc, char **argv) {
       llvm::errs() << "Can't dump a Libadalang AST when the input is MLIR\n";
       return 1;
     }
-    libadalang::AdaAST ast(inputFilename);
+    libadalang::AdaAST ast(inputFilename, projectFile);
     if (ast.emitParserDiagnostics())
       return 1;
     if (!ast.isValid())
@@ -442,7 +451,7 @@ int main(int argc, char **argv) {
     if (int error = loadMLIRFile(context, module))
       return error;
   } else {
-    libadalang::AdaAST ast(inputFilename);
+    libadalang::AdaAST ast(inputFilename, projectFile);
     if (ast.emitParserDiagnostics())
       return 1;
     if (int error = loadMLIR(ast, context, module))

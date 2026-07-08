@@ -87,44 +87,83 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
   }
 }
 
-libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename)
+libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
+                           llvm::StringRef projectFile)
     : filename(inputFilename) {
+  if (!projectFile.empty()) {
+    // Resolve units through the GPR project's provider (`with`ed units,
+    // separate specs).
+    ada_gpr_options opts = ada_gpr_options_create();
+    std::string projPath(projectFile);
+    ada_gpr_options_add_switch(opts, ADA_GPR_OPTION_P, projPath.c_str(),
+                               nullptr,
+                               /*override=*/0);
+    // @todo Scenario variables (-X, ADA_GPR_OPTION_X) are not wired yet.
+    ada_string_array_ptr errors = nullptr;
+    ada_gpr_project_load(opts, /*ada_only=*/1, &project, &errors);
+    // Read the exception now: the next libadalang call (options_free) clears
+    // it.
+    bool loadFailed = print_exception(/*or_silent=*/true);
+    ada_gpr_options_free(opts);
+    if (errors) {
+      for (int i = 0; i < errors->length; ++i)
+        llvm::errs() << "project error: " << errors->c_ptr[i] << "\n";
+      ada_free_string_array(errors);
+    }
+    if (loadFailed || !project) {
+      valid = false;
+      return;
+    }
+
+    context = ada_allocate_analysis_context();
+    abort_on_exception();
+    ada_gpr_project_initialize_context(project, context, /*project=*/nullptr,
+                                       /*charset=*/nullptr,
+                                       /*event_handler=*/nullptr,
+                                       /*with_trivia=*/1, /*tab_stop=*/8);
+    abort_on_exception();
+
+    std::string file(filename);
+    unit = ada_get_analysis_unit_from_file(context, file.c_str(),
+                                           /*charset=*/nullptr, /*reparse=*/0,
+                                           ada_default_grammar_rule);
+    abort_on_exception();
+    ada_unit_root(unit, &root);
+    return;
+  }
+
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(filename);
   if (std::error_code ec = fileOrErr.getError()) {
     valid = false;
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";
-  } else {
-    auto buffer = fileOrErr.get()->getBuffer();
-
-    context = ada_allocate_analysis_context();
-    abort_on_exception();
-
-    ada_initialize_analysis_context(context, nullptr, nullptr, nullptr, nullptr,
-                                    1, 8);
-    abort_on_exception();
-
-    unit = ada_get_analysis_unit_from_buffer(context, filename.data(), nullptr,
-                                             buffer.data(), buffer.size(),
-                                             ada_default_grammar_rule);
-    abort_on_exception();
-
-    ada_unit_root(unit, &root);
+    return;
   }
-}
+  auto buffer = fileOrErr.get()->getBuffer();
 
-libadalang::AdaAST::AdaAST(const AdaAST &ast)
-    : filename(ast.filename), context(ast.context), unit(ast.unit),
-      root(ast.root), valid(ast.valid) {
-  if (context)
-    ada_context_incref(context);
+  context = ada_allocate_analysis_context();
+  abort_on_exception();
+
+  ada_initialize_analysis_context(context, nullptr, nullptr, nullptr, nullptr,
+                                  1, 8);
+  abort_on_exception();
+
+  unit = ada_get_analysis_unit_from_buffer(context, filename.data(), nullptr,
+                                           buffer.data(), buffer.size(),
+                                           ada_default_grammar_rule);
+  abort_on_exception();
+
+  ada_unit_root(unit, &root);
 }
 
 libadalang::AdaAST::~AdaAST() {
+  // Decref the context first: its unit provider references the project.
   if (context)
     ada_context_decref(context);
+  if (project)
+    ada_gpr_project_free(project);
   // abort_on_exception() intentionally omitted: destructors must not throw or
-  // call exit(), and a failure in decref is unrecoverable anyway.
+  // call exit(), and a failure here is unrecoverable anyway.
 }
 
 void libadalang::dump(ada_node *node, llvm::raw_ostream &os) {
