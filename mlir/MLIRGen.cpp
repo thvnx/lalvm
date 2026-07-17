@@ -2152,6 +2152,30 @@ private:
     return mlir::success();
   }
 
+  /// If `typeDecl`'s scalar type has a `Default_Value` aspect (@rm{3-5}), set
+  /// `out` to its expression and return true. `p_get_aspect` resolves the
+  /// effective value through subtypes and derived-type overrides.
+  bool defaultValueExpr(ada_node &typeDecl, ada_node &out) {
+    if (ada_node_is_null(&typeDecl))
+      return false;
+    ada_analysis_context ctx = ada_unit_context(ada_node_unit(&typeDecl));
+    llvm::StringRef aspectName = "default_value";
+    ada_text name;
+    ada_text_from_utf8(aspectName.data(), aspectName.size(), &name);
+    ada_symbol_type sym;
+    bool ok = ada_context_symbol(ctx, &name, &sym);
+    ada_destroy_text(&name);
+    if (!ok)
+      return false;
+    ada_internal_aspect aspect;
+    if (!ada_basic_decl_p_get_aspect(&typeDecl, &sym, /*previous_parts_only=*/0,
+                                     /*imprecise_fallback=*/0, &aspect) ||
+        !aspect.exists || ada_node_is_null(&aspect.value))
+      return false;
+    out = aspect.value;
+    return true;
+  }
+
   /// Emit an object declaration (@rm{3-3-1}).
   ///
   /// Syntax:
@@ -2255,6 +2279,15 @@ private:
         setAdaNameLoc(init, nameAttr, loc(id));
         declare(id, init);
       } else {
+        // No explicit initializer: default-initialize from the type's
+        // Default_Value aspect (@rm{3-5}) if it has one. (A constant object
+        // instead requires an initializer, handled above.)
+        if (!init)
+          if (ada_node dv; defaultValueExpr(typeDecl, dv)) {
+            init = visit_expr(dv);
+            if (!init)
+              return mlir::failure();
+          }
         auto allocaOp =
             builder.create<mlir::ada::AllocaOp>(loc(id), memrefType);
         setAdaNameLoc(mlir::Value(allocaOp), nameAttr);
