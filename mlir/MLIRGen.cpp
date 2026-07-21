@@ -2773,15 +2773,17 @@ private:
   /// Emit a loop statement (@rm{5-5}) as an unstructured CFG. `while C` gets a
   /// header that tests C and branches to the body or the merge; a bare `loop`
   /// has none, its body branching to itself so `exit` is the only way out. The
-  /// merge block and source name are pushed on `loopStack` for `exit`.
-  /// `for` loops are not yet supported.
+  /// merge block and source name are pushed on `loopStack` for `exit`. A `for`
+  /// loop is delegated to `mlirGenForLoop`.
   mlir::LogicalResult mlirGenLoop(ada_node &loopNode, llvm::StringRef name) {
     ada_node spec;
     ada_base_loop_stmt_f_spec(&loopNode, &spec);
+    if (!ada_node_is_null(&spec) && ada_node_kind(&spec) == ada_for_loop_spec)
+      return mlirGenForLoop(loopNode, spec, name);
     bool isWhile =
         !ada_node_is_null(&spec) && ada_node_kind(&spec) == ada_while_loop_spec;
     if (!ada_node_is_null(&spec) && !isWhile) {
-      mlir::emitError(loc(loopNode), "`for` loops are not yet supported");
+      mlir::emitError(loc(loopNode), "unsupported loop specification");
       return mlir::failure();
     }
 
@@ -2837,6 +2839,208 @@ private:
     return mlir::success();
   }
 
+  /// Emit a `for` loop over an explicit discrete range (@rm{5-5}), forward or
+  /// reverse. The loop parameter is a read-only local (an `alloca` bound in
+  /// `declValues`, promoted to a phi by mem2reg). The CFG tests for the last
+  /// iteration before stepping, so the induction step never crosses the bound
+  /// and needs no `Overflow_Check`; an empty range runs zero iterations.
+  /// `exit` uses `loopStack`, as for the other loop forms.
+  ///
+  /// @todo Support the currently diagnosed forms: container iteration, iterator
+  ///       filters, a range given by a type or subtype name, and non-integer
+  ///       (enumeration or real) ranges.
+  mlir::LogicalResult mlirGenForLoop(ada_node &loopNode, ada_node &spec,
+                                     llvm::StringRef name) {
+    // `for ... of` container iteration is deferred.
+    ada_node loopType;
+    ada_for_loop_spec_f_loop_type(&spec, &loopType);
+    if (ada_node_kind(&loopType) != ada_iter_type_in) {
+      mlir::emitError(loc(loopNode),
+                      "`for ... of` loops are not yet supported");
+      return mlir::failure();
+    }
+
+    // Iterator filters (`when`) are deferred.
+    ada_node filter;
+    ada_for_loop_spec_f_iter_filter(&spec, &filter);
+    if (!ada_node_is_null(&filter)) {
+      mlir::emitError(loc(loopNode),
+                      "`for` loop iterator filters are not yet supported");
+      return mlir::failure();
+    }
+
+    // Only an explicit `L .. H` range is supported; a range given by a type or
+    // subtype name or a Range attribute (needing First and Last) is diagnosed.
+    ada_node iterExpr;
+    ada_for_loop_spec_f_iter_expr(&spec, &iterExpr);
+    ada_node rangeOp{};
+    if (ada_node_kind(&iterExpr) == ada_bin_op) {
+      ada_node op;
+      ada_bin_op_f_op(&iterExpr, &op);
+      if (ada_node_kind(&op) == ada_op_double_dot)
+        rangeOp = iterExpr;
+    }
+    if (ada_node_is_null(&rangeOp)) {
+      mlir::emitError(
+          loc(loopNode),
+          "`for` loop over a type or subtype name is not yet supported");
+      return mlir::failure();
+    }
+
+    ada_node reverseNode;
+    ada_for_loop_spec_f_has_reverse(&spec, &reverseNode);
+    bool isReverse = ada_node_kind(&reverseNode) == ada_reverse_present;
+
+    // Loop parameter and its subtype (@rm{5-5}(6)): from an explicit type mark
+    // when present, else the range's type.
+    ada_node varDecl;
+    ada_for_loop_spec_f_var_decl(&spec, &varDecl);
+    ada_node id;
+    ada_for_loop_var_decl_f_id(&varDecl, &id);
+    ada_node idType;
+    ada_for_loop_var_decl_f_id_type(&varDecl, &idType);
+    ada_node typeDecl{};
+    if (!ada_node_is_null(&idType))
+      ada_type_expr_p_designated_type_decl(&idType, &typeDecl);
+    else
+      ada_expr_p_expression_type(&iterExpr, &typeDecl);
+    if (ada_node_is_null(&typeDecl)) {
+      mlir::emitError(loc(loopNode),
+                      "failed to resolve `for` loop parameter type");
+      return mlir::failure();
+    }
+    mlir::ada::QualType paramType = getAdaQualType(typeDecl, loc(loopNode));
+    if (!paramType)
+      return mlir::failure();
+
+    // Reject non-integer ranges: an enumeration or real range would step and
+    // compare on the representation (wrong for a non-contiguous enumeration).
+    // Integer and modular types carry an `IntegerTypeInfoAttr`; others do not.
+    if (mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(typeDecl, loc(loopNode)))
+      if (!mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
+              typeOp.getTypeInfoAttr())) {
+        mlir::emitError(loc(loopNode),
+                        "`for` loop over a non-integer range is not yet "
+                        "supported");
+        return mlir::failure();
+      }
+
+    // Boolean result type for the range guard and the pre-step bound test.
+    ada_node boolDecl = resolveBooleanTypeDecl(loopNode, loc(loopNode));
+    if (ada_node_is_null(&boolDecl))
+      return mlir::failure();
+    mlir::ada::QualType boolType = getAdaQualType(boolDecl, loc(loopNode));
+    if (!boolType)
+      return mlir::failure();
+
+    // Compare two induction values, unwrapped to the `i1` a `cf` branch needs.
+    auto cmpI1 = [&](mlir::ada::AdaRelationalOp kind, mlir::Value a,
+                     mlir::Value b) -> mlir::Value {
+      return unwrap(
+          builder.create<mlir::ada::CmpOp>(loc(loopNode), boolType, kind, a, b),
+          loc(loopNode));
+    };
+
+    // Blocks in source order: entry -> init -> body -> step -> merge.
+    mlir::Block *entryBlock = builder.getInsertionBlock();
+    mlir::Block *mergeBlock =
+        entryBlock->splitBlock(builder.getInsertionPoint());
+    mlir::Block *stepBlock = builder.createBlock(mergeBlock);
+    mlir::Block *bodyBlock = builder.createBlock(stepBlock);
+    mlir::Block *initBlock = builder.createBlock(bodyBlock);
+
+    // Entry: evaluate the bounds, allocate the loop parameter, and guard the
+    // empty range.
+    builder.setInsertionPointToEnd(entryBlock);
+    ada_node lowNode, highNode;
+    ada_bin_op_f_left(&rangeOp, &lowNode);
+    ada_bin_op_f_right(&rangeOp, &highNode);
+
+    // A statically null range (`lo > hi`) provably runs zero iterations; warn.
+    if (libadalang::isStaticExpr(lowNode) && libadalang::isStaticExpr(highNode))
+      if (auto staticLo = libadalang::evalExprAsInt(lowNode))
+        if (auto staticHi = libadalang::evalExprAsInt(highNode)) {
+          unsigned width =
+              std::max(staticLo->getBitWidth(), staticHi->getBitWidth()) + 1;
+          if (staticLo->sext(width).sgt(staticHi->sext(width)))
+            mlir::emitWarning(loc(loopNode),
+                              "loop range is null, loop will not execute");
+        }
+
+    mlir::Value lo = visit_expr(lowNode);
+    if (!lo)
+      return mlir::failure();
+    mlir::Value hi = visit_expr(highNode);
+    if (!hi)
+      return mlir::failure();
+    lo = coerce(lo, paramType, loc(lowNode));
+    hi = coerce(hi, paramType, loc(highNode));
+
+    auto nameAttr = getNameAttr(id);
+    mlir::Value paramPtr = builder.create<mlir::ada::AllocaOp>(
+        loc(id), mlir::MemRefType::get({}, paramType));
+    setAdaNameLoc(paramPtr, nameAttr);
+    declare(id, paramPtr);
+
+    mlir::Value guardI1 = cmpI1(mlir::ada::AdaRelationalOp::Lte, lo, hi);
+    if (!guardI1)
+      return mlir::failure();
+    builder.create<mlir::cf::CondBranchOp>(loc(loopNode), guardI1, initBlock,
+                                           mergeBlock);
+
+    // Init: set the parameter to `hi` (reverse) or `lo`, then enter the body.
+    builder.setInsertionPointToEnd(initBlock);
+    auto initStore = builder.create<mlir::memref::StoreOp>(
+        loc(id), isReverse ? hi : lo, paramPtr);
+    setAdaNameLoc(initStore, nameAttr);
+    builder.create<mlir::cf::BranchOp>(loc(loopNode), bodyBlock);
+
+    // Body, with the loop on `loopStack` for `exit`. Its fall-through runs the
+    // pre-step bound test: exit at the far bound, else step.
+    builder.setInsertionPointToEnd(bodyBlock);
+    ada_node body;
+    ada_base_loop_stmt_f_stmts(&loopNode, &body);
+    loopStack.push_back({mergeBlock, name.str()});
+    auto loopGuard = llvm::make_scope_exit([&] { loopStack.pop_back(); });
+    if (mlir::failed(visit(body)))
+      return mlir::failure();
+
+    if (!currentBlockTerminated()) {
+      mlir::Value paramVal = builder.create<mlir::memref::LoadOp>(
+          loc(loopNode), paramType, paramPtr);
+      mlir::Value atEndI1 =
+          cmpI1(mlir::ada::AdaRelationalOp::Eq, paramVal, isReverse ? lo : hi);
+      if (!atEndI1)
+        return mlir::failure();
+      builder.create<mlir::cf::CondBranchOp>(loc(loopNode), atEndI1, mergeBlock,
+                                             stepBlock);
+
+      // Step: add or subtract 1 (unchecked; the bound test above rules out
+      // overflow), then back to the body. `paramVal` dominates the step block
+      // (its only predecessor is the bound test), so no reload is needed.
+      builder.setInsertionPointToEnd(stepBlock);
+      auto intType = mlir::cast<mlir::IntegerType>(paramType.getMlirType());
+      mlir::Value one = emitIntConstant(llvm::APInt(intType.getWidth(), 1),
+                                        paramType, loc(loopNode));
+      mlir::Value next = builder.create<mlir::ada::BinOp>(
+          loc(loopNode),
+          isReverse ? mlir::ada::AdaBinaryOp::Minus
+                    : mlir::ada::AdaBinaryOp::Plus,
+          paramVal, one, mlir::ada::AdaChecksAttr{});
+      auto stepStore =
+          builder.create<mlir::memref::StoreOp>(loc(loopNode), next, paramPtr);
+      setAdaNameLoc(stepStore, nameAttr);
+      builder.create<mlir::cf::BranchOp>(loc(loopNode), bodyBlock);
+    } else {
+      // The body never falls through (e.g. it always returns): no step or
+      // back-edge is reachable.
+      stepBlock->erase();
+    }
+
+    builder.setInsertionPointToEnd(mergeBlock);
+    return mlir::success();
+  }
+
   /// Emit an `exit` statement (@rm{5-7}): branch to the target loop's merge,
   /// found on `loopStack` (innermost, or by name for `exit Loop_Name`). `exit
   /// when C` branches to the merge when C holds, else continues the body.
@@ -2888,6 +3092,19 @@ private:
     return mlir::success();
   }
 
+  /// Resolve the Boolean type declaration in scope of `node` via `p_bool_type`
+  /// (the carrier for synthesized Booleans and comparison results). Emits a
+  /// diagnostic and returns a null node on failure.
+  ada_node resolveBooleanTypeDecl(ada_node &node, mlir::Location location) {
+    ada_node bool_decl;
+    if (!ada_ada_node_p_bool_type(&node, &bool_decl) ||
+        ada_node_is_null(&bool_decl)) {
+      mlir::emitError(location, "failed to resolve Boolean type");
+      return {};
+    }
+    return bool_decl;
+  }
+
   /// Synthesize an `ada.constant` for Boolean `True`. The Boolean type is
   /// resolved with `p_bool_type`; the literal's value is read from the
   /// `enum_info` metadata on the resolved `ada.type` (`enumRep`), keeping the
@@ -2898,12 +3115,9 @@ private:
   /// @param location     MLIR location for the constant and diagnostics.
   mlir::Value synthesizeBooleanTrue(ada_node &context_node,
                                     mlir::Location location) {
-    ada_node bool_decl;
-    if (!ada_ada_node_p_bool_type(&context_node, &bool_decl) ||
-        ada_node_is_null(&bool_decl)) {
-      mlir::emitError(location, "failed to resolve Boolean type");
+    ada_node bool_decl = resolveBooleanTypeDecl(context_node, location);
+    if (ada_node_is_null(&bool_decl))
       return nullptr;
-    }
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(bool_decl, location);
     if (!typeOp)
       return nullptr;
@@ -3119,6 +3333,18 @@ private:
 
     if (ada_node_kind(&dest_node) != ada_identifier) {
       mlir::emitError(loc(assign_stmt), "unsupported assignment destination");
+      return mlir::failure();
+    }
+
+    // A loop parameter is a constant view (@rm{5-5}(6)): reject assignment to
+    // it, even though it is backed by a mutable `alloca`.
+    ada_node ref_decl;
+    if (ada_name_p_referenced_decl(&dest_node, /*imprecise_fallback=*/0,
+                                   &ref_decl) &&
+        !ada_node_is_null(&ref_decl) &&
+        ada_node_kind(&ref_decl) == ada_for_loop_var_decl) {
+      mlir::emitError(loc(dest_node),
+                      "assignment to loop parameter not allowed");
       return mlir::failure();
     }
 
@@ -3404,7 +3630,19 @@ private:
     ada_node type_name;
     if (!ada_base_type_decl_f_name(&canon_type, &type_name) ||
         ada_node_is_null(&type_name)) {
-      mlir::emitError(diagLoc, "failed to get name of type declaration");
+      // Only anonymous types (an inline `array (...) of ...`, an anonymous
+      // access type, ...) are nameless. Report the unsupported construct, not
+      // the internal name-lookup failure.
+      const char *what = "anonymous types";
+      ada_node_kind_enum kind = ada_node_kind(&canon_type);
+      if (kind == ada_concrete_type_decl || kind == ada_anonymous_type_decl) {
+        ada_node type_def;
+        if (ada_type_decl_f_type_def(&canon_type, &type_def) &&
+            !ada_node_is_null(&type_def) &&
+            ada_node_kind(&type_def) == ada_array_type_def)
+          what = "array types";
+      }
+      mlir::emitError(diagLoc, what) << " are not yet supported";
       return {};
     }
 
