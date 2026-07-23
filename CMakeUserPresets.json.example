@@ -11,12 +11,24 @@
         "CMAKE_CXX_COMPILER": "clang++-21",
         "LLVM_EXTERNAL_LIT": "/usr/bin/lit"
       }
+    },
+    {
+      "name": "coverage",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-cov",
+      "cacheVariables": {
+        "LALVM_COVERAGE": "ON"
+      }
     }
   ],
   "buildPresets": [
     {
       "name": "debug",
       "configurePreset": "debug"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
     }
   ],
   "testPresets": [

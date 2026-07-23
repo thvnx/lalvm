@@ -5,5 +5,7 @@ import sys
 config.lalvm_tools_dir = "@LLVM_RUNTIME_OUTPUT_INTDIR@"
 config.llvm_tools_dir = "@LLVM_TOOLS_BINARY_DIR@"
 config.lalvm_obj_root = "@CMAKE_CURRENT_BINARY_DIR@"
+config.lalvm_build_root = "@CMAKE_BINARY_DIR@"
+config.coverage = "@LALVM_COVERAGE@" == "ON"
 
 lit_config.load_config(config, "@CMAKE_CURRENT_SOURCE_DIR@/lit.cfg.py")

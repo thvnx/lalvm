@@ -292,6 +292,27 @@ pip install lit   # one-time
 cmake --build --preset=debug --target check-lalvm
 ```
 
+### Code coverage
+
+Coverage of lalvm's own sources from the test suite uses clang source-based
+coverage (`llvm-profdata`/`llvm-cov`). The `coverage` preset (included in the
+example user presets) builds an instrumented lalvm into a separate `build-cov/`
+tree, so the regular `build/` stays uninstrumented:
+
+```sh
+cmake --preset=coverage                                    # configure once
+cmake --build --preset=coverage --target check-lalvm       # run suite, fill build-cov/profiles/
+cmake --build --preset=coverage --target coverage-report   # merge and render
+```
+
+`coverage-report` prints per-file summaries (regions, functions, lines,
+branches) and writes line-level HTML reports, keeping the hand-written sources
+and the tablegen-generated files separate: `build-cov/coverage/html/` for the
+sources, `html-generated/` for the generated files. The prebuilt MLIR/LLVM
+libraries are not instrumented. Each
+`check-lalvm` run starts from a clean profile pool, so the report always
+reflects the last run.
+
 ## Documentation
 
 API documentation is generated with Doxygen (requires doxygen and graphviz):

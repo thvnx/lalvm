@@ -1,6 +1,7 @@
 # cmake artifacts
 CMakeUserPresets.json
 build/
+build-cov/
 
 # clangd LSP index
 .cache/

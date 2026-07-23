@@ -44,6 +44,14 @@ include_directories(${STANDALONE_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
+# Source-based code coverage (clang): `check-lalvm` then writes raw profiles
+# to <build>/profiles/, rendered by the `coverage-report` target (test/).
+option(LALVM_COVERAGE "Instrument for source-based code coverage" OFF)
+if(LALVM_COVERAGE)
+  add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+  add_link_options(-fprofile-instr-generate)
+endif()
+
 add_subdirectory(include)
 add_subdirectory(test)
 set(LIBADALANG_INCLUDE_DIR "" CACHE PATH "Directory containing libadalang.h (typically libadalang/build/src)")

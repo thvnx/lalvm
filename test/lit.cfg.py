@@ -27,3 +27,13 @@ config.substitutions.append(('%llc',
     os.path.join(config.llvm_tools_dir, 'llc')))
 config.substitutions.append(('%llvm-dwarfdump',
     os.path.join(config.llvm_tools_dir, 'llvm-dwarfdump')))
+
+# Coverage build: route each lalvm process's raw profile into a pool wiped
+# per suite run; %4m live-merges into 4 files instead of one per invocation.
+# Uninstrumented children (gnat tools, test binaries) ignore the variable.
+if config.coverage:
+    profile_dir = os.path.join(config.lalvm_build_root, 'profiles')
+    shutil.rmtree(profile_dir, ignore_errors=True)
+    os.makedirs(profile_dir)
+    config.environment['LLVM_PROFILE_FILE'] = os.path.join(
+        profile_dir, 'lalvm-%4m.profraw')
