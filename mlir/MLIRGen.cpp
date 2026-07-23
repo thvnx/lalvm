@@ -3489,6 +3489,10 @@ private:
     // Character types size to their kind, from the max *referenced* code point
     // (see charLiteralRep), not the type's true upper bound; reps are
     // non-negative.
+    // @todo i16/i32 are unreachable: no Libadalang route yields a code point
+    //       above Latin-1 (literal resolution, bracket `p_denoted_value`, and
+    //       UTF-8 lexing all fail). Referenced-literal sizing also diverges
+    //       from GNAT's fixed 16/32-bit wide characters.
     if (isChar) {
       if (maxRep <= 255)
         return builder.getIntegerType(8);
