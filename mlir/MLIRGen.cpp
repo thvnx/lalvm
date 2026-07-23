@@ -216,10 +216,9 @@ private:
   llvm::DenseMap<ada_base_node, mlir::Value> declValues;
 
   // Named numbers (@rm{3-3-2}): maps each DefiningName node to the
-  // pre-evaluated arith.constant (null when the expression could not be folded
-  // at declaration time, e.g. composite real expressions). Use-site resolution
-  // re-emits the constant in the concrete target type, or falls back to
-  // visit_static_expr via the NumberDecl recovered from the key.
+  // pre-evaluated arith.constant (null only when Libadalang fails to evaluate
+  // the static expression, diagnosed at the use site). Use-site resolution
+  // re-emits the constant in the concrete target type.
   llvm::DenseMap<ada_node, mlir::Value, AdaNodeDenseMapInfo> numberDecls;
 
   // Cache from type decl node to its emitted ada.type op. Populated by
@@ -1432,68 +1431,6 @@ private:
     return callOp->getResult(0);
   }
 
-  /// Emit a static expression at its use site, with the concrete MLIR type
-  /// resolved from `typeContext` (typically the identifier that names the
-  /// constant, so `p_expected_expression_type` on it returns the type
-  /// required by the surrounding context).
-  ///
-  /// Universal integer: evaluated in full via `eval_as_int`.
-  /// Universal real literal: parsed from source text via `evalRealLiteral`.
-  /// Universal real bin_op: emitted op-by-op recursively with a warning
-  ///   (libadalang has no `eval_as_real`; LLVM folds the resulting ops).
-  mlir::Value visit_static_expr(ada_node &staticExpr, ada_node &typeContext) {
-    ada_node exprType;
-    if (!ada_expr_p_expression_type(&staticExpr, &exprType) ||
-        ada_node_is_null(&exprType)) {
-      mlir::emitError(loc(staticExpr),
-                      "failed to resolve type of static expression");
-      return nullptr;
-    }
-    ada_node typeNameNode;
-    ada_base_type_decl_f_name(&exprType, &typeNameNode);
-    std::string universalType = ada_node_is_null(&typeNameNode)
-                                    ? ""
-                                    : libadalang::getName(&typeNameNode);
-
-    if (universalType == libadalang::kUniversalRealTypeName) {
-      switch (ada_node_kind(&staticExpr)) {
-      case ada_real_literal: {
-        auto value = evalRealLiteral(staticExpr);
-        if (!value)
-          return nullptr;
-        mlir::ada::QualType type =
-            resolveLiteralQualType(typeContext, loc(typeContext));
-        if (!type)
-          return nullptr;
-        return emitRealConstant(*value, type, loc(typeContext));
-      }
-      case ada_bin_op: {
-        mlir::emitWarning(loc(staticExpr),
-                          "libadalang has no `eval_as_real`; real expression "
-                          "emitted as-is and expected to be folded by LLVM");
-        ada_node left, right, op;
-        ada_bin_op_f_left(&staticExpr, &left);
-        ada_bin_op_f_right(&staticExpr, &right);
-        ada_bin_op_f_op(&staticExpr, &op);
-        mlir::Value lhs = visit_static_expr(left, typeContext);
-        if (!lhs)
-          return nullptr;
-        mlir::Value rhs = visit_static_expr(right, typeContext);
-        if (!rhs)
-          return nullptr;
-        return emitBinOp(op, lhs, rhs);
-      }
-      default:
-        mlir::emitError(loc(staticExpr), "unsupported real static expression");
-        return nullptr;
-      }
-    }
-
-    mlir::emitError(loc(staticExpr), "unsupported static expression type '")
-        << universalType << "'";
-    return nullptr;
-  }
-
   /// Emit a scalar attribute reference (@rm{3-5}): `'First`/`'Last` on an
   /// integer subtype prefix. The decision is per bound: a static bound is read
   /// straight from the subtype's `int_info` and emitted as a constant; a
@@ -1569,10 +1506,8 @@ private:
               return nullptr;
             return coerce(value, tgtType, exprLoc);
           }
-          ada_node keyNode = it->first, numberDecl, fallbackExpr;
-          ada_defining_name_p_basic_decl(&keyNode, &numberDecl);
-          ada_number_decl_f_expr(&numberDecl, &fallbackExpr);
-          return visit_static_expr(fallbackExpr, expr);
+          mlir::emitError(loc(expr), "failed to evaluate named number");
+          return nullptr;
         }
       }
       // Enum literal: emit as its integer representation. (Checked before the
@@ -1660,12 +1595,10 @@ private:
   ///       user-defined literals (Ada 2012).
   ///
   /// **Implementation Details**: Each `DefiningName` is entered in
-  /// `numberDecls` with an `ada.constant` SSA value at universal type when the
-  /// expression can be folded at declaration time (null otherwise). Use-site
-  /// resolution emits `ada.coerce` from the universal constant to the concrete
-  /// type required by context; for unevaluated cases it falls back to
-  /// `visit_static_expr`, recovering the expression via
-  /// `ada_defining_name_p_basic_decl` on the map key.
+  /// `numberDecls` with an `ada.constant` SSA value at universal type (null
+  /// only when Libadalang fails to evaluate the expression, diagnosed at the
+  /// use site). Use-site resolution emits `ada.coerce` from the universal
+  /// constant to the concrete type required by context.
   mlir::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
@@ -1693,9 +1626,8 @@ private:
       }
     }
 
-    // Eager evaluation for DWARF metadata; the expression node is also stashed
-    // for lazy use-site evaluation, which resolves the concrete type from
-    // context.
+    // Evaluate to a universal-typed constant; each use site coerces it to the
+    // concrete type its context requires.
     mlir::TypedAttr constAttr;
     mlir::ada::TypeOp typeOp;
     switch (kind) {
@@ -1711,8 +1643,20 @@ private:
       break;
     }
     case UniversalKind::Real: {
-      if (ada_node_kind(&expr) == ada_real_literal) {
-        auto value = evalRealLiteral(expr);
+      // Parentheses only group syntactically (@rm{4-4}): strip them to reach
+      // the literal node, as `visit_expr` does when emitting. This cannot
+      // reuse `visit_expr` itself, which resolves a concrete type from the
+      // use context; here the value must stay at universal type.
+      ada_node literal = expr;
+      while (ada_node_kind(&literal) == ada_paren_expr) {
+        ada_node inner;
+        if (ada_paren_expr_f_expr(&literal, &inner) == 0 ||
+            ada_node_is_null(&inner))
+          break;
+        literal = inner;
+      }
+      if (ada_node_kind(&literal) == ada_real_literal) {
+        auto value = evalRealLiteral(literal);
         if (value) {
           typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
           if (typeOp)
