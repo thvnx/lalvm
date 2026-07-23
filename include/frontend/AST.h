@@ -28,6 +28,9 @@ std::string getName(ada_node *node, bool canonical = true);
 
 ada_node parent(ada_node *node);
 
+/// Innermost subprogram body enclosing `node`, or null when there is none.
+ada_node enclosingSubpBody(ada_node *node);
+
 /// Convert an ada_text to a UTF-8 std::string, freeing the text afterwards.
 std::string textToString(ada_text &text);
 

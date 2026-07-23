@@ -2592,6 +2592,15 @@ private:
             &nameNode, /*imprecise_fallback=*/0, &defName) ||
         ada_node_is_null(&defName))
       return mlir::emitError(loc(goto_stmt), "unresolved goto label");
+    // A label in an enclosing body name-resolves from a nested subprogram
+    // (implicit declaration, @rm{5-1}), but @rm{5-8} forbids the transfer;
+    // reject it here or a dangling label block fails verification.
+    ada_node gotoBody = libadalang::enclosingSubpBody(&goto_stmt);
+    ada_node labelBody = libadalang::enclosingSubpBody(&defName);
+    if (ada_node_is_null(&gotoBody) || ada_node_is_null(&labelBody) ||
+        !ada_node_is_equivalent(&gotoBody, &labelBody))
+      return mlir::emitError(loc(goto_stmt),
+                             "goto label outside the current subprogram");
     builder.create<mlir::cf::BranchOp>(loc(goto_stmt),
                                        getOrCreateLabelBlock(defName));
     return mlir::success();

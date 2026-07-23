@@ -251,6 +251,13 @@ ada_node libadalang::parent(ada_node *node) {
   return par;
 }
 
+ada_node libadalang::enclosingSubpBody(ada_node *node) {
+  ada_node cur = parent(node);
+  while (!ada_node_is_null(&cur) && ada_node_kind(&cur) != ada_subp_body)
+    cur = parent(&cur);
+  return cur;
+}
+
 llvm::raw_ostream &libadalang::operator<<(llvm::raw_ostream &os,
                                           libadalang::NodePrinter np) {
   ada_text img;
