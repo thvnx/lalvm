@@ -417,9 +417,11 @@ void ConstantOp::print(mlir::OpAsmPrinter &p) {
 
 llvm::LogicalResult ConstantOp::verify() {
   auto typedResult = mlir::cast<ada::QualType>(getResult().getType());
-  auto typedAttr = mlir::dyn_cast<mlir::TypedAttr>(getValue());
-  if (!typedAttr)
-    return emitOpError() << "value attribute must be a typed attribute";
+  // Kind before type: the parser types any attribute it accepts to the
+  // result's machine type, so a `StringAttr` can arrive typed `i32`.
+  if (!mlir::isa<mlir::IntegerAttr, mlir::FloatAttr>(getValue()))
+    return emitOpError() << "value must be an integer or float attribute";
+  auto typedAttr = mlir::cast<mlir::TypedAttr>(getValue());
   if (typedAttr.getType() != typedResult.getMlirType())
     return emitOpError() << "value type (" << typedAttr.getType()
                          << ") does not match result mlir type ("
