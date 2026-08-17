@@ -377,7 +377,7 @@ struct AdaDebugInfoPass
     // DILabelRef markers MLIRGen fused onto the label anchor ops, collecting a
     // DILabel per marker (deduped on (func, name)), then emit an
     // llvm.intr.dbg.label at each anchor (its address is the label's low_pc).
-    // @todo LLVM 21's DILabel has no column field; take it from the loc once
+    // @todo LLVM 22's DILabel has no column field; take it from the loc once
     //       DILabel gains one.
     llvm::SmallVector<std::pair<Operation *, LLVM::DILabelAttr>> labelSites;
     llvm::DenseSet<std::pair<Operation *, StringAttr>> emittedLabels;
