@@ -358,8 +358,8 @@ llvm::SmallVector<mlir::MemorySlot> AllocaOp::getPromotableSlots() {
 mlir::Value AllocaOp::getDefaultValue(const mlir::MemorySlot &slot,
                                       mlir::OpBuilder &builder) {
   auto typedType = mlir::cast<QualType>(slot.elemType);
-  return builder.create<ConstantOp>(
-      getLoc(), typedType, builder.getZeroAttr(typedType.getMlirType()));
+  return ConstantOp::create(builder, getLoc(), typedType,
+                            builder.getZeroAttr(typedType.getMlirType()));
 }
 
 // PromotableAllocationOpInterface: called when mem2reg introduces a block

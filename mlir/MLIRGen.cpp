@@ -408,7 +408,7 @@ private:
     case ada_assign_stmt:
       return mlirGenAssign(node);
     case ada_null_stmt:
-      builder.create<mlir::ada::NullOp>(loc(node));
+      mlir::ada::NullOp::create(builder, loc(node));
       return mlir::success();
     case ada_call_stmt:
       return mlirGenCallStmt(node);
@@ -560,9 +560,9 @@ private:
           mlir::emitWarning(loc(expr), "variable '")
               << libadalang::getName(&expr, false)
               << "' is read before first assignment";
-        return builder.create<mlir::memref::LoadOp>(
-            propagateAdaNameLoc(val, loc(expr)), memrefTy.getElementType(),
-            val);
+        return mlir::memref::LoadOp::create(builder,
+                                            propagateAdaNameLoc(val, loc(expr)),
+                                            memrefTy.getElementType(), val);
       }
       return val; // direct SSA value (in/default-in parameter)
     }
@@ -664,8 +664,8 @@ private:
         checks != mlir::ada::AdaChecks{}
             ? mlir::ada::AdaChecksAttr::get(builder.getContext(), checks)
             : mlir::ada::AdaChecksAttr{};
-    return builder.create<mlir::ada::BinOp>(callerLoc, kind, lhs, rhs,
-                                            checksAttr);
+    return mlir::ada::BinOp::create(builder, callerLoc, kind, lhs, rhs,
+                                    checksAttr);
   }
 
   /// Emit the relational operation for two precomputed operands.
@@ -711,8 +711,8 @@ private:
                       "failed to resolve Boolean result type of comparison");
       return nullptr;
     }
-    return builder.create<mlir::ada::CmpOp>(callerLoc, resultType, kind, lhs,
-                                            rhs);
+    return mlir::ada::CmpOp::create(builder, callerLoc, resultType, kind, lhs,
+                                    rhs);
   }
 
   /// If `expr` is a static expression (@rm{4-9}) of an integer type, evaluate
@@ -867,8 +867,8 @@ private:
     operand = coerce(operand, resultType, loc(unop));
     if (!operand)
       return nullptr;
-    return builder.create<mlir::ada::UnOp>(loc(unop), operand.getType(), kind,
-                                           operand);
+    return mlir::ada::UnOp::create(builder, loc(unop), operand.getType(), kind,
+                                   operand);
   }
 
   /// Resolve the type of a literal expression. For universal types
@@ -910,8 +910,8 @@ private:
                               mlir::ada::QualType type,
                               mlir::Location location) {
     auto intType = mlir::cast<mlir::IntegerType>(type.getMlirType());
-    return builder.create<mlir::ada::ConstantOp>(
-        location, type,
+    return mlir::ada::ConstantOp::create(
+        builder, location, type,
         mlir::IntegerAttr::get(intType, value.sextOrTrunc(intType.getWidth())));
   }
 
@@ -925,8 +925,8 @@ private:
           << value << " out of range for f32";
       return nullptr;
     }
-    return builder.create<mlir::ada::ConstantOp>(
-        location, type, mlir::FloatAttr::get(floatType, value));
+    return mlir::ada::ConstantOp::create(
+        builder, location, type, mlir::FloatAttr::get(floatType, value));
   }
 
   /// Extract the value of an ada_int_literal node via `p_denoted_value`, as an
@@ -1139,7 +1139,7 @@ private:
       return val;
     }
     mlir::Value coerced =
-        builder.create<mlir::ada::CoerceOp>(location, expected, val);
+        mlir::ada::CoerceOp::create(builder, location, expected, val);
     return constrainToSubtype(val, coerced, expected, location);
   }
 
@@ -1152,7 +1152,7 @@ private:
         mlir::cast<mlir::ada::QualType>(lo.getType()).getMlirType();
     auto rangeType =
         mlir::ada::RangeType::get(builder.getContext(), boundType, sym);
-    return builder.create<mlir::ada::RangeOp>(location, rangeType, lo, hi);
+    return mlir::ada::RangeOp::create(builder, location, rangeType, lo, hi);
   }
 
   /// Return a constant-bounds `ada.range` descriptor for the static-bound
@@ -1219,8 +1219,8 @@ private:
       range = staticRangeFor(target.getAdaType(), baseQual, loAttr.getValue(),
                              hiAttr.getValue(), location);
     }
-    return builder.create<mlir::ada::RangeCheckOp>(location, target, coerced,
-                                                   range);
+    return mlir::ada::RangeCheckOp::create(builder, location, target, coerced,
+                                           range);
   }
 
   /// Return the `ada.type` op for a type declaration, emitting it lazily at
@@ -1321,7 +1321,7 @@ private:
         mlir::IntegerAttr::get(mlir::cast<mlir::IntegerType>(mlirType), *value);
     auto typedType = qualTypeFor(typeOp, mlirType);
     auto constOp =
-        builder.create<mlir::ada::ConstantOp>(location, typedType, attr);
+        mlir::ada::ConstantOp::create(builder, location, typedType, attr);
     // No NameLoc: an enum literal is not a named object, and naming the
     // constant would shadow the debug name of a variable initialized from it
     // (after mem2reg promotes the variable to this constant).
@@ -1410,12 +1410,12 @@ private:
       mlir::ada::QualType retType = getAdaQualType(type_decl, location);
       if (!retType)
         return nullptr;
-      return builder.create<mlir::ada::CallOp>(location, calleeRef, retType,
-                                               args);
+      return mlir::ada::CallOp::create(builder, location, calleeRef, retType,
+                                       args);
     }
 
-    return builder.create<mlir::ada::CallOp>(location, calleeRef, mlir::Type{},
-                                             args);
+    return mlir::ada::CallOp::create(builder, location, calleeRef, mlir::Type{},
+                                     args);
   }
 
   /// Emit a function call used in expression context, returning its result.
@@ -1484,8 +1484,8 @@ private:
           << name << "'";
       return nullptr;
     }
-    return builder.create<mlir::ada::AttrOp>(
-        location, type, builder.getStringAttr(name), range);
+    return mlir::ada::AttrOp::create(builder, location, type,
+                                     builder.getStringAttr(name), range);
   }
 
   /// Codegen an expression node. Returns the SSA Value for the result, or
@@ -1688,8 +1688,8 @@ private:
       if (constAttr && typeOp) {
         auto nameAttr = getNameAttr(id);
         auto typedType = qualTypeFor(typeOp, constAttr.getType());
-        auto constOp = builder.create<mlir::ada::ConstantOp>(loc(id), typedType,
-                                                             constAttr);
+        auto constOp = mlir::ada::ConstantOp::create(builder, loc(id),
+                                                     typedType, constAttr);
         setAdaNameLoc(mlir::Value(constOp), nameAttr);
         constValue = constOp.getResult();
       }
@@ -1856,8 +1856,8 @@ private:
           boundAttr(range.low_bound), boundAttr(range.high_bound));
     }
 
-    auto typeOp = builder.create<mlir::ada::TypeOp>(
-        location, *typeName, baseOp.getMlirType(), typeInfo,
+    auto typeOp = mlir::ada::TypeOp::create(
+        builder, location, *typeName, baseOp.getMlirType(), typeInfo,
         mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
     typeDecls[type_decl.node] = typeOp;
 
@@ -2026,8 +2026,8 @@ private:
         base = mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr());
     }
 
-    auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
-                                                    mlirType, typeInfo, base);
+    auto typeOp = mlir::ada::TypeOp::create(builder, location, *typeName,
+                                            mlirType, typeInfo, base);
     typeDecls[type_decl.node] = typeOp;
     return mlir::success();
   }
@@ -2090,8 +2090,8 @@ private:
         builder.getContext(),
         mlir::ArrayAttr::get(builder.getContext(), nameAttrs), values,
         /*lower=*/{}, /*upper=*/{});
-    auto typeOp = builder.create<mlir::ada::TypeOp>(location, *typeName,
-                                                    mlirType, typeInfo);
+    auto typeOp = mlir::ada::TypeOp::create(builder, location, *typeName,
+                                            mlirType, typeInfo);
     typeDecls[type_decl.node] = typeOp;
     return mlir::success();
   }
@@ -2233,13 +2233,13 @@ private:
               return mlir::failure();
           }
         auto allocaOp =
-            builder.create<mlir::ada::AllocaOp>(loc(id), memrefType);
+            mlir::ada::AllocaOp::create(builder, loc(id), memrefType);
         setAdaNameLoc(mlir::Value(allocaOp), nameAttr);
         mlir::Value ptr = allocaOp;
         if (init) {
           init = coerce(init, elemType, loc(id));
           auto storeOp =
-              builder.create<mlir::memref::StoreOp>(loc(id), init, ptr);
+              mlir::memref::StoreOp::create(builder, loc(id), init, ptr);
           setAdaNameLoc(storeOp, nameAttr);
         }
         declare(id, ptr);
@@ -2330,7 +2330,7 @@ private:
     // Otherwise route each declaration in source order: locals just before the
     // ada.decls, symbols into it. mlirGenSubpBody moves the insertion point
     // into the nested subprogram, but the next iteration resets it here.
-    auto declsOp = builder.create<mlir::ada::DeclsOp>(loc(decls));
+    auto declsOp = mlir::ada::DeclsOp::create(builder, loc(decls));
     mlir::Block *declsBlock = builder.createBlock(&declsOp.getBody());
     if (mlir::failed(forEachDecl([&](ada_node &decl) {
           if (isSymbol(decl))
@@ -2460,8 +2460,9 @@ private:
     // possibly inside a block that dissolved into this region).
     if (isProc) {
       if (!currentBlockTerminated())
-        builder.create<mlir::ada::ReturnOp>(
-            mlir::UnknownLoc::get(builder.getContext()), mlir::Value{});
+        mlir::ada::ReturnOp::create(builder,
+                                    mlir::UnknownLoc::get(builder.getContext()),
+                                    mlir::Value{});
     }
 
     // Fuse each recorded label's `DILabelRef` marker onto its anchor op,
@@ -2550,8 +2551,8 @@ private:
     auto *ctx = builder.getContext();
     mlir::Location fused = mlir::FusedLoc::get(
         ctx, {location}, mlir::ada::DITypeRefAttr::get(ctx, qual.getAdaType()));
-    return builder.create<mlir::ada::UnwrapOp>(fused, qual.getMlirType(),
-                                               value);
+    return mlir::ada::UnwrapOp::create(builder, fused, qual.getMlirType(),
+                                       value);
   }
 
   /// True if the current insertion block ends in a terminator (e.g. a
@@ -2566,7 +2567,7 @@ private:
   /// already terminated (e.g. by a `return`).
   void branchToMergeIfOpen(mlir::Block *mergeBlock, mlir::Location location) {
     if (!currentBlockTerminated())
-      builder.create<mlir::cf::BranchOp>(location, mergeBlock);
+      mlir::cf::BranchOp::create(builder, location, mergeBlock);
   }
 
   /// The CFG block a goto label marks (@rm{5-8}), created on first reference
@@ -2601,8 +2602,8 @@ private:
         !ada_node_is_equivalent(&gotoBody, &labelBody))
       return mlir::emitError(loc(goto_stmt),
                              "goto label outside the current subprogram");
-    builder.create<mlir::cf::BranchOp>(loc(goto_stmt),
-                                       getOrCreateLabelBlock(defName));
+    mlir::cf::BranchOp::create(builder, loc(goto_stmt),
+                               getOrCreateLabelBlock(defName));
     return mlir::success();
   }
 
@@ -2689,8 +2690,8 @@ private:
         falseBlock = mergeBlock;
 
       builder.setInsertionPointToEnd(curTest);
-      builder.create<mlir::cf::CondBranchOp>(loc(guards[i].first), condI1,
-                                             thenBlock, falseBlock);
+      mlir::cf::CondBranchOp::create(builder, loc(guards[i].first), condI1,
+                                     thenBlock, falseBlock);
 
       // Fill the then-block; fall through to merge if it did not terminate.
       builder.setInsertionPointToEnd(thenBlock);
@@ -2764,12 +2765,12 @@ private:
       mlir::Value condI1 = unwrap(c, loc(cond));
       if (!condI1)
         return mlir::failure();
-      builder.create<mlir::cf::CondBranchOp>(loc(cond), condI1, bodyBlock,
-                                             mergeBlock);
+      mlir::cf::CondBranchOp::create(builder, loc(cond), condI1, bodyBlock,
+                                     mergeBlock);
     }
 
     builder.setInsertionPointToEnd(entryBlock);
-    builder.create<mlir::cf::BranchOp>(loc(loopNode), headerBlock);
+    mlir::cf::BranchOp::create(builder, loc(loopNode), headerBlock);
 
     // Body, with the loop on `loopStack` for `exit`; close with the back-edge
     // to the header unless the body already terminated.
@@ -2889,9 +2890,9 @@ private:
     // Compare two induction values, unwrapped to the `i1` a `cf` branch needs.
     auto cmpI1 = [&](mlir::ada::AdaRelationalOp kind, mlir::Value a,
                      mlir::Value b) -> mlir::Value {
-      return unwrap(
-          builder.create<mlir::ada::CmpOp>(loc(loopNode), boolType, kind, a, b),
-          loc(loopNode));
+      return unwrap(mlir::ada::CmpOp::create(builder, loc(loopNode), boolType,
+                                             kind, a, b),
+                    loc(loopNode));
     };
 
     // Blocks in source order: entry -> init -> body -> step -> merge.
@@ -2930,23 +2931,23 @@ private:
     hi = coerce(hi, paramType, loc(highNode));
 
     auto nameAttr = getNameAttr(id);
-    mlir::Value paramPtr = builder.create<mlir::ada::AllocaOp>(
-        loc(id), mlir::MemRefType::get({}, paramType));
+    mlir::Value paramPtr = mlir::ada::AllocaOp::create(
+        builder, loc(id), mlir::MemRefType::get({}, paramType));
     setAdaNameLoc(paramPtr, nameAttr);
     declare(id, paramPtr);
 
     mlir::Value guardI1 = cmpI1(mlir::ada::AdaRelationalOp::Lte, lo, hi);
     if (!guardI1)
       return mlir::failure();
-    builder.create<mlir::cf::CondBranchOp>(loc(loopNode), guardI1, initBlock,
-                                           mergeBlock);
+    mlir::cf::CondBranchOp::create(builder, loc(loopNode), guardI1, initBlock,
+                                   mergeBlock);
 
     // Init: set the parameter to `hi` (reverse) or `lo`, then enter the body.
     builder.setInsertionPointToEnd(initBlock);
-    auto initStore = builder.create<mlir::memref::StoreOp>(
-        loc(id), isReverse ? hi : lo, paramPtr);
+    auto initStore = mlir::memref::StoreOp::create(
+        builder, loc(id), isReverse ? hi : lo, paramPtr);
     setAdaNameLoc(initStore, nameAttr);
-    builder.create<mlir::cf::BranchOp>(loc(loopNode), bodyBlock);
+    mlir::cf::BranchOp::create(builder, loc(loopNode), bodyBlock);
 
     // Body, with the loop on `loopStack` for `exit`. Its fall-through runs the
     // pre-step bound test: exit at the far bound, else step.
@@ -2959,14 +2960,14 @@ private:
       return mlir::failure();
 
     if (!currentBlockTerminated()) {
-      mlir::Value paramVal = builder.create<mlir::memref::LoadOp>(
-          loc(loopNode), paramType, paramPtr);
+      mlir::Value paramVal = mlir::memref::LoadOp::create(
+          builder, loc(loopNode), paramType, paramPtr);
       mlir::Value atEndI1 =
           cmpI1(mlir::ada::AdaRelationalOp::Eq, paramVal, isReverse ? lo : hi);
       if (!atEndI1)
         return mlir::failure();
-      builder.create<mlir::cf::CondBranchOp>(loc(loopNode), atEndI1, mergeBlock,
-                                             stepBlock);
+      mlir::cf::CondBranchOp::create(builder, loc(loopNode), atEndI1,
+                                     mergeBlock, stepBlock);
 
       // Step: add or subtract 1 (unchecked; the bound test above rules out
       // overflow), then back to the body. `paramVal` dominates the step block
@@ -2975,15 +2976,15 @@ private:
       auto intType = mlir::cast<mlir::IntegerType>(paramType.getMlirType());
       mlir::Value one = emitIntConstant(llvm::APInt(intType.getWidth(), 1),
                                         paramType, loc(loopNode));
-      mlir::Value next = builder.create<mlir::ada::BinOp>(
-          loc(loopNode),
-          isReverse ? mlir::ada::AdaBinaryOp::Minus
-                    : mlir::ada::AdaBinaryOp::Plus,
-          paramVal, one, mlir::ada::AdaChecksAttr{});
+      mlir::Value next =
+          mlir::ada::BinOp::create(builder, loc(loopNode),
+                                   isReverse ? mlir::ada::AdaBinaryOp::Minus
+                                             : mlir::ada::AdaBinaryOp::Plus,
+                                   paramVal, one, mlir::ada::AdaChecksAttr{});
       auto stepStore =
-          builder.create<mlir::memref::StoreOp>(loc(loopNode), next, paramPtr);
+          mlir::memref::StoreOp::create(builder, loc(loopNode), next, paramPtr);
       setAdaNameLoc(stepStore, nameAttr);
-      builder.create<mlir::cf::BranchOp>(loc(loopNode), bodyBlock);
+      mlir::cf::BranchOp::create(builder, loc(loopNode), bodyBlock);
     } else {
       // The body never falls through (e.g. it always returns): no step or
       // back-edge is reachable.
@@ -3025,7 +3026,7 @@ private:
     ada_node cond;
     ada_exit_stmt_f_cond_expr(&exit_stmt, &cond);
     if (ada_node_is_null(&cond)) {
-      builder.create<mlir::cf::BranchOp>(loc(exit_stmt), target);
+      mlir::cf::BranchOp::create(builder, loc(exit_stmt), target);
       return mlir::success();
     }
 
@@ -3039,8 +3040,8 @@ private:
     mlir::Value condI1 = unwrap(c, loc(cond));
     if (!condI1)
       return mlir::failure();
-    builder.create<mlir::cf::CondBranchOp>(loc(exit_stmt), condI1, target,
-                                           contBlock);
+    mlir::cf::CondBranchOp::create(builder, loc(exit_stmt), condI1, target,
+                                   contBlock);
     builder.setInsertionPointToEnd(contBlock);
     return mlir::success();
   }
@@ -3089,8 +3090,8 @@ private:
     if (!boolType)
       return nullptr;
     auto intType = mlir::cast<mlir::IntegerType>(boolType.getMlirType());
-    return builder.create<mlir::ada::ConstantOp>(
-        location, boolType, mlir::IntegerAttr::get(intType, *rep));
+    return mlir::ada::ConstantOp::create(builder, location, boolType,
+                                         mlir::IntegerAttr::get(intType, *rep));
   }
 
   /// Emit an if expression (@rm{4-5-7}) as a (possibly nested) `scf.if` that
@@ -3165,8 +3166,9 @@ private:
     if (!condI1)
       return nullptr;
 
-    auto ifOp = builder.create<mlir::scf::IfOp>(
-        location, mlir::TypeRange{resultType}, condI1, /*withElseRegion=*/true);
+    auto ifOp =
+        mlir::scf::IfOp::create(builder, location, mlir::TypeRange{resultType},
+                                condI1, /*withElseRegion=*/true);
 
     // Then region: the dependent_expression for this guard.
     builder.setInsertionPointToStart(ifOp.thenBlock());
@@ -3174,7 +3176,7 @@ private:
     if (!thenVal)
       return nullptr;
     thenVal = coerce(thenVal, resultType, loc(thenNode));
-    builder.create<mlir::scf::YieldOp>(loc(thenNode), thenVal);
+    mlir::scf::YieldOp::create(builder, loc(thenNode), thenVal);
 
     // Else region: the next guard, the explicit else, or a synthesized True.
     builder.setInsertionPointToStart(ifOp.elseBlock());
@@ -3195,7 +3197,7 @@ private:
     }
     if (!elseVal)
       return nullptr;
-    builder.create<mlir::scf::YieldOp>(location, elseVal);
+    mlir::scf::YieldOp::create(builder, location, elseVal);
 
     builder.setInsertionPointAfter(ifOp);
     return ifOp.getResult(0);
@@ -3255,7 +3257,7 @@ private:
     std::string symName =
         declareSymbol(canon, libadalang::getName(&name), /*useFqn=*/false);
     auto subpOp =
-        builder.create<mlir::ada::SubpOp>(location, symName, funcType);
+        mlir::ada::SubpOp::create(builder, location, symName, funcType);
     // Nested subprograms are not externally visible: mark them private so they
     // skip the GNAT `_ada_` prefix (`getMangledName`). Library-level
     // subprograms (emitted directly under the module) keep the default public
@@ -3320,8 +3322,8 @@ private:
             mlir::dyn_cast<mlir::ada::QualType>(memrefTy.getElementType()))
       rhs = coerce(rhs, elemType, loc(assign_stmt));
 
-    builder.create<mlir::memref::StoreOp>(
-        propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
+    mlir::memref::StoreOp::create(
+        builder, propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
     return mlir::success();
   }
 
@@ -3351,7 +3353,7 @@ private:
       }
     }
 
-    builder.create<mlir::ada::ReturnOp>(location, expr);
+    mlir::ada::ReturnOp::create(builder, location, expr);
     return mlir::success();
   }
 

@@ -407,7 +407,8 @@ struct AdaDebugInfoPass
           {FileLineColLoc::get(label.getFile().getName(), label.getLine(),
                                /*column=*/0)},
           label.getScope());
-      OpBuilder(op).create<LLVM::DbgLabelOp>(scoped, label);
+      OpBuilder b(op);
+      LLVM::DbgLabelOp::create(b, scoped, label);
     }
 
     // Pass 3: record (func, name) pairs for all llvm.alloca ops with NameLoc.

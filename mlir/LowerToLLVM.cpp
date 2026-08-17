@@ -86,22 +86,22 @@ static mlir::Location attachAdaTypeRef(MLIRContext *ctx, mlir::Location loc,
 static mlir::Value constInt(mlir::ConversionPatternRewriter &rewriter,
                             mlir::Location loc, mlir::Type type,
                             int64_t value) {
-  return rewriter.create<arith::ConstantOp>(
-      loc, rewriter.getIntegerAttr(type, value));
+  return arith::ConstantOp::create(rewriter, loc,
+                                   rewriter.getIntegerAttr(type, value));
 }
 static mlir::Value constInt(mlir::ConversionPatternRewriter &rewriter,
                             mlir::Location loc, mlir::Type type,
                             const llvm::APInt &value) {
-  return rewriter.create<arith::ConstantOp>(
-      loc, rewriter.getIntegerAttr(type, value));
+  return arith::ConstantOp::create(rewriter, loc,
+                                   rewriter.getIntegerAttr(type, value));
 }
 
 /// Extract field `index` from an aggregate (struct) value.
 static mlir::Value extractField(mlir::ConversionPatternRewriter &rewriter,
                                 mlir::Location loc, mlir::Value agg,
                                 int64_t index) {
-  return rewriter.create<LLVM::ExtractValueOp>(loc, agg,
-                                               llvm::ArrayRef<int64_t>{index});
+  return LLVM::ExtractValueOp::create(rewriter, loc, agg,
+                                      llvm::ArrayRef<int64_t>{index});
 }
 
 /// The modulus of the Ada type named by `qual`, or null when it is not modular.
@@ -177,14 +177,14 @@ static mlir::Value emitFileNamePtr(mlir::ConversionPatternRewriter &rewriter,
         LLVM::LLVMArrayType::get(mlir::IntegerType::get(ctx, 8), data.size());
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointToStart(module.getBody());
-    global = rewriter.create<LLVM::GlobalOp>(
-        loc, arrTy, /*isConstant=*/true, LLVM::Linkage::Private, "lalvm.file",
-        rewriter.getStringAttr(data), /*alignment=*/0);
+    global = LLVM::GlobalOp::create(
+        rewriter, loc, arrTy, /*isConstant=*/true, LLVM::Linkage::Private,
+        "lalvm.file", rewriter.getStringAttr(data), /*alignment=*/0);
   }
   mlir::Value base =
-      rewriter.create<LLVM::AddressOfOp>(loc, ptrTy, global.getSymNameAttr());
-  return rewriter.create<LLVM::GEPOp>(loc, ptrTy, global.getGlobalType(), base,
-                                      llvm::ArrayRef<LLVM::GEPArg>{0, 0});
+      LLVM::AddressOfOp::create(rewriter, loc, ptrTy, global.getSymNameAttr());
+  return LLVM::GEPOp::create(rewriter, loc, ptrTy, global.getGlobalType(), base,
+                             llvm::ArrayRef<LLVM::GEPArg>{0, 0});
 }
 
 /// Emit a Constraint_Check trap (@rm{11-5}): split the current block, build a
@@ -220,14 +220,14 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
     line = flc.getLine();
   }
   mlir::Value file = emitFileNamePtr(rewriter, loc, module, fileName);
-  mlir::Value lineVal = rewriter.create<LLVM::ConstantOp>(
-      loc, i32Ty, rewriter.getI32IntegerAttr(line));
-  rewriter.create<LLVM::CallOp>(loc, *fn, mlir::ValueRange{file, lineVal});
-  rewriter.create<LLVM::UnreachableOp>(loc);
+  mlir::Value lineVal = LLVM::ConstantOp::create(
+      rewriter, loc, i32Ty, rewriter.getI32IntegerAttr(line));
+  LLVM::CallOp::create(rewriter, loc, *fn, mlir::ValueRange{file, lineVal});
+  LLVM::UnreachableOp::create(rewriter, loc);
 
   // Test in the original block: bad -> raise, else -> continue.
   rewriter.setInsertionPointToEnd(opBlock);
-  rewriter.create<LLVM::CondBrOp>(loc, cond, raise, cont);
+  LLVM::CondBrOp::create(rewriter, loc, cond, raise, cont);
 
   // Resume on the live path so the caller can emit the guarded operation (or
   // chain another check) after the branch.
@@ -246,8 +246,8 @@ struct ConstantOpLowering : public OpConversionPattern<ada::ConstantOp> {
     auto typed = mlir::cast<ada::QualType>(op.getResult().getType());
     mlir::Location loc = attachAdaTypeRef(rewriter.getContext(), op.getLoc(),
                                           typed.getAdaType());
-    auto newOp = rewriter.create<mlir::arith::ConstantOp>(
-        loc, mlir::cast<mlir::TypedAttr>(op.getValue()));
+    auto newOp = mlir::arith::ConstantOp::create(
+        rewriter, loc, mlir::cast<mlir::TypedAttr>(op.getValue()));
     rewriter.replaceOp(op, newOp.getResult());
     return success();
   }
@@ -278,14 +278,15 @@ struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
       if (auto dstInt = mlir::dyn_cast<mlir::IntegerType>(resultType)) {
         mlir::Operation *newOp;
         if (dstInt.getWidth() < srcInt.getWidth()) {
-          newOp = rewriter.create<arith::TruncIOp>(loc, resultType, input);
+          newOp = arith::TruncIOp::create(rewriter, loc, resultType, input);
         } else {
           // Modular (unsigned) source types need zero-extension; signed types
           // need sign-extension.
           auto inTyped = mlir::cast<ada::QualType>(op.getInput().getType());
-          newOp = isModularQualType(op, inTyped)
-                      ? rewriter.create<arith::ExtUIOp>(loc, resultType, input)
-                      : rewriter.create<arith::ExtSIOp>(loc, resultType, input);
+          newOp =
+              isModularQualType(op, inTyped)
+                  ? arith::ExtUIOp::create(rewriter, loc, resultType, input)
+                  : arith::ExtSIOp::create(rewriter, loc, resultType, input);
         }
         rewriter.replaceOp(op, newOp);
         return success();
@@ -295,8 +296,8 @@ struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
       if (auto dstFloat = mlir::dyn_cast<mlir::FloatType>(resultType)) {
         mlir::Operation *newOp =
             dstFloat.getWidth() < srcFloat.getWidth()
-                ? rewriter.create<arith::TruncFOp>(loc, resultType, input)
-                : rewriter.create<arith::ExtFOp>(loc, resultType, input);
+                ? arith::TruncFOp::create(rewriter, loc, resultType, input)
+                : arith::ExtFOp::create(rewriter, loc, resultType, input);
         rewriter.replaceOp(op, newOp);
         return success();
       }
@@ -322,11 +323,11 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
     mlir::Location loc = op.getLoc();
     auto subtypeSym = mlir::cast<ada::RangeType>(op.getResult().getType())
                           .getConstrainedType();
-    mlir::Value agg = rewriter.create<LLVM::UndefOp>(loc, structTy);
-    auto lo = rewriter.create<LLVM::InsertValueOp>(loc, agg, adaptor.getLow(),
-                                                   llvm::ArrayRef<int64_t>{0});
-    auto hi = rewriter.create<LLVM::InsertValueOp>(loc, lo, adaptor.getHigh(),
-                                                   llvm::ArrayRef<int64_t>{1});
+    mlir::Value agg = LLVM::UndefOp::create(rewriter, loc, structTy);
+    auto lo = LLVM::InsertValueOp::create(rewriter, loc, agg, adaptor.getLow(),
+                                          llvm::ArrayRef<int64_t>{0});
+    auto hi = LLVM::InsertValueOp::create(rewriter, loc, lo, adaptor.getHigh(),
+                                          llvm::ArrayRef<int64_t>{1});
     // Tag a dynamic (non-constant) bound with its subtype symbol so
     // AdaDebugInfoPass can attach an artificial DI variable for the subrange
     // type's bound; the insertvalue position (0 low, 1 high) names which bound.
@@ -374,21 +375,21 @@ struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
     if (mlir::isa<mlir::FloatType>(value.getType())) {
       // Unordered predicates so a NaN value (in no range) raises: `NaN ult lo`
       // is true, whereas the ordered `olt` would let it pass.
-      below = rewriter.create<LLVM::FCmpOp>(loc, LLVM::FCmpPredicate::ult,
-                                            value, lo);
-      above = rewriter.create<LLVM::FCmpOp>(loc, LLVM::FCmpPredicate::ugt,
-                                            value, hi);
+      below = LLVM::FCmpOp::create(rewriter, loc, LLVM::FCmpPredicate::ult,
+                                   value, lo);
+      above = LLVM::FCmpOp::create(rewriter, loc, LLVM::FCmpPredicate::ugt,
+                                   value, hi);
     } else {
       bool mod = isModularQualType(
           op, mlir::cast<ada::QualType>(op.getValue().getType()));
-      below = rewriter.create<LLVM::ICmpOp>(
-          loc, mod ? LLVM::ICmpPredicate::ult : LLVM::ICmpPredicate::slt, value,
-          lo);
-      above = rewriter.create<LLVM::ICmpOp>(
-          loc, mod ? LLVM::ICmpPredicate::ugt : LLVM::ICmpPredicate::sgt, value,
-          hi);
+      below = LLVM::ICmpOp::create(
+          rewriter, loc,
+          mod ? LLVM::ICmpPredicate::ult : LLVM::ICmpPredicate::slt, value, lo);
+      above = LLVM::ICmpOp::create(
+          rewriter, loc,
+          mod ? LLVM::ICmpPredicate::ugt : LLVM::ICmpPredicate::sgt, value, hi);
     }
-    mlir::Value bad = rewriter.create<LLVM::OrOp>(loc, below, above);
+    mlir::Value bad = LLVM::OrOp::create(rewriter, loc, below, above);
 
     if (mlir::failed(emitConstraintRaise(rewriter, loc, module, bad,
                                          "__gnat_rcheck_CE_Range_Check")))
@@ -567,13 +568,13 @@ private:
       mlir::Value wo;
       switch (kind) {
       case ada::AdaBinaryOp::Plus:
-        wo = rewriter.create<LLVM::SAddWithOverflowOp>(loc, st, lhs, rhs);
+        wo = LLVM::SAddWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
         break;
       case ada::AdaBinaryOp::Minus:
-        wo = rewriter.create<LLVM::SSubWithOverflowOp>(loc, st, lhs, rhs);
+        wo = LLVM::SSubWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
         break;
       case ada::AdaBinaryOp::Mult:
-        wo = rewriter.create<LLVM::SMulWithOverflowOp>(loc, st, lhs, rhs);
+        wo = LLVM::SMulWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
         break;
       default:
         return rewriter.notifyMatchFailure(op, "overflow check on non-+-* op");
@@ -607,8 +608,8 @@ private:
 
         // Zero divisor raises Constraint_Error, for any integer `/`.
         mlir::Value zero = constInt(rewriter, loc, type, 0);
-        mlir::Value isZero = rewriter.create<arith::CmpIOp>(
-            loc, arith::CmpIPredicate::eq, rhs, zero);
+        mlir::Value isZero = arith::CmpIOp::create(
+            rewriter, loc, arith::CmpIPredicate::eq, rhs, zero);
         if (mlir::failed(
                 emitConstraintRaise(rewriter, loc, module, isZero,
                                     "__gnat_rcheck_CE_Divide_By_Zero")))
@@ -621,12 +622,12 @@ private:
               constInt(rewriter, loc, type, llvm::APInt::getSignedMinValue(w));
           mlir::Value negOne =
               constInt(rewriter, loc, type, llvm::APInt::getAllOnes(w));
-          mlir::Value lhsIsMin = rewriter.create<arith::CmpIOp>(
-              loc, arith::CmpIPredicate::eq, lhs, intMin);
-          mlir::Value rhsIsNegOne = rewriter.create<arith::CmpIOp>(
-              loc, arith::CmpIPredicate::eq, rhs, negOne);
+          mlir::Value lhsIsMin = arith::CmpIOp::create(
+              rewriter, loc, arith::CmpIPredicate::eq, lhs, intMin);
+          mlir::Value rhsIsNegOne = arith::CmpIOp::create(
+              rewriter, loc, arith::CmpIPredicate::eq, rhs, negOne);
           mlir::Value ovf =
-              rewriter.create<arith::AndIOp>(loc, lhsIsMin, rhsIsNegOne);
+              arith::AndIOp::create(rewriter, loc, lhsIsMin, rhsIsNegOne);
           if (mlir::failed(
                   emitConstraintRaise(rewriter, loc, module, ovf,
                                       "__gnat_rcheck_CE_Overflow_Check")))
@@ -679,13 +680,13 @@ private:
       mlir::Value base;
       switch (kind) {
       case ada::AdaBinaryOp::Plus:
-        base = rewriter.create<arith::AddIOp>(loc, lhs, rhs);
+        base = arith::AddIOp::create(rewriter, loc, lhs, rhs);
         break;
       case ada::AdaBinaryOp::Minus:
-        base = rewriter.create<arith::SubIOp>(loc, lhs, rhs);
+        base = arith::SubIOp::create(rewriter, loc, lhs, rhs);
         break;
       default: // Mult
-        base = rewriter.create<arith::MulIOp>(loc, lhs, rhs);
+        base = arith::MulIOp::create(rewriter, loc, lhs, rhs);
         break;
       }
       mlir::Value mask =
@@ -703,14 +704,14 @@ private:
     // bits) always zero-extends *up* to the wider type, never narrows.
     unsigned ww = 2 * w;
     mlir::Type wide = mlir::IntegerType::get(rewriter.getContext(), ww);
-    mlir::Value a = rewriter.create<arith::ExtUIOp>(loc, wide, lhs);
-    mlir::Value b = rewriter.create<arith::ExtUIOp>(loc, wide, rhs);
+    mlir::Value a = arith::ExtUIOp::create(rewriter, loc, wide, lhs);
+    mlir::Value b = arith::ExtUIOp::create(rewriter, loc, wide, rhs);
     mlir::Value mc = constInt(rewriter, loc, wide, m.zext(ww));
     mlir::Value r;
     if (kind == ada::AdaBinaryOp::Mult) {
       // The product reaches `(m-1)**2`, so a full `urem` is required.
-      mlir::Value t = rewriter.create<arith::MulIOp>(loc, a, b);
-      r = rewriter.create<arith::RemUIOp>(loc, t, mc);
+      mlir::Value t = arith::MulIOp::create(rewriter, loc, a, b);
+      r = arith::RemUIOp::create(rewriter, loc, t, mc);
     } else {
       // Addition and subtraction land at most one modulus outside the
       // range (`a + b < 2m`; `a + m - b` in `1 .. 2m-1`), so a single
@@ -719,14 +720,14 @@ private:
       // `a - b` would underflow).
       mlir::Value s;
       if (kind == ada::AdaBinaryOp::Plus)
-        s = rewriter.create<arith::AddIOp>(loc, a, b);
+        s = arith::AddIOp::create(rewriter, loc, a, b);
       else
-        s = rewriter.create<arith::SubIOp>(
-            loc, rewriter.create<arith::AddIOp>(loc, a, mc), b);
-      mlir::Value ge =
-          rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::uge, s, mc);
-      mlir::Value sub = rewriter.create<arith::SubIOp>(loc, s, mc);
-      r = rewriter.create<arith::SelectOp>(loc, ge, sub, s);
+        s = arith::SubIOp::create(
+            rewriter, loc, arith::AddIOp::create(rewriter, loc, a, mc), b);
+      mlir::Value ge = arith::CmpIOp::create(rewriter, loc,
+                                             arith::CmpIPredicate::uge, s, mc);
+      mlir::Value sub = arith::SubIOp::create(rewriter, loc, s, mc);
+      r = arith::SelectOp::create(rewriter, loc, ge, sub, s);
     }
     rewriter.replaceOpWithNewOp<arith::TruncIOp>(op, type, r);
     return success();
@@ -912,10 +913,12 @@ struct AllocaAdaTypedLowering : public OpConversionPattern<ada::AllocaOp> {
       return failure();
     mlir::Location loc = attachAdaTypeRef(rewriter.getContext(), op.getLoc(),
                                           typedElem.getAdaType());
-    auto one = rewriter.create<LLVM::ConstantOp>(
-        op.getLoc(), rewriter.getI64Type(), rewriter.getI64IntegerAttr(1));
-    auto alloca = rewriter.create<LLVM::AllocaOp>(
-        loc, LLVM::LLVMPointerType::get(rewriter.getContext()), llvmElem, one,
+    auto one =
+        LLVM::ConstantOp::create(rewriter, op.getLoc(), rewriter.getI64Type(),
+                                 rewriter.getI64IntegerAttr(1));
+    auto alloca = LLVM::AllocaOp::create(
+        rewriter, loc, LLVM::LLVMPointerType::get(rewriter.getContext()),
+        llvmElem, one,
         /*alignment=*/0);
     rewriter.replaceOp(op, alloca.getRes());
     return success();
@@ -1001,8 +1004,8 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
       resultTypes.push_back(getTypeConverter()->convertType(t));
     auto newFuncType =
         mlir::FunctionType::get(op.getContext(), inputTypes, resultTypes);
-    auto func = rewriter.create<mlir::func::FuncOp>(op.getLoc(), op.getName(),
-                                                    newFuncType);
+    auto func = mlir::func::FuncOp::create(rewriter, op.getLoc(), op.getName(),
+                                           newFuncType);
     // Carry the subprogram's symbol visibility, and give private (nested)
     // subprograms internal LLVM linkage; library-level (public) subprograms
     // keep public visibility and external linkage. `func.func` visibility does
