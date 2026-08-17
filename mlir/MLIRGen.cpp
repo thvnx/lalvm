@@ -2361,7 +2361,7 @@ private:
       return nullptr;
     // Enter the subprogram's naming scope for the declarations in its body.
     scopeStack.push_back(mlir::SymbolTable::getSymbolName(op).str());
-    auto scopeGuard = llvm::make_scope_exit([&] { scopeStack.pop_back(); });
+    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
 
     // Neither a loop nor a goto label is reachable across a subprogram boundary
     // (@rm{5-7}, @rm{5-8}), so both are subprogram-local: clear them for this
@@ -2374,7 +2374,7 @@ private:
     loopStack.clear();
     labelBlocks.clear();
     pendingLabels.clear();
-    auto frameGuard = llvm::make_scope_exit([&] {
+    auto frameGuard = llvm::scope_exit([&] {
       loopStack = std::move(savedLoops);
       labelBlocks = std::move(savedLabels);
       pendingLabels = std::move(savedLabelMarkers);
@@ -2513,7 +2513,7 @@ private:
     std::string seg = name.empty() ? std::string("b") : name.str();
     std::string prefix = scopePrefixForInsertion();
     scopeStack.push_back(makeUnique(prefix.empty() ? seg : prefix + "." + seg));
-    auto scopeGuard = llvm::make_scope_exit([&] { scopeStack.pop_back(); });
+    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
 
     // Codegen the declarative part (ada_decl_block only).
     if (isDecl) {
@@ -2776,7 +2776,7 @@ private:
     // to the header unless the body already terminated.
     builder.setInsertionPointToEnd(bodyBlock);
     loopStack.push_back({mergeBlock, name.str()});
-    auto loopGuard = llvm::make_scope_exit([&] { loopStack.pop_back(); });
+    auto loopGuard = llvm::scope_exit([&] { loopStack.pop_back(); });
     if (mlir::failed(visit(body)))
       return mlir::failure();
     branchToMergeIfOpen(headerBlock, loc(loopNode));
@@ -2955,7 +2955,7 @@ private:
     ada_node body;
     ada_base_loop_stmt_f_stmts(&loopNode, &body);
     loopStack.push_back({mergeBlock, name.str()});
-    auto loopGuard = llvm::make_scope_exit([&] { loopStack.pop_back(); });
+    auto loopGuard = llvm::scope_exit([&] { loopStack.pop_back(); });
     if (mlir::failed(visit(body)))
       return mlir::failure();
 
