@@ -117,10 +117,10 @@ static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
       /*file=*/LLVM::DIFileAttr{}, /*line=*/0, /*scope=*/LLVM::DIScopeAttr{},
       /*baseType=*/LLVM::DITypeAttr{}, LLVM::DIFlags::Zero,
       llvm::alignTo(intType.getWidth(), 8), /*alignInBits=*/0,
-      /*elements=*/{}, /*dataLocation=*/LLVM::DIExpressionAttr{},
+      /*dataLocation=*/LLVM::DIExpressionAttr{},
       /*rank=*/LLVM::DIExpressionAttr{},
       /*allocated=*/LLVM::DIExpressionAttr{},
-      /*associated=*/LLVM::DIExpressionAttr{});
+      /*associated=*/LLVM::DIExpressionAttr{}, /*elements=*/{});
 }
 
 /// Build a DIDerivedType typedef placeholder for a constrained integer subtype.
