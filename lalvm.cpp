@@ -20,6 +20,7 @@
 
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Parser/Parser.h"
 
@@ -149,6 +150,10 @@ static int loadMLIRFile(mlir::MLIRContext &context,
   }
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
+  // Route MLIR parse diagnostics through the source manager so errors print
+  // with file:line:col and a source snippet instead of only the terse "can't
+  // load file" fallback below.
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
   module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
   if (!module) {
     llvm::errs() << "Error can't load file " << inputFilename << "\n";
