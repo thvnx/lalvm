@@ -903,6 +903,83 @@ llvm::LogicalResult ReturnOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// ArrayTypeInfoAttr
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult ArrayTypeInfoAttr::verify(
+    llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+    mlir::FlatSymbolRefAttr component,
+    llvm::ArrayRef<mlir::FlatSymbolRefAttr> indexTypes,
+    llvm::ArrayRef<mlir::Attribute> lowerBounds,
+    llvm::ArrayRef<mlir::Attribute> upperBounds) {
+  if (indexTypes.empty())
+    return emitError() << "array_info: array must have at least one dimension";
+
+  if (indexTypes.size() != lowerBounds.size() ||
+      indexTypes.size() != upperBounds.size())
+    return emitError() << "array_info: indexTypes/lowerBounds/upperBounds "
+                          "arrays must have equal length";
+
+  bool any =
+      llvm::any_of(lowerBounds, [](mlir::Attribute b) { return (bool)b; });
+  bool all =
+      llvm::all_of(lowerBounds, [](mlir::Attribute b) { return (bool)b; });
+  if (any != all)
+    return emitError() << "array_info: dimensions must be all constrained or "
+                          "all unconstrained";
+
+  return mlir::success();
+}
+
+void ArrayTypeInfoAttr::print(mlir::AsmPrinter &p) const {
+  p << "<component " << getComponent();
+  for (unsigned d = 0, e = rank(); d < e; ++d) {
+    p << ", dim " << getIndexTypes()[d];
+    if (getLowerBounds()[d] || getUpperBounds()[d]) { // constrained dim
+      p << " ";
+      printRangeBounds(p, staticLower(d), staticUpper(d));
+    }
+  }
+  p << ">";
+}
+
+mlir::Attribute ArrayTypeInfoAttr::parse(mlir::AsmParser &parser, mlir::Type) {
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  mlir::FlatSymbolRefAttr component;
+  llvm::SmallVector<mlir::FlatSymbolRefAttr> indexTypes;
+  llvm::SmallVector<mlir::Attribute> lowerBounds, upperBounds;
+
+  // `<component @c`
+  if (parser.parseLess() || parser.parseKeyword("component") ||
+      parser.parseAttribute(component))
+    return {};
+
+  // One list element per dimension: `dim @i range LO to HI`. An omitted range
+  // leaves the bounds null, i.e. that dimension is unconstrained.
+  auto parseDim = [&]() -> mlir::ParseResult {
+    mlir::FlatSymbolRefAttr index;
+    if (parser.parseKeyword("dim") || parser.parseAttribute(index))
+      return mlir::failure();
+    mlir::Attribute lo, hi;
+    if (succeeded(parser.parseOptionalKeyword("range")) &&
+        parseRangeBounds(parser, lo, hi))
+      return mlir::failure();
+    indexTypes.push_back(index);
+    lowerBounds.push_back(lo);
+    upperBounds.push_back(hi);
+    return mlir::success();
+  };
+
+  // `, dim ..., dim ...>`
+  if (parser.parseComma() || parser.parseCommaSeparatedList(parseDim) ||
+      parser.parseGreater())
+    return {};
+
+  return getChecked([&] { return parser.emitError(loc); }, parser.getContext(),
+                    component, indexTypes, lowerBounds, upperBounds);
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen'd op method definitions
 //===----------------------------------------------------------------------===//
 

@@ -134,6 +134,56 @@ def FloatTypeInfoAttr : AttrDef<Ada_Dialect, "FloatTypeInfo"> {
   let assemblyFormat = "(`<` `digits` $digits^ `>`)?";
 }
 
+// Metadata for an array type (@rm{3-6}). `component` is the reference symbol to
+// the component's ada.type operation. `indexTypes`, `lowerBounds`, and
+// `upperBounds` are parallel per-dimension arrays, all of length `rank`.
+// `indexTypes` holds each dimension's own index subtype reference symbol;
+// `lowerBounds`/`upperBounds` hold its bounds: an integer attribute for a
+// static bound, a unit attribute (printed '?') for a dynamic one, or null when
+// the dimension is unconstrained. Syntax examples:
+//
+//   #ada.array_info<component @c, dim @i range 1 to 10>
+//   #ada.array_info<component @c, dim @i range 1 to 10, dim @j range 1 to 3>
+//   #ada.array_info<component @c, dim @i range 1 to ?>
+//   #ada.array_info<component @c, dim @i range ? to ?>
+//   #ada.array_info<component @c, dim @i>
+def ArrayTypeInfoAttr : AttrDef<Ada_Dialect, "ArrayTypeInfo"> {
+  let mnemonic = "array_info";
+  let summary = "Array type metadata";
+  let parameters = (ins
+    AttrParameter<"::mlir::FlatSymbolRefAttr", "component symbol">:$component,
+    ArrayRefParameter<"::mlir::FlatSymbolRefAttr",
+                      "per-dim index subtype symbol">:$indexTypes,
+    ArrayRefParameter<"::mlir::Attribute", "per-dim lower bound">:$lowerBounds,
+    ArrayRefParameter<"::mlir::Attribute", "per-dim upper bound">:$upperBounds
+  );
+  let extraClassDeclaration = [{
+    // Return the number of dimensions of the array.
+    unsigned rank() const { return getIndexTypes().size(); }
+    // Return whether the array is constrained.
+    bool constrained() const {
+      return llvm::any_of(getLowerBounds(),
+                          [](mlir::Attribute b) { return static_cast<bool>(b); });
+    }
+    // The static value of the lower bound of the given dimension, or null when
+    // the bound is dynamic.
+    mlir::IntegerAttr staticLower(unsigned dim) const {
+      if (auto attr = llvm::dyn_cast_or_null<mlir::IntegerAttr>(getLowerBounds()[dim]))
+        return attr;
+      return {};
+    }
+    // The static value of the upper bound of the given dimension, or null when
+    // the bound is dynamic.
+    mlir::IntegerAttr staticUpper(unsigned dim) const {
+      if (auto attr = llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpperBounds()[dim]))
+        return attr;
+      return {};
+    }
+  }];
+  let hasCustomAssemblyFormat = 1;
+  let genVerifyDecl = 1;
+}
+
 // Reference to an ada.type op by sym_name, for use as FusedLoc metadata in
 // value locations. Embedded by LowerToLLVM's attachAdaTypeRef so that
 // AdaDebugInfoPass can resolve the correct DIType for each value.
