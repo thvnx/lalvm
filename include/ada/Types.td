@@ -14,6 +14,7 @@
 #define ADA_TYPES
 
 include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/BuiltinTypeInterfaces.td"
 include "Dialect.td"
 
 //===----------------------------------------------------------------------===//
@@ -31,9 +32,11 @@ class Ada_Type<string name, string typeMnemonic, list<Trait> traits = []>
 
 // Wraps an MLIR type with an Ada type symbol, making Ada type identity
 // first-class in the MLIR type system. Values of this type carry both their
-// machine representation (mlirType) and their Ada declared type (@adaType,
-// a symbol reference to the relevant ada.type op).
-def Ada_QualType : Ada_Type<"Qual", "qual"> {
+// machine representation (mlirType) and their Ada declared type (@adaType, a
+// symbol reference to the relevant ada.type op). Implements
+// MemRefElementTypeInterface so memref<!ada.qual<T>> is a valid (and textually
+// parseable) type; MemRefType's verifier gates on it.
+def Ada_QualType : Ada_Type<"Qual", "qual", [MemRefElementTypeInterface]> {
   let summary = "Ada value type: machine type annotated with Ada type identity";
   let parameters = (ins "::mlir::Type":$mlirType,
                         "::mlir::FlatSymbolRefAttr":$adaType);
