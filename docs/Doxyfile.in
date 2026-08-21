@@ -28,7 +28,7 @@ MARKDOWN_ID_STYLE = GITHUB
 
 EXTENSION_MAPPING = .inc=C++
 
-PREDEFINED = GET_ATTRDEF_CLASSES GET_OP_CLASSES
+PREDEFINED = GET_ATTRDEF_CLASSES GET_OP_CLASSES GET_TYPEDEF_CLASSES
 
 # Link Ada RM references: @rm{5-1} renders as "RM 5-1" linking to AA-5-1.html.
 # Dashes (not dots) because aliases do no text substitution on the slug.

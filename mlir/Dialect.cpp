@@ -301,14 +301,58 @@ void TypeOp::print(mlir::OpAsmPrinter &p) {
 
 llvm::LogicalResult TypeOp::verify() {
   if (mlir::Attribute info = getTypeInfoAttr()) {
-    if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr>(
-            info))
+    if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr,
+                   ArrayTypeInfoAttr>(info))
       return emitOpError() << "unsupported type_info attribute kind";
-    bool kindMatches = mlir::isa<FloatTypeInfoAttr>(info)
-                           ? mlir::isa<mlir::FloatType>(getMlirType())
-                           : mlir::isa<mlir::IntegerType>(getMlirType());
+
+    bool kindMatches;
+    if (mlir::isa<FloatTypeInfoAttr>(info))
+      kindMatches = mlir::isa<mlir::FloatType>(getMlirType());
+    else if (mlir::isa<ArrayTypeInfoAttr>(info))
+      kindMatches = mlir::isa<ada::ArrayType>(getMlirType());
+    else
+      kindMatches = mlir::isa<mlir::IntegerType>(getMlirType());
+
     if (!kindMatches)
       return emitOpError() << "type_info kind does not match mlir_type";
+
+    // Reconcile array_info metadata with the layout type.
+    if (auto arrayInfo = mlir::dyn_cast<ArrayTypeInfoAttr>(info)) {
+      auto arrayType = mlir::cast<ada::ArrayType>(getMlirType());
+      llvm::ArrayRef<int64_t> extents = arrayType.getExtents();
+      if (arrayInfo.rank() != extents.size())
+        return emitOpError() << "array_info rank " << arrayInfo.rank()
+                             << " does not match type rank " << extents.size();
+
+      for (unsigned d = 0; d < extents.size(); ++d) {
+        mlir::IntegerAttr lo = arrayInfo.staticLower(d);
+        mlir::IntegerAttr hi = arrayInfo.staticUpper(d);
+        bool boundsStatic = lo && hi; // both bounds known
+        bool extentStatic = !mlir::ShapedType::isDynamic(extents[d]);
+        if (boundsStatic != extentStatic)
+          return emitOpError()
+                 << "dimension " << d
+                 << ": extent and bounds disagree on being dynamic";
+        if (boundsStatic) {
+          int64_t count =
+              hi.getValue().getSExtValue() - lo.getValue().getSExtValue() + 1;
+          if (count != extents[d])
+            return emitOpError() << "array_info bounds imply extent " << count
+                                 << " but type extent is " << extents[d]
+                                 << " at dimension " << d;
+        }
+      }
+
+      // Best-effort component check, mirroring the base link below.
+      if (auto *sym = mlir::SymbolTable::lookupNearestSymbolFrom(
+              getOperation(), arrayInfo.getComponent()))
+        if (auto compOp = mlir::dyn_cast<ada::TypeOp>(sym))
+          if (compOp.getMlirType() != arrayType.getComponentType())
+            return emitOpError()
+                   << "array component '" << arrayInfo.getComponent().getValue()
+                   << "' has mlir_type " << compOp.getMlirType()
+                   << ", expected " << arrayType.getComponentType();
+    }
   } else if (!getBaseAttr()) {
     return emitOpError()
            << "type without a base must carry a type_info attribute";
@@ -977,6 +1021,78 @@ mlir::Attribute ArrayTypeInfoAttr::parse(mlir::AsmParser &parser, mlir::Type) {
 
   return getChecked([&] { return parser.emitError(loc); }, parser.getContext(),
                     component, indexTypes, lowerBounds, upperBounds);
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayType
+//===----------------------------------------------------------------------===//
+
+mlir::Type ArrayType::parse(mlir::AsmParser &parser) {
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  mlir::Type component;
+  llvm::SmallVector<mlir::Type> indexTypes;
+  llvm::SmallVector<int64_t> extents;
+
+  if (parser.parseLess() || parser.parseType(component))
+    return {};
+
+  auto parseDim = [&]() -> mlir::ParseResult {
+    mlir::Type index;
+    if (parser.parseType(index))
+      return mlir::failure();
+    int64_t extent;
+    if (parser.parseKeyword("x"))
+      return mlir::failure();
+    if (succeeded(parser.parseOptionalQuestion()))
+      extent = ShapedType::kDynamic;
+    else if (parser.parseInteger(extent))
+      return mlir::failure();
+    indexTypes.push_back(index);
+    extents.push_back(extent);
+    return mlir::success();
+  };
+
+  if (parser.parseLSquare() || parser.parseCommaSeparatedList(parseDim) ||
+      parser.parseRSquare() || parser.parseGreater())
+    return {};
+
+  return getChecked([&] { return parser.emitError(loc); }, parser.getContext(),
+                    component, indexTypes, extents);
+}
+
+void ArrayType::print(mlir::AsmPrinter &p) const {
+  p << "<" << getComponentType() << "[";
+  llvm::interleaveComma(llvm::zip(getIndexTypes(), getExtents()), p,
+                        [&](auto pair) {
+                          auto [index, extent] = pair;
+                          p << index << " x ";
+                          if (mlir::ShapedType::isDynamic(extent))
+                            p << '?';
+                          else
+                            p << extent;
+                        });
+  p << "]>";
+}
+
+llvm::LogicalResult
+ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
+                  Type componentType, ArrayRef<Type> indexTypes,
+                  ArrayRef<int64_t> extents) {
+  // Unreachable from text but guards `get()`.
+  if (indexTypes.size() != extents.size())
+    return emitError()
+           << "array_type: indexTypes and extents must have equal length";
+
+  for (int64_t e : extents)
+    if (e < 0 && !mlir::ShapedType::isDynamic(e))
+      return emitError()
+             << "array_type: extent must be non-negative or dynamic";
+
+  for (mlir::Type t : indexTypes)
+    if (!mlir::isa<mlir::IntegerType>(t))
+      return emitError() << "array_type: index type must be an integer";
+
+  return mlir::success();
 }
 
 //===----------------------------------------------------------------------===//

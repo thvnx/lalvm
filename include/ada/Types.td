@@ -57,4 +57,25 @@ def Ada_RangeType : Ada_Type<"Range", "range"> {
   let assemblyFormat = "`<` $boundType `,` $constrainedType `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// ArrayType
+//===----------------------------------------------------------------------===//
+
+// The machine layout of an Ada array type: a component machine type plus, per
+// dimension, an index machine type and an extent (an element count;
+// `mlir::ShapedType::kDynamic` is the `?` sentinel for a dynamic extent). The
+// Ada type identity lives in the `array_info` attribute on the `ada.type` op.
+def Ada_ArrayType : Ada_Type<"Array", "array"> {
+  let summary = "Ada array type: component plus per-dimension index and extent";
+  let parameters = (ins "::mlir::Type":$componentType,
+                        ArrayRefParameter<"::mlir::Type">:$indexTypes,
+                        ArrayRefParameter<"int64_t">:$extents);
+  // Printed as `!ada.array<componentType[indexType x extent, ...]>`
+  // (e.g. `!ada.array<i32[i32 x 10]>` for `array (1 .. 10) of Integer`).
+  let hasCustomAssemblyFormat = 1;
+  // Checks rank consistency (`indexTypes` and `extents` agree in length),
+  // extents non-negative or dynamic, and integer index types.
+  let genVerifyDecl = 1;
+}
+
 #endif // ADA_TYPES
