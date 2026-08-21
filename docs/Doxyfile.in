@@ -6,10 +6,11 @@ PROJECT_BRIEF    = "Ada to LLVM IR compiler via MLIR"
 OUTPUT_DIRECTORY = @PROJECT_BINARY_DIR@/docs
 STRIP_FROM_PATH  = @PROJECT_SOURCE_DIR@ @PROJECT_BINARY_DIR@
 
-# Sources: the README (rendered as the main page), public headers,
-# implementation files, driver. AdaOps.md is the generated op-reference
-# produced by mlir-tblgen.
+# Sources: the README (rendered as the main page), the docs/ guides, public
+# headers, implementation files, driver. AdaOps.md is the generated
+# op-reference produced by mlir-tblgen.
 INPUT         = @PROJECT_SOURCE_DIR@/README.md \
+                @PROJECT_SOURCE_DIR@/docs \
                 @PROJECT_SOURCE_DIR@/include \
                 @PROJECT_SOURCE_DIR@/frontend \
                 @PROJECT_SOURCE_DIR@/mlir \
@@ -20,6 +21,10 @@ FILE_PATTERNS = *.cpp *.h *.md *.inc
 
 # Render the README as the documentation landing page.
 USE_MDFILE_AS_MAINPAGE = @PROJECT_SOURCE_DIR@/README.md
+
+# Generate GitHub-style header anchors so in-page links like [x](#documentation)
+# resolve to `## Documentation` (Doxygen's default id scheme would not match).
+MARKDOWN_ID_STYLE = GITHUB
 
 EXTENSION_MAPPING = .inc=C++
 
