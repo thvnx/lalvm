@@ -324,6 +324,27 @@ bool libadalang::isNumericTypeDecl(ada_node &typeDecl) {
          result;
 }
 
+bool libadalang::isArrayTypeDecl(ada_node &typeDecl) {
+  ada_bool result = false;
+  return ada_base_type_decl_p_is_array_type(&typeDecl, &kNullOrigin, &result) &&
+         result;
+}
+
+unsigned libadalang::arrayNdims(ada_node &arrayType) {
+  unsigned dim = 0;
+
+  for (;; ++dim) {
+    ada_node indexType = {};
+    ada_base_type_decl_p_index_type(&arrayType, static_cast<int>(dim),
+                                    &kNullOrigin, &indexType);
+
+    if (ada_node_is_null(&indexType))
+      break;
+  }
+
+  return dim;
+}
+
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_bool resolved;
   if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)

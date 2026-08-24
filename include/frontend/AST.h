@@ -104,6 +104,8 @@ bool isBaseTypeDecl(ada_node &node);
 bool isEnumTypeDecl(ada_node &typeDecl);
 bool isUniversalTypeDecl(ada_node &typeDecl);
 bool isNumericTypeDecl(ada_node &typeDecl);
+bool isArrayTypeDecl(ada_node &typeDecl);
+unsigned arrayNdims(ada_node &arrayType);
 
 } // namespace libadalang
 } // namespace frontend
