@@ -61,7 +61,7 @@ set(LIBADALANG_INCLUDE_DIR "" CACHE PATH "Directory containing libadalang.h (typ
 if(NOT LIBADALANG_INCLUDE_DIR)
   message(FATAL_ERROR "LIBADALANG_INCLUDE_DIR must be set, e.g. -DLIBADALANG_INCLUDE_DIR=/path/to/libadalang/build/src")
 endif()
-include_directories(${LIBADALANG_INCLUDE_DIR})
+include_directories(SYSTEM ${LIBADALANG_INCLUDE_DIR})
 # TODO: replace global include_directories with target_include_directories(lalvm ...)
 # so that source-relative paths are scoped to the lalvm target only.
 include_directories(mlir frontend)
