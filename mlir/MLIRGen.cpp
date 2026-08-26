@@ -1762,7 +1762,7 @@ private:
   }
 
   /// Whether mlirGenTypeDecl handles this declaration: numeric, universal,
-  /// or enumeration types, or subtypes thereof (by canonical type). The
+  /// enumeration, or array types, or subtypes thereof (by canonical type). The
   /// declarative-part walk skips the rest; they fail only when referenced.
   bool isSupportedTypeDecl(ada_node &decl) {
     ada_node canon = decl;
@@ -1773,7 +1773,8 @@ private:
       return false;
     return libadalang::isUniversalTypeDecl(canon) ||
            libadalang::isNumericTypeDecl(canon) ||
-           libadalang::isEnumTypeDecl(canon);
+           libadalang::isEnumTypeDecl(canon) ||
+           libadalang::isArrayTypeDecl(canon);
   }
 
   /// Build a type declaration's unique dialect symbol (see declareSymbol).
@@ -1945,6 +1946,9 @@ private:
     if (libadalang::isUniversalTypeDecl(type_decl) ||
         libadalang::isNumericTypeDecl(type_decl))
       return mlirGenNumericTypeDecl(type_decl, external);
+    // Array types (@rm{3-6}).
+    if (libadalang::isArrayTypeDecl(type_decl))
+      return mlirGenArrayTypeDecl(type_decl, external);
     return mlirGenEnumTypeDecl(type_decl, external);
   }
 
@@ -2028,6 +2032,109 @@ private:
 
     auto typeOp = mlir::ada::TypeOp::create(builder, location, *typeName,
                                             mlirType, typeInfo, base);
+    typeDecls[type_decl.node] = typeOp;
+    return mlir::success();
+  }
+
+  /// Emit a statically-constrained 1-D array type declaration (@rm{3-6}) as an
+  /// `ada.type` whose `mlir_type` is the `!ada.array` layout and whose metadata
+  /// is `array_info`.
+  mlir::LogicalResult mlirGenArrayTypeDecl(ada_node &type_decl, bool external) {
+    auto location = loc(type_decl);
+    auto typeName = resolveTypeDeclName(type_decl, external);
+    if (mlir::failed(typeName))
+      return mlir::failure();
+
+    // @todo Add support to multi-dimensional arrays.
+    if (libadalang::arrayNdims(type_decl) != 1)
+      return mlir::emitError(location,
+                             "multi-dimensional array types are not supported");
+
+    ada_node type_def;
+    if (!ada_type_decl_f_type_def(&type_decl, &type_def) ||
+        ada_node_is_null(&type_def) ||
+        ada_node_kind(&type_def) != ada_array_type_def)
+      return mlir::emitError(location, "expected an array type definition");
+
+    // Constrainedness is given by the `f_indices` node kind.
+    // @todo Add support to unconstrained arrays.
+    ada_node indices = {};
+    ada_array_type_def_f_indices(&type_def, &indices);
+    if (ada_node_kind(&indices) != ada_constrained_array_indices)
+      return mlir::emitError(location,
+                             "unconstrained array types are not supported");
+
+    ada_node comp_type = {};
+    if (!ada_base_type_decl_p_comp_type(&type_decl, /*is_subscript*/ false,
+                                        &libadalang::kNullOrigin, &comp_type) ||
+        ada_node_is_null(&comp_type))
+      return mlir::failure();
+
+    // @todo Add support to non-scalar component arrays.
+    if (!libadalang::isNumericTypeDecl(comp_type) &&
+        !libadalang::isEnumTypeDecl(comp_type))
+      return mlir::emitError(location, "array component type must be scalar");
+
+    // Component type.
+    mlir::Type componentType = getMLIRTypeFromDecl(comp_type, location);
+    if (!componentType)
+      return mlir::failure();
+    mlir::ada::TypeOp compOp = lookupOrEmitTypeOp(comp_type, location);
+    if (!compOp)
+      return mlir::failure();
+    auto componentSym = mlir::FlatSymbolRefAttr::get(compOp.getSymNameAttr());
+
+    // Index type (dim 0).
+    ada_node index_type = {};
+    if (!ada_base_type_decl_p_index_type(
+            &type_decl, /*dim=*/0, &libadalang::kNullOrigin, &index_type) ||
+        ada_node_is_null(&index_type))
+      return mlir::failure();
+
+    mlir::Type indexType = getMLIRTypeFromDecl(index_type, location);
+    if (!indexType)
+      return mlir::failure();
+    mlir::ada::TypeOp indexOp = lookupOrEmitTypeOp(index_type, location);
+    if (!indexOp)
+      return mlir::failure();
+    auto indexSym = mlir::FlatSymbolRefAttr::get(indexOp.getSymNameAttr());
+
+    // The index bounds live in the ContraintList, it's a BinOp (LO .. HI).
+    ada_node constraint_list = {};
+    ada_constrained_array_indices_f_list(&indices, &constraint_list);
+    ada_node dim0 = {};
+    if (ada_node_child(&constraint_list, 0, &dim0) == 0 ||
+        ada_node_kind(&dim0) != ada_bin_op)
+      return mlir::emitError(location,
+                             "array index constraint must be a .. binary op");
+
+    ada_node lo_node = {}, hi_node = {};
+    ada_bin_op_f_left(&dim0, &lo_node);
+    ada_bin_op_f_right(&dim0, &hi_node);
+    if (!libadalang::isStaticExpr(lo_node) ||
+        !libadalang::isStaticExpr(hi_node))
+      return mlir::emitError(location,
+                             "array index constraint bounds must be static");
+    auto lo = libadalang::evalExprAsInt(lo_node);
+    auto hi = libadalang::evalExprAsInt(hi_node);
+    if (!lo || !hi)
+      return mlir::failure();
+
+    // Extent is the element count: `hi - lo + 1`.
+    int64_t extent = hi->getSExtValue() - lo->getSExtValue() + 1;
+    auto *ctx = builder.getContext();
+
+    // Build the !ada.array machine type
+    auto arrayType =
+        mlir::ada::ArrayType::get(ctx, componentType, {indexType}, {extent});
+    // Build the array_info attribute
+    auto typeInfo = mlir::ada::ArrayTypeInfoAttr::get(
+        ctx, componentSym, {indexSym}, {minimalWidthIntAttr(*lo)},
+        {minimalWidthIntAttr(*hi)});
+
+    auto typeOp = mlir::ada::TypeOp::create(builder, location, *typeName,
+                                            arrayType, typeInfo,
+                                            /*base=*/mlir::FlatSymbolRefAttr{});
     typeDecls[type_decl.node] = typeOp;
     return mlir::success();
   }
