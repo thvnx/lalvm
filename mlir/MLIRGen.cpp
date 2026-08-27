@@ -2463,6 +2463,19 @@ private:
     ada_subp_spec_f_subp_returns(&ada_subp_spec, &ret_type_expr);
     bool isProc = ada_node_is_null(&ret_type_expr);
 
+    // Guard to function returning array: this is not supported yet.
+    if (!isProc) {
+      ada_node ret_type_decl = {};
+      if (ada_type_expr_p_designated_type_decl(&ret_type_expr,
+                                               &ret_type_decl) &&
+          !ada_node_is_null(&ret_type_decl) &&
+          libadalang::isArrayTypeDecl(ret_type_decl)) {
+        mlir::emitError(loc(ret_type_expr),
+                        "returning an array is not supported");
+        return nullptr;
+      }
+    }
+
     mlir::Operation *op = mlirGenSubpSpec(ada_subp_spec, isProc);
     if (!op)
       return nullptr;
