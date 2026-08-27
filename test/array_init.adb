@@ -3,7 +3,7 @@
 
 -- Initializing an array object is not supported yet.
 
--- CHECK-NOT: error: array aggregates are not supported
+-- CHECK-NOT: error: array object initialization is not supported
 
 procedure Array_Init is
    type Vec is array (1 .. 3) of Integer;

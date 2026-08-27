@@ -2299,6 +2299,14 @@ private:
     ada_node default_expr;
     ada_object_decl_f_default_expr(&object_decl, &default_expr);
 
+    // Emit an error if the initialization expression is an array object.
+    auto elemQual =
+        mlir::cast<mlir::ada::QualType>(memrefType.getElementType());
+    if (mlir::isa<mlir::ada::ArrayType>(elemQual.getMlirType()) &&
+        !ada_node_is_null(&default_expr))
+      return mlir::emitError(loc(default_expr),
+                             "array object initialization is not supported");
+
     ada_node ids;
     ada_object_decl_f_ids(&object_decl, &ids);
     unsigned count = ada_node_children_count(&ids);
