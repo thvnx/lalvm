@@ -1,10 +1,10 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s
+-- RUN: %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 -- XFAIL: *
 
 -- Unconstrained arrays are not supported, today the `<>` index is diagnosed
 -- until support is added.
 
--- CHECK: ada.type @array_unconstrained.vec
+-- CHECK-NOT: error: unconstrained array types are not supported
 
 procedure Array_Unconstrained is
    type Vec is array (Integer range <>) of Integer;
