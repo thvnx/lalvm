@@ -3542,6 +3542,8 @@ private:
       return *t;
     if (auto t = getFloatMLIRType(canon_type, diagLoc))
       return *t;
+    if (auto t = getArrayMLIRType(canon_type, diagLoc))
+      return *t;
     return getUniversalMLIRType(canon_type, diagLoc);
   }
 
@@ -3618,6 +3620,21 @@ private:
         llvm::APInt(64, minRep, /*isSigned=*/true).getSignificantBits(),
         llvm::APInt(64, maxRep, /*isSigned=*/true).getSignificantBits());
     return builder.getIntegerType(bits);
+  }
+
+  /// Array type (@rm{3-6}): reuse the `!ada.array` layout built at
+  /// declaration. Nullopt if not an array.
+  std::optional<mlir::Type> getArrayMLIRType(ada_node &canon_type,
+                                             mlir::Location diagLoc) {
+    if (!libadalang::isArrayTypeDecl(canon_type))
+      return std::nullopt;
+
+    // Search for the stored type.
+    if (auto it = typeDecls.find(canon_type.node); it != typeDecls.end())
+      return it->second.getMlirType();
+
+    mlir::emitError(diagLoc, "array type used before its declaration");
+    return mlir::Type{};
   }
 
   /// Signed integer type (@rm{3-5-4}): width from the base type's (static)
