@@ -1093,6 +1093,17 @@ void AdaToLLVMLoweringPass::runOnOperation() {
       return {};
     return LLVM::LLVMStructType::getLiteral(t.getContext(), {bound, bound});
   });
+  // !ada.array<T, @arr> is an array description: lower to a llvm.array.
+  typeConverter.addConversion([&](ada::ArrayType t) -> mlir::Type {
+    mlir::Type result = typeConverter.convertType(t.getComponentType());
+    if (!result)
+      return {};
+    // Nest one LLVM array per dimension, innermost first, so the leading Ada
+    // dimension is the outermost array (row-major).
+    for (int64_t extent : llvm::reverse(t.getExtents()))
+      result = LLVM::LLVMArrayType::get(result, extent);
+    return result;
+  });
 
   // Provide the patterns used for lowering.
   RewritePatternSet patterns(&getContext());
