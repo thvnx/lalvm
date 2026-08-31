@@ -274,6 +274,38 @@ def CoerceOp : Ada_Op<"coerce", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// IndexOp
+//===----------------------------------------------------------------------===//
+
+// Maps an array object's location to the location of one of its elements
+// (@rm{3-6}). `index` is the zero-based layout offset (`ada_index - 'First`,
+// normalized by MLIRGen from the array's `array_info`), so neither this op nor
+// its lowering carries the lower bound. An indexed read loads from the result,
+// an indexed write stores into it.
+def IndexOp : Ada_Op<"index", [Pure]> {
+  let summary = "Location (index) of an !ada.array element";
+  let description = [{
+    Maps an array object's location to the location of one of its elements
+    (@rm{3-6}). `index` is the zero-based layout offset (`ada_index - 'First`,
+    normalized by MLIRGen from the array's `array_info`), so neither this op
+    nor its lowering carries the lower bound. An indexed read loads from the
+    result, an indexed write stores into it.
+
+    ```mlir
+    %elt = ada.index %arr[%off]
+        : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @arr>>,
+           !ada.qual<i32, @standard.integer>)
+       -> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
+    ```
+  }];
+  let arguments = (ins AnyMemRef:$array, Ada_QualType:$index);
+  let results = (outs AnyMemRef:$result);
+  let assemblyFormat = "$array `[` $index `]` attr-dict `:` "
+                       "functional-type(operands, results)";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RangeOp
 //===----------------------------------------------------------------------===//
 

@@ -494,6 +494,40 @@ llvm::LogicalResult CoerceOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// IndexOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult IndexOp::verify() {
+  auto arrayType = mlir::cast<mlir::MemRefType>(getArray().getType());
+  auto indexType = mlir::cast<ada::QualType>(getIndex().getType());
+  auto resultType = mlir::cast<mlir::MemRefType>(getResult().getType());
+
+  // The array operand is a memref of a qual-wrapped !ada.array.
+  auto arrayQual = mlir::dyn_cast<QualType>(arrayType.getElementType());
+  if (!arrayQual)
+    return emitOpError("array element type must be ada.qual");
+  auto layout = mlir::dyn_cast<ada::ArrayType>(arrayQual.getMlirType());
+  if (!layout)
+    return emitOpError("array must be a memref of ada.qual<!ada.array>");
+
+  // The index is an integer-machine qual.
+  if (!mlir::isa<mlir::IntegerType>(indexType.getMlirType()))
+    return emitOpError() << "index type must be an integer, got "
+                         << indexType.getMlirType();
+
+  // The result element is the array's component type.
+  auto resultQual = mlir::dyn_cast<QualType>(resultType.getElementType());
+  if (!resultQual)
+    return emitOpError("result element type must be ada.qual");
+  if (resultQual.getMlirType() != layout.getComponentType())
+    return emitOpError() << "result component " << resultQual.getMlirType()
+                         << " does not match array component "
+                         << layout.getComponentType();
+
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // RangeOp
 //===----------------------------------------------------------------------===//
 
