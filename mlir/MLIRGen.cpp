@@ -1431,6 +1431,94 @@ private:
     return callOp->getResult(0);
   }
 
+  /// Helper returning the indexed element memref for an indexing operation
+  /// (load and store). It normalizes the index and emits an ada.index
+  /// operation.
+  mlir::Value indexedElementRef(ada_node &index) {
+    auto location = loc(index);
+
+    ada_node name = {}, suffix = {};
+    ada_call_expr_f_name(&index, &name);
+    ada_call_expr_f_suffix(&index, &suffix);
+
+    // One dimensional array support limitation.
+    if (ada_node_children_count(&suffix) != 1) {
+      mlir::emitError(location, "unsupported array index");
+      return nullptr;
+    }
+
+    // Check that the referenced name is a memref of a qual-wrapped !ada.array.
+    mlir::Value arrayRef = findVarValue(name);
+    auto arrayMemref =
+        arrayRef ? mlir::dyn_cast<mlir::MemRefType>(arrayRef.getType())
+                 : mlir::MemRefType{};
+    auto arrayQual =
+        arrayMemref
+            ? mlir::dyn_cast<mlir::ada::QualType>(arrayMemref.getElementType())
+            : mlir::ada::QualType{};
+    auto layout =
+        arrayQual
+            ? mlir::dyn_cast<mlir::ada::ArrayType>(arrayQual.getMlirType())
+            : mlir::ada::ArrayType{};
+    if (!layout) {
+      mlir::emitError(location, "'")
+          << libadalang::getName(&name, false) << "' is not an array object";
+      return nullptr;
+    }
+
+    // Get the array's array_info metadata.
+    ada_node objDecl = {}, typeExpr = {}, arrayTypeDecl = {};
+    ada_name_p_referenced_decl(&name, /*imprecise_fallback=*/0, &objDecl);
+    ada_object_decl_f_type_expr(&objDecl, &typeExpr);
+    ada_type_expr_p_designated_type_decl(&typeExpr, &arrayTypeDecl);
+    auto typeOp = typeDecls.lookup(arrayTypeDecl.node);
+    auto info =
+        mlir::cast<mlir::ada::ArrayTypeInfoAttr>(typeOp.getTypeInfoAttr());
+
+    // Raw Ada index, (@todo emit a range check).
+    ada_node assoc = {}, indexExpr = {};
+    ada_node_child(&suffix, 0, &assoc);
+    ada_param_assoc_f_r_expr(&assoc, &indexExpr);
+    mlir::Value rawIndex = visit_expr(indexExpr);
+    if (!rawIndex)
+      return nullptr;
+    auto indexQual = mlir::cast<mlir::ada::QualType>(rawIndex.getType());
+    auto intType = mlir::cast<mlir::IntegerType>(indexQual.getMlirType());
+    mlir::Value first = emitIntConstant(
+        llvm::APInt(intType.getWidth(), info.staticLower(0).getInt(),
+                    /*isSigned=*/true),
+        indexQual, location);
+    // Convert the offset into a zero-based one for MemRef load/store
+    // operations.
+    mlir::Value offset = mlir::ada::BinOp::create(
+        builder, location, mlir::ada::AdaBinaryOp::Minus, rawIndex, first,
+        mlir::ada::AdaChecksAttr{});
+
+    // Element location: memref<!ada.qual<component, @c>, strided<[], offset:
+    // ?>>.
+    // @todo The StridedLayout is not used at the moment but will required to
+    // support slices.
+    auto eltQual = mlir::ada::QualType::get(
+        builder.getContext(), layout.getComponentType(), info.getComponent());
+
+    auto strided = mlir::StridedLayoutAttr::get(
+        builder.getContext(), mlir::ShapedType::kDynamic, /*strides=*/{});
+    auto resultTy = mlir::MemRefType::get(/*shape=*/{}, eltQual, strided);
+
+    return mlir::ada::IndexOp::create(builder, location, resultTy, arrayRef,
+                                      offset);
+  }
+
+  /// Emit an array index result.
+  mlir::Value mlirGenIndexValue(ada_node &index) {
+    mlir::Value elt = indexedElementRef(index);
+    if (!elt)
+      return nullptr;
+    return mlir::memref::LoadOp::create(
+        builder, loc(index),
+        mlir::cast<mlir::MemRefType>(elt.getType()).getElementType(), elt);
+  }
+
   /// Emit a scalar attribute reference (@rm{3-5}): `'First`/`'Last` on an
   /// integer subtype prefix. The decision is per bound: a static bound is read
   /// straight from the subtype's `int_info` and emitted as a constant; a
@@ -1552,8 +1640,20 @@ private:
       return mlirGenBinOp(expr);
     case ada_un_op:
       return mlirGenUnOp(expr);
-    case ada_call_expr:
-      return mlirGenCallExprValue(expr);
+    case ada_call_expr: {
+      ada_call_expr_kind kind;
+      if (!ada_call_expr_p_kind(&expr, &kind)) {
+        mlir::emitError(loc(expr), "can't get kind of call expr");
+        return nullptr;
+      }
+
+      switch (kind) {
+      case ADA_CALL_EXPR_KIND_ARRAY_INDEX:
+        return mlirGenIndexValue(expr);
+      default:
+        return mlirGenCallExprValue(expr);
+      }
+    }
     case ada_attribute_ref:
       return mlirGenAttributeRef(expr);
     case ada_if_expr:
@@ -3397,8 +3497,9 @@ private:
     return subpOp;
   }
 
-  /// Emit a procedure call statement. The callee is resolved from the
-  /// referenced defining name via `subpDecls` (see mlirGenCallExpr).
+  /// Emit a procedure call statement (@rm{6-4}).
+  /// @todo Support entry calls.
+  /// @todo Check that the returned value of mlirGenCallExpr is not a function.
   mlir::LogicalResult mlirGenCallStmt(ada_node &call_stmt) {
     ada_node call;
     ada_call_stmt_f_call(&call_stmt, &call);
