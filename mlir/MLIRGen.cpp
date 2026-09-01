@@ -3515,9 +3515,34 @@ private:
     if (!rhs)
       return mlir::failure();
 
-    if (ada_node_kind(&dest_node) != ada_identifier) {
+    ada_node_kind_enum kind = ada_node_kind(&dest_node);
+    mlir::Value ptr;
+
+    switch (kind) {
+    case ada_identifier: {
+      ptr = findVarValue(dest_node);
+      if (!ptr) {
+        mlir::emitError(loc(dest_node), "unknown variable '")
+            << libadalang::getName(&dest_node, false) << "'";
+        return mlir::failure();
+      }
+      break;
+    }
+    case ada_call_expr: {
+      ada_call_expr_kind call_kind = {};
+      if (ada_call_expr_p_kind(&dest_node, &call_kind) &&
+          call_kind == ADA_CALL_EXPR_KIND_ARRAY_INDEX) {
+        ptr = indexedElementRef(dest_node);
+        if (!ptr)
+          return mlir::failure(); // error already emitted
+        break;
+      }
+    }
+      [[fallthrough]];
+    default: {
       mlir::emitError(loc(assign_stmt), "unsupported assignment destination");
       return mlir::failure();
+    }
     }
 
     // A loop parameter is a constant view (@rm{5-5}(6)): reject assignment to
@@ -3532,12 +3557,6 @@ private:
       return mlir::failure();
     }
 
-    mlir::Value ptr = findVarValue(dest_node);
-    if (!ptr) {
-      mlir::emitError(loc(dest_node), "unknown variable '")
-          << libadalang::getName(&dest_node, false) << "'";
-      return mlir::failure();
-    }
     if (!mlir::isa<mlir::MemRefType>(ptr.getType())) {
       mlir::emitError(loc(dest_node), "cannot assign to '")
           << libadalang::getName(&dest_node, false) << "'";
