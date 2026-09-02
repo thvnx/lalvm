@@ -107,6 +107,11 @@ bool isNumericTypeDecl(ada_node &typeDecl);
 bool isArrayTypeDecl(ada_node &typeDecl);
 unsigned arrayNdims(ada_node &arrayType);
 
+/// Return the type definition of `typeDecl` if it exists and has kind `kind`,
+/// nullopt otherwise.
+std::optional<ada_node> typeDefOfKind(ada_node &typeDecl,
+                                      ada_node_kind_enum kind);
+
 } // namespace libadalang
 } // namespace frontend
 

@@ -345,6 +345,15 @@ unsigned libadalang::arrayNdims(ada_node &arrayType) {
   return dim;
 }
 
+std::optional<ada_node> libadalang::typeDefOfKind(ada_node &typeDecl,
+                                                  ada_node_kind_enum kind) {
+  ada_node typeDef = {};
+  if (ada_type_decl_f_type_def(&typeDecl, &typeDef) &&
+      !ada_node_is_null(&typeDef) && ada_node_kind(&typeDef) == kind)
+    return typeDef;
+  return std::nullopt;
+}
+
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_bool resolved;
   if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)

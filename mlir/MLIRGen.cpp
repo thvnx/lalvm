@@ -2063,12 +2063,10 @@ private:
 
     mlir::Type mlirType;
     mlir::IntegerAttr modulus;
-    ada_node type_def;
-    if (ada_type_decl_f_type_def(&type_decl, &type_def) &&
-        !ada_node_is_null(&type_def) &&
-        ada_node_kind(&type_def) == ada_mod_int_type_def) {
+    if (auto type_def =
+            libadalang::typeDefOfKind(type_decl, ada_mod_int_type_def)) {
       ada_node expr;
-      ada_mod_int_type_def_f_expr(&type_def, &expr);
+      ada_mod_int_type_def_f_expr(&type_def.value(), &expr);
       if (!libadalang::isStaticExpr(expr))
         return mlir::emitError(
             location, "modular type modulus is not a static expression");
@@ -2150,16 +2148,14 @@ private:
       return mlir::emitError(location,
                              "multi-dimensional array types are not supported");
 
-    ada_node type_def;
-    if (!ada_type_decl_f_type_def(&type_decl, &type_def) ||
-        ada_node_is_null(&type_def) ||
-        ada_node_kind(&type_def) != ada_array_type_def)
+    auto type_def = libadalang::typeDefOfKind(type_decl, ada_array_type_def);
+    if (!type_def)
       return mlir::emitError(location, "expected an array type definition");
 
     // Constrainedness is given by the `f_indices` node kind.
     // @todo Add support to unconstrained arrays.
     ada_node indices = {};
-    ada_array_type_def_f_indices(&type_def, &indices);
+    ada_array_type_def_f_indices(&type_def.value(), &indices);
     if (ada_node_kind(&indices) != ada_constrained_array_indices)
       return mlir::emitError(location,
                              "unconstrained array types are not supported");
@@ -2244,9 +2240,8 @@ private:
   /// when the declaration is not a supported enum kind.
   mlir::LogicalResult mlirGenEnumTypeDecl(ada_node &type_decl, bool external) {
     auto location = loc(type_decl);
-    ada_node type_def{};
-    if (!libadalang::isEnumTypeDecl(type_decl) ||
-        !ada_type_decl_f_type_def(&type_decl, &type_def))
+    auto type_def = libadalang::typeDefOfKind(type_decl, ada_enum_type_def);
+    if (!type_def)
       return mlir::failure();
 
     // Get the MLIR integer type for this enum.
@@ -2260,7 +2255,7 @@ private:
 
     // Collect enumerator names (canonical) and representation values.
     ada_node literals;
-    ada_enum_type_def_f_enum_literals(&type_def, &literals);
+    ada_enum_type_def_f_enum_literals(&type_def.value(), &literals);
     unsigned litCount = ada_node_children_count(&literals);
     bool isChar = isCharacterType(type_decl);
 
@@ -3630,14 +3625,14 @@ private:
   /// failure or when the value exceeds 18 (System.Max_Digits on x86-64).
   std::optional<uint32_t> evalFloatDigits(ada_node &type_decl,
                                           mlir::Location location) {
-    ada_node float_def{};
-    if (!ada_type_decl_f_type_def(&type_decl, &float_def) ||
-        ada_node_is_null(&float_def) ||
-        ada_node_kind(&float_def) != ada_floating_point_def)
+    auto float_def =
+        libadalang::typeDefOfKind(type_decl, ada_floating_point_def);
+    if (!float_def)
       return 0;
     ada_node digits_expr;
     ada_big_integer bigint;
-    if (!ada_floating_point_def_f_num_digits(&float_def, &digits_expr) ||
+    if (!ada_floating_point_def_f_num_digits(&float_def.value(),
+                                             &digits_expr) ||
         ada_node_is_null(&digits_expr) ||
         !ada_expr_p_eval_as_int(&digits_expr, &bigint)) {
       mlir::emitError(location,
@@ -3692,11 +3687,9 @@ private:
   /// stored on the `TypeOp`. Nullopt if not modular.
   std::optional<mlir::Type> getModularMLIRType(ada_node &canon_type,
                                                mlir::Location diagLoc) {
-    ada_node type_def;
-    if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
-        ada_node_is_null(&type_def) ||
-        ada_node_kind(&type_def) != ada_mod_int_type_def)
+    if (!libadalang::typeDefOfKind(canon_type, ada_mod_int_type_def))
       return std::nullopt;
+
     auto it = typeDecls.find(canon_type.node);
     if (it == typeDecls.end()) {
       mlir::emitError(diagLoc, "modular type used before its declaration");
@@ -3708,10 +3701,8 @@ private:
   /// Enumeration type (@rm{3-5-1}). Nullopt if not an enum.
   std::optional<mlir::Type> getEnumMLIRType(ada_node &canon_type,
                                             mlir::Location diagLoc) {
-    ada_node type_def;
-    if (!ada_type_decl_f_type_def(&canon_type, &type_def) ||
-        ada_node_is_null(&type_def) ||
-        ada_node_kind(&type_def) != ada_enum_type_def)
+    auto type_def = libadalang::typeDefOfKind(canon_type, ada_enum_type_def);
+    if (!type_def)
       return std::nullopt;
 
     // Reuse the stored type once emitted, rather than rescanning the literals.
@@ -3723,7 +3714,7 @@ private:
     // and representation clauses (@rm{13-4}) can assign values beyond the
     // count.
     ada_node literals;
-    ada_enum_type_def_f_enum_literals(&type_def, &literals);
+    ada_enum_type_def_f_enum_literals(&type_def.value(), &literals);
     unsigned count = ada_node_children_count(&literals);
     bool isChar = isCharacterType(canon_type);
     int64_t minRep = 0, maxRep = 0;
@@ -3860,10 +3851,7 @@ private:
       const char *what = "anonymous types";
       ada_node_kind_enum kind = ada_node_kind(&canon_type);
       if (kind == ada_concrete_type_decl || kind == ada_anonymous_type_decl) {
-        ada_node type_def;
-        if (ada_type_decl_f_type_def(&canon_type, &type_def) &&
-            !ada_node_is_null(&type_def) &&
-            ada_node_kind(&type_def) == ada_array_type_def)
+        if (libadalang::typeDefOfKind(canon_type, ada_array_type_def))
           what = "array types";
       }
       mlir::emitError(diagLoc, what) << " are not yet supported";
