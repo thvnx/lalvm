@@ -1,13 +1,22 @@
 # LALVM: Ada to LLVM Compiler
 
-LALVM is a prototype Ada-to-LLVM compiler using
-[Libadalang](https://github.com/AdaCore/libadalang) as the Ada frontend, MLIR as
-an intermediate representation, and LLVM for the backend.
+LALVM is a prototype Ada-to-LLVM compiler using AdaCore's
+[Libadalang](https://github.com/AdaCore/libadalang) as the Ada frontend,
+[MLIR](https://mlir.llvm.org/) as an intermediate representation, and
+[LLVM](https://llvm.org/) for the backend.
 
 This README covers building and day-to-day use. See the [Documentation
 section](#documentation) below for more content about the architecture and
 pipeline, symbol naming and debug info, the supported Ada subset, and the
 development workflow (testing/formatting/code coverage/documentation).
+
+## Disclaimer
+
+This project is an experiment to demonstrate that Libadalang can be used as a
+frontend and directly feed LLVM through MLIR. It is in no way a substitute for
+any available Ada compiler, and is far from usable today. Many limitations
+remain to be addressed, both in Libadalang and in MLIR, before the Ada language
+could be fully supported.
 
 ## Building
 
