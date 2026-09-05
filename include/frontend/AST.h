@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2024-2026 The LALVM Project
+
 #ifndef FRONTEND_AST_H
 #define FRONTEND_AST_H
 
@@ -111,6 +114,10 @@ unsigned arrayNdims(ada_node &arrayType);
 /// nullopt otherwise.
 std::optional<ada_node> typeDefOfKind(ada_node &typeDecl,
                                       ada_node_kind_enum kind);
+
+/// Return the canonical type of `typeDecl`, or `typeDecl` itself if no
+/// canonical type is found.
+ada_node canonicalType(ada_node &typeDecl);
 
 } // namespace libadalang
 } // namespace frontend
