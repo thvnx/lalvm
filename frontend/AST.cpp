@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2024-2026 The LALVM Project
+
 #include "frontend/AST.h"
 
 #include "frontend/DiagnosticPrinter.h"
@@ -352,6 +355,14 @@ std::optional<ada_node> libadalang::typeDefOfKind(ada_node &typeDecl,
       !ada_node_is_null(&typeDef) && ada_node_kind(&typeDef) == kind)
     return typeDef;
   return std::nullopt;
+}
+
+ada_node libadalang::canonicalType(ada_node &typeDecl) {
+  ada_node canon = {};
+  if (ada_base_type_decl_p_canonical_type(&typeDecl, &kNullOrigin, &canon) &&
+      !ada_node_is_null(&canon))
+    return canon;
+  return typeDecl;
 }
 
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
