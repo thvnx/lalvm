@@ -1,0 +1,42 @@
+name: Run format
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  LLVM_VERSION: "22"
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        run: |
+          sudo apt-get install -y cmake ninja-build
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y \
+            "llvm-$LLVM_VERSION-dev" \
+            "llvm-$LLVM_VERSION-tools" \
+            "libmlir-$LLVM_VERSION-dev" \
+            "mlir-$LLVM_VERSION-tools" \
+            "clang-format-$LLVM_VERSION"
+
+      # Minimal configuration to setup clang-format only.
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DMLIR_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/mlir"
+          -DLLVM_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/llvm"
+          -DCLANG_FORMAT="/usr/bin/clang-format-$LLVM_VERSION"
+          -DLIBADALANG_INCLUDE_DIR=/tmp/not/needed/to/format
+
+      - name: Run the format target and check for changes
+        run: |
+          cmake --build build --target format
+          git diff --exit-code
