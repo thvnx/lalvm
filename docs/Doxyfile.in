@@ -60,3 +60,6 @@ JAVADOC_AUTOBRIEF = YES
 
 # Reduce noise.
 QUIET = YES
+
+# Treat warnings as errors.
+WARN_AS_ERROR = FAIL_ON_WARNINGS
