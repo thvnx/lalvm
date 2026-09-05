@@ -1,0 +1,46 @@
+name: Run doxygen
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  LLVM_VERSION: "22"
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install tools
+        run: |
+          sudo apt-get install -y cmake ninja-build doxygen graphviz
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y \
+            "llvm-$LLVM_VERSION-dev" \
+            "llvm-$LLVM_VERSION-tools" \
+            "libmlir-$LLVM_VERSION-dev" \
+            "mlir-$LLVM_VERSION-tools"
+
+      # Minimal configuration to run doxygen only.
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DMLIR_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/mlir"
+          -DLLVM_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/llvm"
+          -DLIBADALANG_INCLUDE_DIR=/tmp/not/needed/to/run/doxygen
+
+      - name: Run the doxygen target
+        run: |
+          # Doxygen 1.9.8 (current ubuntu-latest) treats the leading `::` on the
+          # generated op doc's external mlir::/llvm:: names as explicit link
+          # requests and errors when they don't resolve. Strip the leading `::`
+          # so they become auto-links (which fail silently).
+          # TODO: remove once ubuntu ships a newer Doxygen that no longer warns
+          # on these external references.
+          echo "FILTER_PATTERNS += \"*/AdaOps.md=sed -e 's|::mlir::|mlir::|g' -e 's|::llvm::|llvm::|g'\"" >> build/docs/Doxyfile
+          cmake --build build --target doxygen
