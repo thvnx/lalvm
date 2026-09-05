@@ -19,6 +19,8 @@ INPUT         = @PROJECT_SOURCE_DIR@/README.md \
 RECURSIVE     = YES
 FILE_PATTERNS = *.cpp *.h *.md *.inc
 
+INCLUDE_PATH = @PROJECT_SOURCE_DIR@/include @PROJECT_BINARY_DIR@/include
+
 # Render the README as the documentation landing page.
 USE_MDFILE_AS_MAINPAGE = @PROJECT_SOURCE_DIR@/README.md
 
