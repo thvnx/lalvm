@@ -19,6 +19,14 @@
       "cacheVariables": {
         "LALVM_COVERAGE": "ON"
       }
+    },
+    {
+      "name": "sanitizers",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-san",
+      "cacheVariables": {
+        "LLVM_USE_SANITIZER": "Address;Undefined"
+      }
     }
   ],
   "buildPresets": [
@@ -29,6 +37,10 @@
     {
       "name": "coverage",
       "configurePreset": "coverage"
+    },
+    {
+      "name": "sanitizers",
+      "configurePreset": "sanitizers"
     }
   ],
   "testPresets": [

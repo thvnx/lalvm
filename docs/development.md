@@ -30,6 +30,33 @@ sources, `html-generated/` for the generated files. The prebuilt MLIR/LLVM
 libraries are not instrumented. Each `check-lalvm` run starts from a clean
 profile pool, so the report always reflects the last run.
 
+## Sanitizers
+
+The `sanitizers` preset (`LLVM_USE_SANITIZER=Address;Undefined`) builds LALVM
+with [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html),
+[LeakSanitizer](https://clang.llvm.org/docs/LeakSanitizer.html) and
+[UndefinedBehaviorSanitizer](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html)
+into `build-san/`. Only LALVM's own sources are instrumented, not the prebuilt
+MLIR/LLVM and Libadalang libraries. It requires the compiler-rt runtime
+(`libclang-rt-<N>-dev` on Debian).
+
+```sh
+cmake --preset=sanitizers
+cmake --build --preset=sanitizers --target check-lalvm
+```
+
+A sanitizer error fails the test that triggers it, with the report in the test
+output. Reports coming only from the GNAT runtime or Libadalang can be silenced
+with a suppressions file, given through `ASAN_OPTIONS`, `LSAN_OPTIONS`, or
+`UBSAN_OPTIONS`, which lit forwards to the tests:
+
+```sh
+LSAN_OPTIONS=suppressions=/path/to/lsan.supp cmake --build --preset=sanitizers --target check-lalvm
+```
+
+Under ASan, lit sets `ASAN_OPTIONS=allow_user_poisoning=0` to avoid a spurious
+use-after-poison from the uninstrumented libraries. Set it too for manual runs.
+
 ## API documentation
 
 API documentation is generated with Doxygen (requires `doxygen` and `graphviz`):

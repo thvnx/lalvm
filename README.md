@@ -8,7 +8,8 @@ LALVM is a prototype Ada-to-LLVM compiler using AdaCore's
 This README covers building and day-to-day use. See the [Documentation
 section](#documentation) below for more content about the architecture and
 pipeline, symbol naming and debug info, the supported Ada subset, and the
-development workflow (testing/formatting/code coverage/documentation).
+development workflow (testing/formatting/code
+coverage/sanitizers/documentation).
 
 ## Disclaimer
 
@@ -146,5 +147,5 @@ lalvm --emit=llvm add.adb | llc -mtriple=aarch64-linux-gnu -o add.s
   the dialect/pass breakdown.
 - [Symbol naming and debug info](docs/abi.md): the GNAT ABI and DWARF output.
 - [Feature status](docs/status.md): the supported Ada subset.
-- [Development](docs/development.md): testing, coverage, formatting, and API
-  docs.
+- [Development](docs/development.md): testing, coverage, sanitizers, formatting,
+  and API docs.
