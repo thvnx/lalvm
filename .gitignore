@@ -2,6 +2,7 @@
 CMakeUserPresets.json
 build/
 build-cov/
+build-san/
 
 # clangd LSP index
 .cache/

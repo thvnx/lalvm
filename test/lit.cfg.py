@@ -37,3 +37,12 @@ if config.coverage:
     os.makedirs(profile_dir)
     config.environment['LLVM_PROFILE_FILE'] = os.path.join(
         profile_dir, 'lalvm-%4m.profraw')
+
+# ASan build: lalvm's instrumented BumpPtrAllocator poisons slabs that the
+# uninstrumented MLIR libraries allocate from without unpoisoning, a spurious
+# use-after-poison. Disable manual poisoning; user options come last and win.
+if config.asan:
+    asan_options = 'allow_user_poisoning=0'
+    if 'ASAN_OPTIONS' in config.environment:
+        asan_options += ':' + config.environment['ASAN_OPTIONS']
+    config.environment['ASAN_OPTIONS'] = asan_options
