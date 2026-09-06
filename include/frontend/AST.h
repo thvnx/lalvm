@@ -119,6 +119,10 @@ std::optional<ada_node> typeDefOfKind(ada_node &typeDecl,
 /// canonical type is found.
 ada_node canonicalType(ada_node &typeDecl);
 
+/// Return the declaration `name` references, or `std::nullopt` when name
+/// resolution fails or finds nothing.
+std::optional<ada_node> referencedDecl(ada_node &name);
+
 } // namespace libadalang
 } // namespace frontend
 

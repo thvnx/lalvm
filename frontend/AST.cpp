@@ -365,6 +365,14 @@ ada_node libadalang::canonicalType(ada_node &typeDecl) {
   return typeDecl;
 }
 
+std::optional<ada_node> libadalang::referencedDecl(ada_node &name) {
+  ada_node refDecl = {};
+  if (ada_name_p_referenced_decl(&name, /*imprecise_fallback=*/0, &refDecl) &&
+      !ada_node_is_null(&refDecl))
+    return refDecl;
+  return std::nullopt;
+}
+
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_bool resolved;
   if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)
