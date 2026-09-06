@@ -571,16 +571,12 @@ private:
     }
 
     // Slow path: distinguish error kinds for better diagnostics.
-    ada_node ref_decl;
-    if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
-                                   &ref_decl) &&
-        !ada_node_is_null(&ref_decl)) {
-      if (ada_node_kind(&ref_decl) != ada_object_decl) {
-        // Declared but not a variable (type, subprogram, etc.).
-        mlir::emitError(loc(expr), "cannot use '")
-            << libadalang::getName(&expr, false) << "' as a value";
-        return nullptr;
-      }
+    std::optional<ada_node> ref_decl = libadalang::referencedDecl(expr);
+    if (ref_decl && ada_node_kind(&ref_decl.value()) != ada_object_decl) {
+      // Declared but not a variable (type, subprogram, etc.).
+      mlir::emitError(loc(expr), "cannot use '")
+          << libadalang::getName(&expr, false) << "' as a value";
+      return nullptr;
     }
 
     mlir::emitError(loc(expr), "undeclared identifier '")
@@ -1468,9 +1464,14 @@ private:
     }
 
     // Get the array's array_info metadata.
-    ada_node objDecl = {}, typeExpr = {}, arrayTypeDecl = {};
-    ada_name_p_referenced_decl(&name, /*imprecise_fallback=*/0, &objDecl);
-    ada_object_decl_f_type_expr(&objDecl, &typeExpr);
+    std::optional<ada_node> objDecl = libadalang::referencedDecl(name);
+    if (!objDecl) {
+      mlir::emitError(location, "failed to resolve '")
+          << libadalang::getName(&name, false) << "'";
+      return nullptr;
+    }
+    ada_node typeExpr = {}, arrayTypeDecl = {};
+    ada_object_decl_f_type_expr(&objDecl.value(), &typeExpr);
     ada_type_expr_p_designated_type_decl(&typeExpr, &arrayTypeDecl);
     auto typeOp = typeDecls.lookup(arrayTypeDecl.node);
     auto info =
@@ -1602,12 +1603,9 @@ private:
       // Enum literal: emit as its integer representation. (Checked before the
       // call test below: enum literals are parameterless functions that
       // p_is_call also reports as calls.)
-      ada_node ref_decl;
-      if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
-                                     &ref_decl) &&
-          !ada_node_is_null(&ref_decl) &&
-          ada_node_kind(&ref_decl) == ada_enum_literal_decl)
-        return mlirGenEnumLit(ref_decl, expr);
+      std::optional<ada_node> ref_decl = libadalang::referencedDecl(expr);
+      if (ref_decl && ada_node_kind(&ref_decl.value()) == ada_enum_literal_decl)
+        return mlirGenEnumLit(ref_decl.value(), expr);
       // A parameterless function call written without parentheses (e.g.
       // `F : Float := G`) is an identifier that p_is_call reports as a call
       // (@rm{6-4}); lower it as a call rather than rejecting it as a value.
@@ -1624,12 +1622,9 @@ private:
       // A character literal denotes an enumeration literal of a character type
       // (predefined Standard.Character, @rm{3-5-2}); emit it as the
       // corresponding enum value, like any other enum literal.
-      ada_node ref_decl;
-      if (ada_name_p_referenced_decl(&expr, /*imprecise_fallback=*/0,
-                                     &ref_decl) &&
-          !ada_node_is_null(&ref_decl) &&
-          ada_node_kind(&ref_decl) == ada_enum_literal_decl)
-        return mlirGenEnumLit(ref_decl, expr);
+      std::optional<ada_node> ref_decl = libadalang::referencedDecl(expr);
+      if (ref_decl && ada_node_kind(&ref_decl.value()) == ada_enum_literal_decl)
+        return mlirGenEnumLit(ref_decl.value(), expr);
       mlir::emitError(loc(expr), "failed to resolve character literal");
       return nullptr;
     }
@@ -1931,14 +1926,11 @@ private:
                    mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
                        baseInfo)) {
       auto repOf = [&](ada_node &bound) -> std::optional<int64_t> {
-        ada_node lit{};
-        if (!ada_name_p_referenced_decl(&bound, /*imprecise_fallback=*/0,
-                                        &lit) ||
-            ada_node_is_null(&lit) ||
-            ada_node_kind(&lit) != ada_enum_literal_decl)
+        std::optional<ada_node> lit = libadalang::referencedDecl(bound);
+        if (!lit || ada_node_kind(&lit.value()) != ada_enum_literal_decl)
           return std::nullopt;
         ada_node litName{};
-        if (!ada_enum_literal_decl_f_name(&lit, &litName) ||
+        if (!ada_enum_literal_decl_f_name(&lit.value(), &litName) ||
             ada_node_is_null(&litName))
           return std::nullopt;
         return enumInfo.enumRep(libadalang::getName(&litName));
@@ -3536,11 +3528,8 @@ private:
 
     // A loop parameter is a constant view (@rm{5-5}(6)): reject assignment to
     // it, even though it is backed by a mutable `alloca`.
-    ada_node ref_decl;
-    if (ada_name_p_referenced_decl(&dest_node, /*imprecise_fallback=*/0,
-                                   &ref_decl) &&
-        !ada_node_is_null(&ref_decl) &&
-        ada_node_kind(&ref_decl) == ada_for_loop_var_decl) {
+    std::optional<ada_node> ref_decl = libadalang::referencedDecl(dest_node);
+    if (ref_decl && ada_node_kind(&ref_decl.value()) == ada_for_loop_var_decl) {
       mlir::emitError(loc(dest_node),
                       "assignment to loop parameter not allowed");
       return mlir::failure();
