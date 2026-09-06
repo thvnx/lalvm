@@ -357,12 +357,12 @@ std::optional<ada_node> libadalang::typeDefOfKind(ada_node &typeDecl,
   return std::nullopt;
 }
 
-ada_node libadalang::canonicalType(ada_node &typeDecl) {
+std::optional<ada_node> libadalang::canonicalType(ada_node &typeDecl) {
   ada_node canon = {};
   if (ada_base_type_decl_p_canonical_type(&typeDecl, &kNullOrigin, &canon) &&
       !ada_node_is_null(&canon))
     return canon;
-  return typeDecl;
+  return std::nullopt;
 }
 
 std::optional<ada_node> libadalang::referencedDecl(ada_node &name) {

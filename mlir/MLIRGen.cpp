@@ -980,10 +980,10 @@ private:
       return std::nullopt;
     if (auto b = ownStaticBounds(type_decl, location))
       return StaticRange{b->first, b->second, type_decl};
-    ada_node canon = libadalang::canonicalType(type_decl);
-    if (!libadalang::isUniversalTypeDecl(canon))
-      if (auto b = ownStaticBounds(canon, location))
-        return StaticRange{b->first, b->second, canon};
+    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
+    if (canon && !libadalang::isUniversalTypeDecl(canon.value()))
+      if (auto b = ownStaticBounds(canon.value(), location))
+        return StaticRange{b->first, b->second, canon.value()};
     return std::nullopt;
   }
 
@@ -1861,13 +1861,13 @@ private:
   /// enumeration, or array types, or subtypes thereof (by canonical type). The
   /// declarative-part walk skips the rest; they fail only when referenced.
   bool isSupportedTypeDecl(ada_node &decl) {
-    ada_node canon = libadalang::canonicalType(decl);
-    if (ada_node_kind(&decl) == ada_subtype_decl && canon.node == decl.node)
+    std::optional<ada_node> canon = libadalang::canonicalType(decl);
+    if (!canon)
       return false;
-    return libadalang::isUniversalTypeDecl(canon) ||
-           libadalang::isNumericTypeDecl(canon) ||
-           libadalang::isEnumTypeDecl(canon) ||
-           libadalang::isArrayTypeDecl(canon);
+    return libadalang::isUniversalTypeDecl(canon.value()) ||
+           libadalang::isNumericTypeDecl(canon.value()) ||
+           libadalang::isEnumTypeDecl(canon.value()) ||
+           libadalang::isArrayTypeDecl(canon.value());
   }
 
   /// Build a type declaration's unique dialect symbol (see declareSymbol).
@@ -1893,11 +1893,11 @@ private:
   /// @todo Record float subtype constraints once float_info models bounds.
   mlir::LogicalResult mlirGenSubtypeDecl(ada_node &type_decl, bool external) {
     auto location = loc(type_decl);
-    ada_node canon = libadalang::canonicalType(type_decl);
-    if (canon.node == type_decl.node)
+    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
+    if (!canon)
       return mlir::emitError(location,
                              "failed to resolve the subtype's base type");
-    mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon, location);
+    mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon.value(), location);
     if (!baseOp)
       return mlir::failure();
 
@@ -2108,9 +2108,10 @@ private:
     // (subtypes, @rm{3-2-2}). Looking the base up emits it first, so the
     // reference always resolves.
     mlir::FlatSymbolRefAttr base;
-    ada_node canon_type = libadalang::canonicalType(type_decl);
-    if (canon_type.node != type_decl.node) {
-      if (mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon_type, location))
+    std::optional<ada_node> canon_type = libadalang::canonicalType(type_decl);
+    if (canon_type && canon_type.value().node != type_decl.node) {
+      if (mlir::ada::TypeOp baseOp =
+              lookupOrEmitTypeOp(canon_type.value(), location))
         base = mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr());
     }
 
@@ -3643,8 +3644,10 @@ private:
   /// any error the mapping emits.
   mlir::Type getMLIRTypeFromDecl(ada_node &type_decl, mlir::Location diagLoc) {
     // Follow the subtype chain to the canonical (base) type so that subtypes
-    // of Integer map to the same MLIR type as Integer itself.
-    ada_node canon_type = libadalang::canonicalType(type_decl);
+    // of Integer map to the same MLIR type as Integer itself; fall back to the
+    // declaration when resolution fails.
+    ada_node canon_type =
+        libadalang::canonicalType(type_decl).value_or(type_decl);
 
     // Each helper returns nullopt when its kind does not apply, so the type
     // falls through to the next mapping and finally to the universal-by-name
