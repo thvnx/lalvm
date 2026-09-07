@@ -39,8 +39,13 @@ Copy the example user presets file and fill in the paths for your environment:
 
 ```sh
 cp CMakeUserPresets.json.example CMakeUserPresets.json
-# edit CMakeUserPresets.json: set LIBADALANG_INCLUDE_DIR, MLIR_DIR, compilers
+# edit CMakeUserPresets.json: set LIBADALANG_DIR, MLIR_DIR, compilers
 ```
+
+`LIBADALANG_DIR` points at a Libadalang build tree (the `build/` directory of a
+source checkout, or the crate directory `alr get --build libadalang` produces)
+or at an install prefix. LALVM links the shared library, so build Libadalang
+with `LIBRARY_TYPE=relocatable`.
 
 Then configure and build:
 

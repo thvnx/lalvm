@@ -31,7 +31,7 @@ jobs:
           cmake -S . -B build -G Ninja
           -DMLIR_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/mlir"
           -DLLVM_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/llvm"
-          -DLIBADALANG_INCLUDE_DIR=/tmp/not/needed/to/run/doxygen
+          -DLALVM_TOOLS_ONLY=ON
 
       - name: Run the doxygen target
         run: |
