@@ -155,3 +155,5 @@ lalvm --emit=llvm add.adb | llc -mtriple=aarch64-linux-gnu -o add.s
 - [Feature status](docs/status.md): the supported Ada subset.
 - [Development](docs/development.md): testing, coverage, sanitizers, formatting,
   and API docs.
+- [API reference](https://thvnx.github.io/lalvm/): the Doxygen documentation,
+  deployed from `main`.
