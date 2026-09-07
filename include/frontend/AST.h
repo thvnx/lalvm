@@ -123,6 +123,10 @@ std::optional<ada_node> canonicalType(ada_node &typeDecl);
 /// resolution fails or finds nothing.
 std::optional<ada_node> referencedDecl(ada_node &name);
 
+/// Return the type declaration `typeExpr` designates, or `std::nullopt` when
+/// name resolution fails or finds nothing.
+std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
+
 } // namespace libadalang
 } // namespace frontend
 

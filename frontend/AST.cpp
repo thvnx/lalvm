@@ -373,6 +373,14 @@ std::optional<ada_node> libadalang::referencedDecl(ada_node &name) {
   return std::nullopt;
 }
 
+std::optional<ada_node> libadalang::designatedTypeDecl(ada_node &typeExpr) {
+  ada_node typeDecl = {};
+  if (ada_type_expr_p_designated_type_decl(&typeExpr, &typeDecl) &&
+      !ada_node_is_null(&typeDecl))
+    return typeDecl;
+  return std::nullopt;
+}
+
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_bool resolved;
   if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)

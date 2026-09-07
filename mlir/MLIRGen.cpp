@@ -1113,13 +1113,13 @@ private:
 
   /// Build the `ada.qual` type from a type expression (SubtypeIndication).
   mlir::ada::QualType getAdaQualType(ada_node &type_expr) {
-    ada_node type_decl;
-    if (!ada_type_expr_p_designated_type_decl(&type_expr, &type_decl) ||
-        ada_node_is_null(&type_decl)) {
+    std::optional<ada_node> type_decl =
+        libadalang::designatedTypeDecl(type_expr);
+    if (!type_decl) {
       mlir::emitError(loc(type_expr), "failed to resolve type expression");
       return {};
     }
-    return getAdaQualType(type_decl, loc(type_expr));
+    return getAdaQualType(type_decl.value(), loc(type_expr));
   }
 
   /// Insert `ada.coerce` if `val` does not already have type `expected`, then
@@ -1470,10 +1470,15 @@ private:
           << libadalang::getName(&name, false) << "'";
       return nullptr;
     }
-    ada_node typeExpr = {}, arrayTypeDecl = {};
+    ada_node typeExpr = {};
     ada_object_decl_f_type_expr(&objDecl.value(), &typeExpr);
-    ada_type_expr_p_designated_type_decl(&typeExpr, &arrayTypeDecl);
-    auto typeOp = typeDecls.lookup(arrayTypeDecl.node);
+    std::optional<ada_node> arrayTypeDecl =
+        libadalang::designatedTypeDecl(typeExpr);
+    if (!arrayTypeDecl) {
+      mlir::emitError(location, "failed to resolve type expression");
+      return nullptr;
+    }
+    auto typeOp = typeDecls.lookup(arrayTypeDecl.value().node);
     auto info =
         mlir::cast<mlir::ada::ArrayTypeInfoAttr>(typeOp.getTypeInfoAttr());
 
@@ -2370,9 +2375,12 @@ private:
     if (!memrefType)
       return mlir::failure();
 
-    ada_node typeDecl{};
-    ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
-    if (!lookupOrEmitTypeOp(typeDecl, declLoc))
+    std::optional<ada_node> typeDecl =
+        libadalang::designatedTypeDecl(type_expr);
+    if (!typeDecl)
+      return mlir::emitError(loc(type_expr),
+                             "failed to resolve type expression");
+    if (!lookupOrEmitTypeOp(typeDecl.value(), declLoc))
       return mlir::failure();
 
     ada_bool isConstant = 0;
@@ -2424,7 +2432,7 @@ private:
         // Default_Value aspect (@rm{3-5}) if it has one. (A constant object
         // instead requires an initializer, handled above.)
         if (!init)
-          if (ada_node dv; defaultValueExpr(typeDecl, dv)) {
+          if (ada_node dv; defaultValueExpr(typeDecl.value(), dv)) {
             init = visit_expr(dv);
             if (!init)
               return mlir::failure();
@@ -2555,11 +2563,9 @@ private:
 
     // Guard to function returning array: this is not supported yet.
     if (!isProc) {
-      ada_node ret_type_decl = {};
-      if (ada_type_expr_p_designated_type_decl(&ret_type_expr,
-                                               &ret_type_decl) &&
-          !ada_node_is_null(&ret_type_decl) &&
-          libadalang::isArrayTypeDecl(ret_type_decl)) {
+      std::optional<ada_node> ret_type_decl =
+          libadalang::designatedTypeDecl(ret_type_expr);
+      if (ret_type_decl && libadalang::isArrayTypeDecl(ret_type_decl.value())) {
         mlir::emitError(loc(ret_type_expr),
                         "returning an array is not supported");
         return nullptr;
@@ -2610,8 +2616,13 @@ private:
 
       ada_node type_expr;
       ada_param_spec_f_type_expr(&params->items[i], &type_expr);
-      ada_node typeDecl{};
-      ada_type_expr_p_designated_type_decl(&type_expr, &typeDecl);
+      std::optional<ada_node> typeDecl =
+          libadalang::designatedTypeDecl(type_expr);
+      if (!typeDecl) {
+        ada_node_array_dec_ref(params);
+        mlir::emitError(loc(type_expr), "failed to resolve type expression");
+        return nullptr;
+      }
 
       ada_param_spec_f_ids(&params->items[i], &ids);
       for (unsigned int j = 0; j < ada_node_children_count(&ids); j++) {
@@ -2621,7 +2632,7 @@ private:
           mlir::emitError(loc(ids), "failed to get parameter identifier");
           return nullptr;
         }
-        args_v.push_back({child, mode, typeDecl});
+        args_v.push_back({child, mode, typeDecl.value()});
       }
     }
     ada_node_array_dec_ref(params);
@@ -3065,7 +3076,7 @@ private:
     ada_for_loop_var_decl_f_id_type(&varDecl, &idType);
     ada_node typeDecl{};
     if (!ada_node_is_null(&idType))
-      ada_type_expr_p_designated_type_decl(&idType, &typeDecl);
+      typeDecl = libadalang::designatedTypeDecl(idType).value_or(ada_node{});
     else
       ada_expr_p_expression_type(&iterExpr, &typeDecl);
     if (ada_node_is_null(&typeDecl)) {
