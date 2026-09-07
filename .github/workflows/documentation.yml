@@ -1,4 +1,4 @@
-name: Run doxygen
+name: Run doxygen and deploy documentation
 
 on:
   pull_request:
@@ -14,7 +14,7 @@ env:
   LLVM_VERSION: "22"
 
 jobs:
-  format:
+  doxygen:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,3 +43,28 @@ jobs:
           # on these external references.
           echo "FILTER_PATTERNS += \"*/AdaOps.md=sed -e 's|::mlir::|mlir::|g' -e 's|::llvm::|llvm::|g'\"" >> build/docs/Doxyfile
           cmake --build build --target doxygen
+
+      - name: Upload the documentation as a Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/docs/html
+
+  # Publish the documentation built from main on GitHub Pages.
+  deploy:
+    needs: doxygen
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Never cancel a deployment half way.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
