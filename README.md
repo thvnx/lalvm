@@ -25,11 +25,12 @@ could be fully supported.
 
 LALVM is currently based on LLVM/MLIR version 22.
 
-- LLVM/MLIR (for example on Debian: `llvm-dev`, `libmlir-22-dev`,
-  `mlir-22-tools`, `cmake`, `ninja-build`, `clang`, `clang-format`).
+- LLVM/MLIR (for example on Debian: `llvm-dev`, `llvm-22-tools`,
+  `libmlir-22-dev`, `mlir-22-tools`, `cmake`, `ninja-build`, `clang`,
+  `clang-format`).
 - AdaCore's [Libadalang](https://github.com/AdaCore/libadalang) for Ada semantic
   analysis and name resolution.
-- `lit` for running tests.
+- `lit` and `FileCheck` for running tests (from `llvm-22-tools`).
 - `doxygen` and `graphviz` (optional, for API documentation with call graphs).
 
 ### Configuration
@@ -38,7 +39,7 @@ Copy the example user presets file and fill in the paths for your environment:
 
 ```sh
 cp CMakeUserPresets.json.example CMakeUserPresets.json
-# edit CMakeUserPresets.json: set LIBADALANG_INCLUDE_DIR, MLIR_DIR, compilers, lit
+# edit CMakeUserPresets.json: set LIBADALANG_INCLUDE_DIR, MLIR_DIR, compilers
 ```
 
 Then configure and build:

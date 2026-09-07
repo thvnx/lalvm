@@ -2,11 +2,12 @@
 
 ## Testing
 
-Tests use [lit](https://llvm.org/docs/CommandGuide/lit.html) and FileCheck. Each
-test file in `test/` carries its own `RUN` and `CHECK` directives.
+Tests use [lit](https://llvm.org/docs/CommandGuide/lit.html) and FileCheck from
+the LLVM installation (`llvm-22-tools` on Debian). `LLVM_EXTERNAL_LIT` can be
+used to select another `lit`. Each test file in `test/` carries its own `RUN`
+and `CHECK` directives.
 
 ```sh
-pip install lit   # one-time
 cmake --build --preset=debug --target check-lalvm
 ```
 
