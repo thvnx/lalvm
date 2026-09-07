@@ -32,7 +32,7 @@ jobs:
           -DMLIR_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/mlir"
           -DLLVM_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/llvm"
           -DCLANG_FORMAT="/usr/bin/clang-format-$LLVM_VERSION"
-          -DLIBADALANG_INCLUDE_DIR=/tmp/not/needed/to/format
+          -DLALVM_TOOLS_ONLY=ON
 
       - name: Run the format target and check for changes
         run: |

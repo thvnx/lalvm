@@ -5,7 +5,7 @@
       "name": "debug",
       "inherits": "base",
       "cacheVariables": {
-        "LIBADALANG_INCLUDE_DIR": "/path/to/libadalang/build/src",
+        "LIBADALANG_DIR": "/path/to/libadalang/build/or/install/dir",
         "MLIR_DIR": "/usr/lib/llvm-21/lib/cmake/mlir",
         "CMAKE_C_COMPILER": "clang-21",
         "CMAKE_CXX_COMPILER": "clang++-21"

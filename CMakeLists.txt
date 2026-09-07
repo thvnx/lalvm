@@ -60,55 +60,9 @@ if(LALVM_COVERAGE)
   add_link_options(-fprofile-instr-generate)
 endif()
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
 add_subdirectory(include)
-add_subdirectory(test)
-set(LIBADALANG_INCLUDE_DIR "" CACHE PATH "Directory containing libadalang.h (typically libadalang/build/src)")
-if(NOT LIBADALANG_INCLUDE_DIR)
-  message(FATAL_ERROR "LIBADALANG_INCLUDE_DIR must be set, e.g. -DLIBADALANG_INCLUDE_DIR=/path/to/libadalang/build/src")
-endif()
-include_directories(SYSTEM ${LIBADALANG_INCLUDE_DIR})
-# TODO: replace global include_directories with target_include_directories(lalvm ...)
-# so that source-relative paths are scoped to the lalvm target only.
-include_directories(mlir frontend)
-
-
-add_llvm_executable(lalvm
-  frontend/DiagnosticPrinter.cpp
-  mlir/MLIRGen.cpp
-  mlir/Dialect.cpp
-  mlir/ClosureConversion.cpp
-  mlir/HoistNestedSymbolOperations.cpp
-  mlir/LowerToLLVM.cpp
-  mlir/AdaToLLVMIRTranslation.cpp
-  mlir/AdaDebugInfo.cpp
-  mlir/PostTranslationDITypes.cpp
-  frontend/AST.cpp
-  lalvm.cpp
-
-  DEPENDS
-  AdaOpsIncGen
-  )
-
-# TODO: replace catch-all dialect/conversion/extension lib sets with an explicit
-# minimal list to reduce binary size and link time.
-get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
-get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
-target_link_libraries(lalvm
-  PRIVATE
-      ${dialect_libs}
-    ${conversion_libs}
-    ${extension_libs}
-  adalang
-  MLIRAnalysis
-  MLIRIR
-  MLIRParser
-  MLIRSupport
-  MLIRLLVMToLLVMIRTranslation
-  MLIRExecutionEngine
-  MLIRLLVMCommonConversion
-  MLIRSCFDialect
-)
 
 # Format all C++ sources in-place using clang-format.
 file(GLOB_RECURSE ALL_CXX_SOURCES
@@ -149,3 +103,55 @@ if(DOXYGEN_FOUND)
 else()
   message(STATUS "Doxygen not found, 'doxygen' target unavailable")
 endif()
+
+# The targets above need neither Libadalang nor the compiler itself; CI
+# configures with this option where Libadalang is not installed.
+option(LALVM_TOOLS_ONLY "Configure only the format and doxygen targets" OFF)
+if(LALVM_TOOLS_ONLY)
+  return()
+endif()
+
+find_package(Libadalang REQUIRED)
+add_subdirectory(test)
+
+# TODO: replace global include_directories with target_include_directories(lalvm ...)
+# so that source-relative paths are scoped to the lalvm target only.
+include_directories(mlir frontend)
+
+add_llvm_executable(lalvm
+  frontend/DiagnosticPrinter.cpp
+  mlir/MLIRGen.cpp
+  mlir/Dialect.cpp
+  mlir/ClosureConversion.cpp
+  mlir/HoistNestedSymbolOperations.cpp
+  mlir/LowerToLLVM.cpp
+  mlir/AdaToLLVMIRTranslation.cpp
+  mlir/AdaDebugInfo.cpp
+  mlir/PostTranslationDITypes.cpp
+  frontend/AST.cpp
+  lalvm.cpp
+
+  DEPENDS
+  AdaOpsIncGen
+  )
+
+# TODO: replace catch-all dialect/conversion/extension lib sets with an explicit
+# minimal list to reduce binary size and link time.
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
+get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
+get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
+target_link_libraries(lalvm
+  PRIVATE
+      ${dialect_libs}
+    ${conversion_libs}
+    ${extension_libs}
+  Libadalang::libadalang
+  MLIRAnalysis
+  MLIRIR
+  MLIRParser
+  MLIRSupport
+  MLIRLLVMToLLVMIRTranslation
+  MLIRExecutionEngine
+  MLIRLLVMCommonConversion
+  MLIRSCFDialect
+)
