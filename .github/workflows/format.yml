@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
 
+# Cancel the runs a newer push to the same branch or PR supersedes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   LLVM_VERSION: "22"
 
