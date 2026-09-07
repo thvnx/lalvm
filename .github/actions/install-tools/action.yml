@@ -1,0 +1,41 @@
+name: Install tools
+description: >
+  Install CMake, Ninja, the LLVM/MLIR development packages from apt.llvm.org,
+  and any extra apt packages a workflow needs.
+
+inputs:
+  llvm-version:
+    description: LLVM major version to install.
+    required: false
+    default: "22"
+  packages:
+    description: Extra apt packages to install, space separated.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Add the LLVM apt repository
+      shell: bash
+      env:
+        LLVM_VERSION: ${{ inputs.llvm-version }}
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh "$LLVM_VERSION"
+
+    - name: Install packages
+      shell: bash
+      env:
+        LLVM_VERSION: ${{ inputs.llvm-version }}
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        # $PACKAGES is left unquoted on purpose: word splitting turns the
+        # space-separated input into one argument per package.
+        sudo apt-get install -y cmake ninja-build \
+          "llvm-$LLVM_VERSION-dev" \
+          "llvm-$LLVM_VERSION-tools" \
+          "libmlir-$LLVM_VERSION-dev" \
+          "mlir-$LLVM_VERSION-tools" \
+          $PACKAGES
