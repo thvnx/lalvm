@@ -8,8 +8,7 @@
         "LIBADALANG_INCLUDE_DIR": "/path/to/libadalang/build/src",
         "MLIR_DIR": "/usr/lib/llvm-21/lib/cmake/mlir",
         "CMAKE_C_COMPILER": "clang-21",
-        "CMAKE_CXX_COMPILER": "clang++-21",
-        "LLVM_EXTERNAL_LIT": "/usr/bin/lit"
+        "CMAKE_CXX_COMPILER": "clang++-21"
       }
     },
     {
