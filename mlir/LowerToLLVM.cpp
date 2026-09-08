@@ -1,8 +1,7 @@
 //===- LowerToLLVM.cpp - Lowering from Ada to LLVM ------------------------===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2024-2026 The LALVM Project
 //
 //===----------------------------------------------------------------------===//
 //
@@ -460,6 +459,35 @@ struct CallOpLowering : public OpConversionPattern<ada::CallOp> {
       resultTypes.push_back(getTypeConverter()->convertType(t));
     rewriter.replaceOpWithNewOp<func::CallOp>(op, op.getCallee(), resultTypes,
                                               adaptor.getOperands());
+    return success();
+  }
+};
+
+// OpConversionPattern: an array element address is a Get Element Pointer (GEP)
+// into the !llvm.array storage.
+struct IndexOpLowering : public OpConversionPattern<ada::IndexOp> {
+  using OpConversionPattern<ada::IndexOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::IndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // The array operand is the ada.alloca lowered to a ptr to [N x T] (see
+    // AllocaAdaTypedLowering). Recover [N x T] from its !ada.array layout: the
+    // type converter nests one llvm.array per dimension.
+    auto arrayQual = mlir::cast<ada::QualType>(
+        mlir::cast<mlir::MemRefType>(op.getArray().getType()).getElementType());
+    auto llvmArrayTy = getTypeConverter()->convertType(arrayQual.getMlirType());
+    if (!llvmArrayTy)
+      return failure();
+
+    // getelementptr [N x T], ptr %base, 0, %off: the static 0 steps over the
+    // single [N x T], the dynamic offset selects the element. The offset is the
+    // zero-based one MLIRGen normalized ('First already subtracted), lowered to
+    // its machine integer, so no bound is involved here.
+    auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, ptrTy, llvmArrayTy, adaptor.getArray(),
+        llvm::ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()});
     return success();
   }
 };
@@ -1119,8 +1147,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
                UnOpLowering, UnwrapOpLowering, SubpOpLowering,
                ConstantOpLowering, CoerceOpLowering, RangeOpLowering,
-               RangeCheckOpLowering, AttrOpLowering>(typeConverter,
-                                                     &getContext());
+               RangeCheckOpLowering, AttrOpLowering, IndexOpLowering>(
+      typeConverter, &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));
