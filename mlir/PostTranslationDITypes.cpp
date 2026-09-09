@@ -1,8 +1,7 @@
 //===- PostTranslationDITypes.cpp - Post-translation DI type builders -----===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
 //
 //===----------------------------------------------------------------------===//
 
@@ -26,7 +25,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Path.h"
 
-// Both builders below cache DIFiles by path and retype placeholder DIEs the
+// The builders below cache DIFiles by path and retype placeholder DIEs the
 // same way; these helpers capture the shared logic.
 
 /// Return the DIFile for `path`, creating it once and caching by path so
@@ -80,8 +79,9 @@ static llvm::DIType *preserveConst(llvm::DIBuilder &db, llvm::DIType *current,
   return newType;
 }
 
-// Both builders replace placeholder DIEs (an enum stub / a subrange typedef)
-// the same way, on local variables and in subprogram signatures. `replacement`
+// The builders replace placeholder DIEs (an enum stub, a subrange typedef, an
+// array stub) the same way, on local variables and in subprogram signatures.
+// `replacement`
 // maps a const-stripped placeholder type to its full type, or returns null when
 // the type is not a placeholder; the `in`-parameter const wrapper is preserved.
 
@@ -125,11 +125,71 @@ static void rewriteSignatureTypes(
   }
 }
 
-void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
-                                 mlir::ModuleOp module) {
+/// The DWARF scope, source file, and line of an `ada.type` op. The scope is the
+/// enclosing subprogram recorded on its location, else the compile unit.
+struct TypeOrigin {
+  llvm::DIScope *scope;
+  llvm::StringRef filePath;
+  unsigned line;
+};
+static TypeOrigin typeOrigin(llvm::Module &llvmModule, llvm::DICompileUnit *cu,
+                             mlir::ada::TypeOp typeOp) {
+  TypeOrigin origin{cu, {}, 0};
+  using ScopeLoc = mlir::FusedLocWith<mlir::ada::DIScopeRefAttr>;
+  if (auto fused = typeOp.getLoc()->findInstanceOf<ScopeLoc>()) {
+    llvm::StringRef fnName = fused.getMetadata().getScope().getValue();
+    auto *fn = llvmModule.getFunction(fnName);
+    if (fn && fn->getSubprogram())
+      origin.scope = fn->getSubprogram();
+  }
+  mlir::Location loc = typeOp.getLoc();
+  while (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
+    if (fused.getLocations().empty())
+      break;
+    loc = fused.getLocations().front();
+  }
+  if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(loc)) {
+    origin.filePath = flc.getFilename().getValue();
+    origin.line = flc.getStartLine();
+  }
+  return origin;
+}
+
+/// The DIBasicType of `typeOp`'s numeric base (the end of its `base` chain).
+/// Built like AdaDebugInfoPass's DIBasicTypeAttr, so DIBuilder returns the very
+/// node that attr translated to. Null for non-numeric types.
+static llvm::DIType *basicTypeFor(llvm::DIBuilder &db,
+                                  mlir::ada::TypeOp typeOp) {
+  while (auto baseAttr = typeOp.getBaseAttr()) {
+    auto baseOp = mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
+        mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
+    if (!baseOp)
+      return nullptr;
+    typeOp = baseOp;
+  }
+  llvm::StringRef name = mlir::ada::bareName(typeOp.getSymName());
+  if (auto intType = mlir::dyn_cast<mlir::IntegerType>(typeOp.getMlirType())) {
+    auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (!intInfo)
+      return nullptr;
+    unsigned enc = intInfo.getModulus()      ? llvm::dwarf::DW_ATE_unsigned
+                   : intType.getWidth() == 1 ? llvm::dwarf::DW_ATE_boolean
+                                             : llvm::dwarf::DW_ATE_signed;
+    return db.createBasicType(name, llvm::alignTo(intType.getWidth(), 8), enc);
+  }
+  if (auto floatType = mlir::dyn_cast<mlir::FloatType>(typeOp.getMlirType()))
+    return db.createBasicType(name, floatType.getWidth(),
+                              llvm::dwarf::DW_ATE_float);
+  return nullptr;
+}
+
+mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
+                                                       mlir::ModuleOp module) {
+  DITypeBySymName types;
   auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
   if (!cuMeta || cuMeta->getNumOperands() == 0)
-    return;
+    return types;
   auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
 
   // Collect surviving enum ada.type ops; skip the IR scan if none exist.
@@ -143,7 +203,7 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
       enumTypeOps.push_back(typeOp);
   });
   if (enumTypeOps.empty())
-    return;
+    return types;
 
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
@@ -155,6 +215,9 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
   llvm::StringSet<> referenced;
   auto noteEnumStub = [&](llvm::DIType *t) {
     auto *ct = llvm::dyn_cast_or_null<llvm::DICompositeType>(stripConst(t));
+    // An enum component is referenced through its array's stub.
+    if (ct && ct->getTag() == llvm::dwarf::DW_TAG_array_type)
+      ct = llvm::dyn_cast_or_null<llvm::DICompositeType>(ct->getBaseType());
     if (ct && ct->getTag() == llvm::dwarf::DW_TAG_enumeration_type &&
         ct->getElements().empty())
       referenced.insert(ct->getName());
@@ -217,6 +280,7 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
         /*AlignInBits=*/0, db.getOrCreateArray(elems),
         /*UnderlyingType=*/nullptr);
     enumTypeByName[typeOp.getSymName()] = enumType;
+    types[typeOp.getSymNameAttr()] = enumType;
   }
 
   // Replace the empty enum stubs (emitted by AdaDebugInfoPass as placeholders)
@@ -235,13 +299,16 @@ void mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
   rewriteSignatureTypes(db, llvmModule, replace);
 
   db.finalize();
+  return types;
 }
 
-void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
-                                     mlir::ModuleOp module) {
+mlir::ada::DITypeBySymName
+mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
+                                mlir::ModuleOp module) {
+  DITypeBySymName types;
   auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
   if (!cuMeta || cuMeta->getNumOperands() == 0)
-    return;
+    return types;
   auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
 
   // Collect constrained integer subtypes (any recorded range, static or
@@ -258,7 +325,7 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
       subtypeOps.push_back(typeOp);
   });
   if (subtypeOps.empty())
-    return;
+    return types;
 
   // Index the artificial bound variables (short name + bound suffix) emitted by
   // AdaDebugInfoPass, keyed by (scope, name): the name is unique only within
@@ -288,29 +355,6 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
       return nullptr;
     return llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
         ty, bound.getValue().sextOrTrunc(ty->getBitWidth())));
-  };
-
-  // The base type DIE is shared across subtypes of the same base.
-  llvm::StringMap<llvm::DIType *> baseTypeByName;
-  auto baseTypeFor = [&](mlir::ada::TypeOp typeOp) -> llvm::DIType * {
-    auto baseOp = mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
-        mlir::SymbolTable::lookupNearestSymbolFrom(typeOp,
-                                                   typeOp.getBaseAttr()));
-    if (!baseOp)
-      return nullptr;
-    auto *&cached = baseTypeByName[baseOp.getSymName()];
-    if (!cached) {
-      unsigned enc = llvm::dwarf::DW_ATE_signed;
-      if (auto baseInfo =
-              mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
-                  baseOp.getTypeInfoAttr()))
-        if (baseInfo.getModulus())
-          enc = llvm::dwarf::DW_ATE_unsigned;
-      cached = db.createBasicType(
-          mlir::ada::bareName(baseOp.getSymName()),
-          mlir::cast<mlir::IntegerType>(baseOp.getMlirType()).getWidth(), enc);
-    }
-    return cached;
   };
 
   llvm::StringMap<llvm::DISubrangeType *> subrangeByName;
@@ -374,9 +418,10 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
         mlir::ada::bareName(typeOp.getSymName()),
         getOrCreateDIFile(db, fileCache, filePath), line, scope,
         intType.getWidth(), /*AlignInBits=*/0, llvm::DINode::FlagZero,
-        baseTypeFor(typeOp), loMD, hiMD,
+        basicTypeFor(db, typeOp), loMD, hiMD,
         /*Stride=*/nullptr, /*Bias=*/nullptr);
     subrangeByName[typeOp.getSymName()] = subrange;
+    types[typeOp.getSymNameAttr()] = subrange;
   }
 
   // Replace the typedef placeholders (emitted by AdaDebugInfoPass) with the
@@ -386,6 +431,121 @@ void mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
     if (auto *dt = llvm::dyn_cast_or_null<llvm::DIDerivedType>(t))
       if (auto it = subrangeByName.find(dt->getName());
           it != subrangeByName.end())
+        return it->second;
+    return nullptr;
+  };
+  rewriteVariableTypes(db, llvmModule, replace);
+  rewriteSignatureTypes(db, llvmModule, replace);
+
+  db.finalize();
+  return types;
+}
+
+void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
+                                  mlir::ModuleOp module,
+                                  const DITypeBySymName &types) {
+  auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
+  if (!cuMeta || cuMeta->getNumOperands() == 0)
+    return;
+  auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
+
+  // Statically constrained arrays only: the others have no stub.
+  llvm::SmallVector<mlir::ada::TypeOp> arrayOps;
+  module.walk([&](mlir::ada::TypeOp typeOp) {
+    auto info = mlir::dyn_cast_or_null<mlir::ada::ArrayTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (!info || !mlir::isa<mlir::ada::ArrayType>(typeOp.getMlirType()))
+      return;
+    for (unsigned dim = 0; dim < info.rank(); ++dim)
+      if (!info.staticLower(dim) || !info.staticUpper(dim))
+        return;
+    arrayOps.push_back(typeOp);
+  });
+  if (arrayOps.empty())
+    return;
+
+  llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
+  llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
+
+  auto typeOpFor = [&](mlir::ada::TypeOp from,
+                       mlir::FlatSymbolRefAttr sym) -> mlir::ada::TypeOp {
+    return mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
+        mlir::SymbolTable::lookupNearestSymbolFrom(from, sym));
+  };
+  // A bound as a constant of the index type's width.
+  auto boundMD = [&](mlir::IntegerAttr bound,
+                     llvm::IntegerType *ty) -> llvm::Metadata * {
+    return llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
+        ty, bound.getValue().sextOrTrunc(ty->getBitWidth())));
+  };
+
+  llvm::StringMap<llvm::DICompositeType *> arrayByName;
+  for (mlir::ada::TypeOp typeOp : arrayOps) {
+    auto info =
+        mlir::cast<mlir::ada::ArrayTypeInfoAttr>(typeOp.getTypeInfoAttr());
+    auto arrayType = mlir::cast<mlir::ada::ArrayType>(typeOp.getMlirType());
+
+    // Component: an enum or subrange node built earlier, else its basic type.
+    mlir::ada::TypeOp componentOp = typeOpFor(typeOp, info.getComponent());
+    if (!componentOp)
+      continue;
+    llvm::DIType *component = types.lookup(componentOp.getSymNameAttr());
+    if (!component)
+      component = basicTypeFor(db, componentOp);
+    if (!component)
+      continue;
+
+    TypeOrigin origin = typeOrigin(llvmModule, cu, typeOp);
+    llvm::DIFile *file = getOrCreateDIFile(db, fileCache, origin.filePath);
+
+    // One subrange per dimension, typed by the index type and carrying both
+    // bounds, as GNAT does.
+    llvm::SmallVector<llvm::Metadata *, 2> dims;
+    for (unsigned dim = 0; dim < info.rank(); ++dim) {
+      mlir::ada::TypeOp indexOp = typeOpFor(typeOp, info.getIndexTypes()[dim]);
+      llvm::DIType *indexType = indexOp ? basicTypeFor(db, indexOp) : nullptr;
+      if (!indexType)
+        break;
+      auto indexWidth =
+          mlir::cast<mlir::IntegerType>(arrayType.getIndexTypes()[dim])
+              .getWidth();
+      auto *boundTy =
+          llvm::IntegerType::get(llvmModule.getContext(), indexWidth);
+      dims.push_back(db.createSubrangeType(
+          /*Name=*/"", file, origin.line, origin.scope, indexWidth,
+          /*AlignInBits=*/0, llvm::DINode::FlagZero, indexType,
+          boundMD(info.staticLower(dim), boundTy),
+          boundMD(info.staticUpper(dim), boundTy), /*Stride=*/nullptr,
+          /*Bias=*/nullptr));
+    }
+    if (dims.size() != info.rank())
+      continue;
+
+    // Size: the extents times the component's byte-rounded width.
+    uint64_t sizeInBits = 0;
+    if (auto intType =
+            mlir::dyn_cast<mlir::IntegerType>(arrayType.getComponentType()))
+      sizeInBits = llvm::alignTo(intType.getWidth(), 8);
+    else if (auto floatType =
+                 mlir::dyn_cast<mlir::FloatType>(arrayType.getComponentType()))
+      sizeInBits = floatType.getWidth();
+    for (int64_t extent : arrayType.getExtents())
+      sizeInBits *= extent;
+
+    auto *arrayDI = db.createArrayType(
+        origin.scope, mlir::ada::bareName(typeOp.getSymName()), file,
+        origin.line, sizeInBits, /*AlignInBits=*/0, component,
+        db.getOrCreateArray(dims));
+    arrayByName[typeOp.getSymName()] = arrayDI;
+  }
+
+  // Replace the empty array stubs with the full types, on variables and
+  // subprogram signatures, matching by sym_name.
+  auto replace = [&](llvm::DIType *t) -> llvm::DIType * {
+    auto *ct = llvm::dyn_cast_or_null<llvm::DICompositeType>(t);
+    if (ct && ct->getTag() == llvm::dwarf::DW_TAG_array_type &&
+        ct->getElements().empty())
+      if (auto it = arrayByName.find(ct->getName()); it != arrayByName.end())
         return it->second;
     return nullptr;
   };

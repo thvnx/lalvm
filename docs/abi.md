@@ -28,9 +28,11 @@ a `NameLoc` in the Ada dialect, which `AdaDebugInfoPass` consumes to emit
 numbers). Enum types produce `DICompositeType` entries with one `DIEnumerator`
 per literal. Constrained integer subtypes produce `DISubrangeType` entries with
 their bounds: constants for static bounds, and a referenced `DILocalVariable`
-for a dynamic bound (see the limitations in `AdaDebugInfoPass`). Ada `goto`
-labels get a `DW_TAG_label` (via `llvm.intr.dbg.label`), so a debugger can break
-on a labeled statement.
+for a dynamic bound (see the limitations in `AdaDebugInfoPass`). Statically
+constrained arrays produce a `DW_TAG_array_type` named after the Ada type, with
+one `DW_TAG_subrange_type` per dimension typed by the index type and carrying
+both bounds, as GNAT emits. Ada `goto` labels get a `DW_TAG_label` (via
+`llvm.intr.dbg.label`), so a debugger can break on a labeled statement.
 
 To inspect source locations in the MLIR output, use:
 

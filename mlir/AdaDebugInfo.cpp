@@ -1,8 +1,7 @@
 //===- AdaDebugInfo.cpp - Emit LLVM debug intrinsics from NameLoc ---------===//
 //
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
 //
 //===----------------------------------------------------------------------===//
 //
@@ -139,6 +138,38 @@ static LLVM::DIDerivedTypeAttr makeDISubrangeStub(MLIRContext *ctx,
       /*extraData=*/LLVM::DINodeAttr{});
 }
 
+/// Build the DW_TAG_array_type placeholder for a statically constrained array
+/// ada.type op: the element type is `component`, the name is the full sym_name
+/// (the key buildArrayDITypes matches on), and the elements are empty. MLIR has
+/// no DISubrangeType attr to type a dimension with its index type, so
+/// buildArrayDITypes adds the dimensions, and the size, after MLIR-to-LLVM
+/// translation. For `type Vec is array (5 .. 14) of Integer` in subprogram `p`:
+///
+/// ```
+/// #llvm.di_composite_type<tag = DW_TAG_array_type, name = "p.vec",
+///     baseType = #integer>
+/// ```
+///
+/// Returns null for a dynamic bound or a component without DI type.
+static LLVM::DICompositeTypeAttr makeDIArrayStub(MLIRContext *ctx,
+                                                 ada::TypeOp typeOp,
+                                                 ada::ArrayTypeInfoAttr info,
+                                                 LLVM::DITypeAttr component) {
+  if (!isa<ada::ArrayType>(typeOp.getMlirType()) || !component)
+    return {};
+  for (unsigned dim = 0; dim < info.rank(); ++dim)
+    if (!info.staticLower(dim) || !info.staticUpper(dim))
+      return {};
+  return LLVM::DICompositeTypeAttr::get(
+      ctx, llvm::dwarf::DW_TAG_array_type,
+      StringAttr::get(ctx, typeOp.getSymName()), /*file=*/LLVM::DIFileAttr{},
+      /*line=*/0, /*scope=*/LLVM::DIScopeAttr{}, component, LLVM::DIFlags::Zero,
+      /*sizeInBits=*/0, /*alignInBits=*/0,
+      /*dataLocation=*/LLVM::DIExpressionAttr{},
+      /*rank=*/LLVM::DIExpressionAttr{}, /*allocated=*/LLVM::DIExpressionAttr{},
+      /*associated=*/LLVM::DIExpressionAttr{}, /*elements=*/{});
+}
+
 /// Wrap `baseType` in a DW_TAG_const_type, modeling an Ada `in` parameter as a
 /// read-only (constant) view (@rm{6-1}), as GNAT does.
 static LLVM::DIDerivedTypeAttr makeDIConstType(MLIRContext *ctx,
@@ -150,9 +181,9 @@ static LLVM::DIDerivedTypeAttr makeDIConstType(MLIRContext *ctx,
 }
 
 /// Dispatch to the appropriate DI type for a given ada.type op.
-/// Returns a DICompositeTypeAttr stub for enum types, a DIDerivedType typedef
-/// stub for constrained integer subtypes, a DIBasicTypeAttr for base integer
-/// and float types, and null for unsupported type info kinds.
+/// Returns a DICompositeTypeAttr stub for enum and array types, a DIDerivedType
+/// typedef stub for constrained integer subtypes, a DIBasicTypeAttr for base
+/// integer and float types, and null for unsupported type info kinds.
 static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   auto enumInfo =
       dyn_cast_or_null<ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
@@ -168,6 +199,14 @@ static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   }
   if (enumInfo)
     return makeDIEnumStub(ctx, typeOp);
+  if (auto arrayInfo =
+          dyn_cast<ada::ArrayTypeInfoAttr>(typeOp.getTypeInfoAttr())) {
+    auto componentOp = dyn_cast_or_null<ada::TypeOp>(
+        SymbolTable::lookupNearestSymbolFrom(typeOp, arrayInfo.getComponent()));
+    return makeDIArrayStub(ctx, typeOp, arrayInfo,
+                           componentOp ? makeDITypeAttr(ctx, componentOp)
+                                       : LLVM::DITypeAttr());
+  }
   if (!isa<ada::IntegerTypeInfoAttr, ada::FloatTypeInfoAttr>(
           typeOp.getTypeInfoAttr()))
     return {};
@@ -535,34 +574,35 @@ struct AdaDebugInfoPass
           diType = makeDIConstType(ctx, diType);
         } else if (isa<LLVM::LLVMPointerType>(argType)) {
           // Reference `in out`/`out` parameter: dbg.declare.
-          // The ptr is opaque; recover the element type from the first
-          // llvm.load or llvm.store that uses this argument.
           isDeclare = true;
-          mlir::Type elemType;
-          for (Operation *userOp : arg.getUsers()) {
-            if (auto load = dyn_cast<LLVM::LoadOp>(userOp)) {
-              elemType = load->getResult(0).getType();
-              break;
-            }
-            if (auto store = dyn_cast<LLVM::StoreOp>(userOp)) {
-              elemType = store.getValue().getType();
-              break;
-            }
-          }
-          if (!elemType) {
-            func.emitWarning("reference parameter '")
-                << nl.getName().getValue()
-                << "' has no load/store uses; skipping debug info";
-            continue;
-          }
           diType = extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName);
-          if (!diType)
-            diType = lookupNamedDIType(ctx, elemType, typeOpCache);
           if (!diType) {
-            auto intElemType = dyn_cast<IntegerType>(elemType);
-            if (!intElemType)
-              continue; // silently skip floats and other unsupported types
-            diType = makeDIIntType(ctx, intElemType);
+            // The ptr is opaque; recover the element type from the first
+            // llvm.load or llvm.store that uses this argument.
+            mlir::Type elemType;
+            for (Operation *userOp : arg.getUsers()) {
+              if (auto load = dyn_cast<LLVM::LoadOp>(userOp)) {
+                elemType = load->getResult(0).getType();
+                break;
+              }
+              if (auto store = dyn_cast<LLVM::StoreOp>(userOp)) {
+                elemType = store.getValue().getType();
+                break;
+              }
+            }
+            if (!elemType) {
+              func.emitWarning("reference parameter '")
+                  << nl.getName().getValue()
+                  << "' has no load/store uses; skipping debug info";
+              continue;
+            }
+            diType = lookupNamedDIType(ctx, elemType, typeOpCache);
+            if (!diType) {
+              auto intElemType = dyn_cast<IntegerType>(elemType);
+              if (!intElemType)
+                continue; // silently skip floats and other unsupported types
+              diType = makeDIIntType(ctx, intElemType);
+            }
           }
         } else {
           continue;

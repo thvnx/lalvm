@@ -57,10 +57,13 @@ implemented.
 - `Character` (i8) and user-defined character types
 - Integer subtypes with static or dynamic range constraints (`subtype S is
   Integer range 1 .. N`); widths derived from the declared range
+- Statically-constrained one-dimensional arrays of a scalar component (`type
+  Vec is array (1 .. 10) of Integer`), with indexed reads and writes
 
 ## Debug info (under `-g`)
 
 DWARF 5, `DW_LANG_Ada2012`, source locations on all ops,
 `dbg.declare`/`dbg.value` for variables and constants, `DICompositeType` for
-enum types, `DISubrangeType` for constrained integer subtypes, `DW_TAG_label`
-for `goto` labels.
+enum types, `DISubrangeType` for constrained integer subtypes,
+`DW_TAG_array_type` with typed subranges for statically-constrained arrays,
+`DW_TAG_label` for `goto` labels.

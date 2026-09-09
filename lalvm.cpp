@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2024-2026 The LALVM Project
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -349,8 +352,13 @@ static int emitLLVMIR(mlir::MLIRContext &context,
     // selector, see `DwarfCompileUnit::hasDwarfPubSections`).
     llvmModule->addModuleFlag(llvm::Module::Max, "Dwarf Version", 5);
 
-    mlir::ada::buildEnumDITypes(*llvmModule, *module);
-    mlir::ada::buildSubrangeDITypes(*llvmModule, *module);
+    // Arrays reuse enum and subrange nodes for components and indices.
+    mlir::ada::DITypeBySymName diTypes =
+        mlir::ada::buildEnumDITypes(*llvmModule, *module);
+    mlir::ada::DITypeBySymName subranges =
+        mlir::ada::buildSubrangeDITypes(*llvmModule, *module);
+    diTypes.insert(subranges.begin(), subranges.end());
+    mlir::ada::buildArrayDITypes(*llvmModule, *module, diTypes);
   }
 
   // Initialize the host target backend.
