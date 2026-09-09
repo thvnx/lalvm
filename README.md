@@ -33,8 +33,8 @@ LALVM is currently based on LLVM/MLIR version 22.
 - LLVM/MLIR (for example on Debian: `llvm-dev`, `llvm-22-tools`,
   `libmlir-22-dev`, `mlir-22-tools`, `cmake`, `ninja-build`, `clang`,
   `clang-format`).
-- AdaCore's [Libadalang](https://github.com/AdaCore/libadalang) for Ada semantic
-  analysis and name resolution.
+- AdaCore's [Libadalang](https://github.com/AdaCore/libadalang), version 26 or
+  newer, for Ada semantic analysis and name resolution.
 - `lit` and `FileCheck` for running tests (from `llvm-22-tools`).
 - `doxygen` and `graphviz` (optional, for API documentation with call graphs).
 

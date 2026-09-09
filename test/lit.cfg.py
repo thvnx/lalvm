@@ -46,3 +46,8 @@ if config.asan:
     if 'ASAN_OPTIONS' in config.environment:
         asan_options += ':' + config.environment['ASAN_OPTIONS']
     config.environment['ASAN_OPTIONS'] = asan_options
+
+# The Libadalang major version as a feature (`libadalang-26`), so a test can
+# XFAIL on a release lacking what it needs. A development build is 9999.
+config.available_features.add(
+    'libadalang-%d' % config.libadalang_version_major)
