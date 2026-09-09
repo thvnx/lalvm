@@ -112,6 +112,14 @@ if(LALVM_TOOLS_ONLY)
 endif()
 
 find_package(Libadalang REQUIRED)
+# Libadalang's C API changed in 27: frontend/AST.cpp selects the right calls on
+# this macro and lit exposes it as a feature.
+if(Libadalang_VERSION MATCHES "^([0-9]+)")
+  set(LALVM_LIBADALANG_VERSION_MAJOR ${CMAKE_MATCH_1})
+else()
+  set(LALVM_LIBADALANG_VERSION_MAJOR 9999)
+endif()
+
 add_subdirectory(test)
 
 # TODO: replace global include_directories with target_include_directories(lalvm ...)
@@ -155,3 +163,5 @@ target_link_libraries(lalvm
   MLIRLLVMCommonConversion
   MLIRSCFDialect
 )
+target_compile_definitions(lalvm PRIVATE
+  LALVM_LIBADALANG_VERSION_MAJOR=${LALVM_LIBADALANG_VERSION_MAJOR})

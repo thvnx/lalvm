@@ -96,18 +96,27 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
   if (!projectFile.empty()) {
     // Resolve units through the GPR project's provider (`with`ed units,
     // separate specs).
-    ada_gpr_options opts = ada_gpr_options_create();
+    // @todo Scenario variables (-X) are not wired yet.
     std::string projPath(projectFile);
+    ada_string_array_ptr errors = nullptr;
+#if LALVM_LIBADALANG_VERSION_MAJOR >= 27
+    // Libadalang 27 loads a project from a GPR options object.
+    ada_gpr_options opts = ada_gpr_options_create();
     ada_gpr_options_add_switch(opts, ADA_GPR_OPTION_P, projPath.c_str(),
                                nullptr,
                                /*override=*/0);
-    // @todo Scenario variables (-X, ADA_GPR_OPTION_X) are not wired yet.
-    ada_string_array_ptr errors = nullptr;
     ada_gpr_project_load(opts, /*ada_only=*/1, &project, &errors);
     // Read the exception now: the next libadalang call (options_free) clears
     // it.
     bool loadFailed = print_exception(/*or_silent=*/true);
     ada_gpr_options_free(opts);
+#else
+    ada_gpr_project_load(projPath.c_str(), /*scenario_vars=*/nullptr,
+                         /*target=*/nullptr, /*runtime=*/nullptr,
+                         /*config_file=*/nullptr, /*ada_only=*/1, &project,
+                         &errors);
+    bool loadFailed = print_exception(/*or_silent=*/true);
+#endif
     if (errors) {
       for (int i = 0; i < errors->length; ++i)
         llvm::errs() << "project error: " << errors->c_ptr[i] << "\n";
@@ -120,10 +129,17 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
 
     context = ada_allocate_analysis_context();
     abort_on_exception();
+#if LALVM_LIBADALANG_VERSION_MAJOR >= 27
+    // Libadalang 27 added the `charset` argument.
     ada_gpr_project_initialize_context(project, context, /*project=*/nullptr,
                                        /*charset=*/nullptr,
                                        /*event_handler=*/nullptr,
                                        /*with_trivia=*/1, /*tab_stop=*/8);
+#else
+    ada_gpr_project_initialize_context(project, context, /*project=*/nullptr,
+                                       /*event_handler=*/nullptr,
+                                       /*with_trivia=*/1, /*tab_stop=*/8);
+#endif
     abort_on_exception();
 
     std::string file(filename);
@@ -322,9 +338,18 @@ bool libadalang::isUniversalTypeDecl(ada_node &typeDecl) {
 
 bool libadalang::isNumericTypeDecl(ada_node &typeDecl) {
   ada_bool result = false;
+#if LALVM_LIBADALANG_VERSION_MAJOR >= 27
   return ada_base_type_decl_p_is_numeric_type(&typeDecl, &kNullOrigin,
                                               &result) &&
          result;
+#else
+  // `p_is_numeric_type` appeared in Libadalang 27 as "integer or real type".
+  if (ada_base_type_decl_p_is_int_type(&typeDecl, &kNullOrigin, &result) &&
+      result)
+    return true;
+  return ada_base_type_decl_p_is_real_type(&typeDecl, &kNullOrigin, &result) &&
+         result;
+#endif
 }
 
 bool libadalang::isArrayTypeDecl(ada_node &typeDecl) {

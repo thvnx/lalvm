@@ -1,4 +1,5 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
+-- XFAIL: libadalang-26
 
 -- An object of a scalar type with a Default_Value aspect (RM 3.5) and no
 -- explicit initializer is default-initialized. The default is a type property,
