@@ -1,13 +1,8 @@
-//===- AdaToLLVMIRTranslation.cpp - Ada dialect LLVM IR translation -------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
+// Copyright (c) 2026 The LALVM Project
 
+#include "ada/AdaToLLVMIRTranslation.h"
 #include "ada/Dialect.h"
-#include "ada/ToLLVMIRTranslation.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
 
@@ -21,7 +16,8 @@ public:
 
   LogicalResult convertOperation(Operation *op, llvm::IRBuilderBase &,
                                  LLVM::ModuleTranslation &) const override {
-    // ada.type has no LLVM IR representation; drop it silently.
+    // ada.type has no LLVM IR representation (it holds metadata that are no
+    // longer useful when translating to LLVM IR). Drop it silently.
     if (isa<ada::TypeOp>(op))
       return success();
     return op->emitError("unexpected Ada op surviving to LLVM IR translation");
