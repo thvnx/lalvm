@@ -38,6 +38,30 @@ LALVM is currently based on LLVM/MLIR version 22.
 - `lit` and `FileCheck` for running tests (from `llvm-22-tools`).
 - `doxygen` and `graphviz` (optional, for API documentation with call graphs).
 
+### Setting up a development environment
+
+LLVM/MLIR 22 from [apt.llvm.org](https://apt.llvm.org), on Debian or Ubuntu:
+
+```sh
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 22
+sudo apt-get install -y cmake ninja-build mold clang-22 \
+  llvm-22-dev llvm-22-tools libmlir-22-dev mlir-22-tools
+```
+
+The GNAT toolchain and Libadalang from [Alire](https://alire.ada.dev), built as
+a shared library (LALVM links `libadalang.so`):
+
+```sh
+alr toolchain --select gnat_native gprbuild
+LIBRARY_TYPE=relocatable alr get --build libadalang
+alr get --dirname libadalang   # the directory to use as LIBADALANG_DIR
+```
+
+The execution tests need GNAT on `PATH`: `eval "$(alr printenv)"` from the crate
+directory does it.
+
 ### Configuration
 
 Copy the example user presets file and fill in the paths for your environment:
