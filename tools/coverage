@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+# Copyright (c) 2026 The LALVM Project
+"""Coverage of lalvm's sources from an instrumented `check-lalvm` run.
+
+  coverage export <build-dir> <src-dir>
+      Write `<build-dir>/lalvm.lcov`, for `diff`, and the HTML reports of
+      `report` into `<build-dir>/coverage/`.
+  coverage report <build-dir> <src-dir>
+      Render the llvm-cov reports into `<build-dir>/coverage`: terminal
+      summaries and HTML, keeping the hand-written sources and the
+      tablegen-generated files apart. Driven by the CMake target.
+  coverage diff <base.lcov> <base-root> <head.lcov> <head-root>
+      Print the line coverage delta as a Markdown table: the total and every
+      file whose coverage changed, appeared or disappeared. Paths are made
+      relative to their root so both sides line up.
+
+`--llvm-profdata` and `--llvm-cov` name the LLVM tools (default: from PATH).
+"""
+
+import argparse
+import glob
+import os
+import subprocess
+import sys
+
+# lalvm's hand-written sources, relative to the source directory. The reports
+# are restricted to them and to the generated files, else MLIR's own headers
+# appear too.
+SOURCES = ("mlir", "frontend", "include", "lalvm.cpp")
+
+
+def run(cmd, stdout=None):
+    # Our own output is buffered, the child's is not: flush to keep the order.
+    sys.stdout.flush()
+    print("+", " ".join(cmd), file=sys.stderr)
+    subprocess.run(cmd, stdout=stdout, check=True)
+
+
+def merge_profiles(args):
+    """Merge the raw profiles of the build directory and return the .profdata."""
+    profiles = sorted(glob.glob(os.path.join(args.build_dir, "profiles", "*.profraw")))
+    if not profiles:
+        sys.exit(
+            f"Error: no .profraw files in {args.build_dir}/profiles "
+            "(run check-lalvm first)"
+        )
+    profdata = os.path.join(args.build_dir, "lalvm.profdata")
+    run([args.llvm_profdata, "merge", "-sparse", *profiles, "-o", profdata])
+    return profdata
+
+
+def llvm_cov(args, command, profdata, *rest):
+    """An llvm-cov command line on the instrumented lalvm."""
+    lalvm = os.path.join(args.build_dir, "bin", "lalvm")
+    return [args.llvm_cov, command, lalvm, f"-instr-profile={profdata}", *rest]
+
+
+def sources(args):
+    return [os.path.join(args.src_dir, s) for s in SOURCES]
+
+
+def file_sets(args):
+    """(title, HTML subdirectory, files) of the two reported sets."""
+    gen_dir = os.path.join(args.build_dir, "include")
+    return (
+        ("lalvm sources", "html", sources(args)),
+        ("generated files (tablegen)", "html-generated", [gen_dir]),
+    )
+
+
+def render_html(args, profdata):
+    """Render the HTML reports into `<build-dir>/coverage/` and return that directory."""
+    out_dir = os.path.join(args.build_dir, "coverage")
+    for _, subdir, files in file_sets(args):
+        output_dir = f"-output-dir={os.path.join(out_dir, subdir)}"
+        run(llvm_cov(args, "show", profdata, "-format=html", output_dir, *files))
+    return out_dir
+
+
+def export(args):
+    profdata = merge_profiles(args)
+    with open(os.path.join(args.build_dir, "lalvm.lcov"), "w") as out:
+        lcov = llvm_cov(args, "export", profdata, "-format=lcov", *sources(args))
+        run(lcov, stdout=out)
+    render_html(args, profdata)
+
+
+def report(args):
+    profdata = merge_profiles(args)
+    out_dir = render_html(args, profdata)
+    for title, _, files in file_sets(args):
+        print(f"== {title} ==")
+        run(llvm_cov(args, "report", profdata, *files))
+        print()
+    print(f"HTML reports: {out_dir}/html/index.html (sources)", file=sys.stderr)
+    print(
+        f"              {out_dir}/html-generated/index.html (generated)",
+        file=sys.stderr,
+    )
+
+
+def read_lcov(path, root):
+    """Return {source path relative to root: (lines found, lines hit)}."""
+    files = {}
+    source = None
+    with open(path) as lcov:
+        for line in lcov:
+            line = line.strip()
+            if line.startswith("SF:"):
+                source = os.path.relpath(line[3:], root)
+                found = hit = 0
+            elif line.startswith("LF:"):
+                found = int(line[3:])
+            elif line.startswith("LH:"):
+                hit = int(line[3:])
+            elif line == "end_of_record" and source is not None:
+                files[source] = (found, hit)
+                source = None
+    return files
+
+
+def percent(counts):
+    found, hit = counts
+    return 100.0 * hit / found if found else 0.0
+
+
+def row(name, base, head):
+    """One table row. A side missing the file shows as `-`."""
+    cells = [f"{percent(c):.1f}%" if c else "-" for c in (base, head)]
+    if base and head:
+        delta = percent(head) - percent(base)
+        cells.append(f"{delta:+.1f}" if abs(delta) >= 0.05 else "=")
+    else:
+        cells.append("-")
+    return f"| {name} | " + " | ".join(cells) + " |"
+
+
+def diff(args):
+    base = read_lcov(args.base_lcov, args.base_root)
+    head = read_lcov(args.head_lcov, args.head_root)
+
+    def total(files):
+        return (sum(f for f, _ in files.values()), sum(h for _, h in files.values()))
+
+    print("## Line coverage")
+    print()
+    print("| File | base | PR | delta |")
+    print("| --- | ---: | ---: | ---: |")
+    print(row("**Total**", total(base), total(head)))
+    for name in sorted(set(base) | set(head)):
+        if base.get(name) != head.get(name):
+            print(row(f"`{name}`", base.get(name), head.get(name)))
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--llvm-profdata", default="llvm-profdata")
+    parser.add_argument("--llvm-cov", default="llvm-cov")
+    commands = parser.add_subparsers(dest="command", required=True)
+    for name, func in (("export", export), ("report", report)):
+        command = commands.add_parser(name)
+        command.add_argument("build_dir")
+        command.add_argument("src_dir")
+        command.set_defaults(func=func)
+    command = commands.add_parser("diff")
+    for name in ("base_lcov", "base_root", "head_lcov", "head_root"):
+        command.add_argument(name)
+    command.set_defaults(func=diff)
+    args = parser.parse_args(argv[1:])
+    try:
+        args.func(args)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+
+
+if __name__ == "__main__":
+    main(sys.argv)
