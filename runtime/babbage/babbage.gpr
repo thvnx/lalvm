@@ -1,0 +1,9 @@
+--  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+--  Copyright (c) 2026 The LALVM Project
+
+--  Babbage is LALVM's own Ada runtime.
+
+project Babbage is
+   for Languages use ("Ada");
+   for Source_Dirs use ("adainclude");
+end Babbage;
