@@ -122,10 +122,6 @@ endif()
 
 add_subdirectory(test)
 
-# TODO: replace global include_directories with target_include_directories(lalvm ...)
-# so that source-relative paths are scoped to the lalvm target only.
-include_directories(mlir frontend)
-
 add_llvm_executable(lalvm
   frontend/DiagnosticPrinter.cpp
   mlir/MLIRGen.cpp
@@ -143,16 +139,16 @@ add_llvm_executable(lalvm
   AdaOpsIncGen
   )
 
-# TODO: replace catch-all dialect/conversion/extension lib sets with an explicit
-# minimal list to reduce binary size and link time.
+# All MLIR dialects, conversions and extensions, as MLIR's out-of-tree template
+# does: they are static archives, so only what lalvm references gets linked.
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 get_property(extension_libs GLOBAL PROPERTY MLIR_EXTENSION_LIBS)
 target_link_libraries(lalvm
   PRIVATE
-      ${dialect_libs}
-    ${conversion_libs}
-    ${extension_libs}
+  ${dialect_libs}
+  ${conversion_libs}
+  ${extension_libs}
   Libadalang::libadalang
   MLIRAnalysis
   MLIRIR
