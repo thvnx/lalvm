@@ -16,6 +16,9 @@ env:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # comment the coverage delta
     steps:
       - uses: actions/checkout@v7
 
@@ -46,23 +49,84 @@ jobs:
           eval "$(alr -n printenv)"
           echo "PATH=$PATH" >> "$GITHUB_ENV"
 
-      # Bypass CMakePresets.json and directly set the variables.
+      # Bypass CMakePresets.json and directly set the variables. `build` runs
+      # the tests and `build-cov` is instrumented for the coverage steps below,
+      # which reuse the flags for the base commit of a pull request.
       - name: Configure
-        run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Debug
-          -DLLVM_ENABLE_ASSERTIONS=ON
-          -DCMAKE_C_COMPILER="clang-$LLVM_VERSION"
-          -DCMAKE_CXX_COMPILER="clang++-$LLVM_VERSION"
-          -DCMAKE_CXX_FLAGS=-gdwarf-4
-          -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold
-          -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold
-          -DMLIR_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/mlir"
-          -DLLVM_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/llvm"
-          -DLIBADALANG_DIR="$LIBADALANG_DIR"
+        run: |
+          flags=(-G Ninja
+            -DCMAKE_BUILD_TYPE=Debug
+            -DLLVM_ENABLE_ASSERTIONS=ON
+            -DCMAKE_C_COMPILER="clang-$LLVM_VERSION"
+            -DCMAKE_CXX_COMPILER="clang++-$LLVM_VERSION"
+            -DCMAKE_CXX_FLAGS=-gdwarf-4
+            -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=mold
+            -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=mold
+            -DMLIR_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/mlir"
+            -DLLVM_DIR="/usr/lib/llvm-$LLVM_VERSION/lib/cmake/llvm"
+            -DLIBADALANG_DIR="$LIBADALANG_DIR")
+          cmake -S . -B build "${flags[@]}"
+          cmake -S . -B build-cov "${flags[@]}" -DLALVM_COVERAGE=ON
+          echo "CMAKE_FLAGS=${flags[*]}" >> "$GITHUB_ENV"
+          llvm=/usr/lib/llvm-$LLVM_VERSION/bin
+          echo "COVERAGE=tools/coverage --llvm-profdata $llvm/llvm-profdata --llvm-cov $llvm/llvm-cov" >> "$GITHUB_ENV"
 
       - name: Build
         run: cmake --build build --target lalvm
 
       - name: Test
         run: cmake --build build --target check-lalvm
+
+      # Coverage of lalvm's sources: an lcov export for the delta below and the
+      # HTML reports, published as the run's `coverage` artifact.
+      - name: Compute the coverage
+        run: |
+          cmake --build build-cov --target check-lalvm
+          $COVERAGE export build-cov .
+
+      # Pull requests: rebuild the base commit with coverage and report the
+      # delta in the job summary, in a comment, and in the artifact. A base
+      # that fails to build or test costs the delta, not the job.
+      - name: Compute the base coverage
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --depth=1 origin "$BASE_SHA"
+          git worktree add base "$BASE_SHA"
+          cmake -S base -B build-base $CMAKE_FLAGS -DLALVM_COVERAGE=ON
+          cmake --build build-base --target check-lalvm
+          $COVERAGE export build-base base
+
+      - name: Report the coverage delta
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -f build-base/lalvm.lcov ]; then
+            $COVERAGE diff build-base/lalvm.lcov "$PWD/base" \
+              build-cov/lalvm.lcov "$PWD" > build-cov/coverage-delta.md
+          else
+            echo "No coverage baseline: the base commit failed to build or test." \
+              > build-cov/coverage-delta.md
+          fi
+          cat build-cov/coverage-delta.md >> "$GITHUB_STEP_SUMMARY"
+
+      # One comment, updated on each push. The token of a pull request from a
+      # fork is read-only, so those get the summary only.
+      - name: Comment the coverage delta on the pull request
+        if: >
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh pr comment ${{ github.event.pull_request.number }}
+          --edit-last --create-if-none --body-file build-cov/coverage-delta.md
+
+      - name: Save the coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: |
+            build-cov/coverage
+            build-cov/coverage-delta.md
