@@ -1864,7 +1864,7 @@ private:
 
   /// Whether mlirGenTypeDecl handles this declaration: numeric, universal,
   /// enumeration, or array types, or subtypes thereof (by canonical type). The
-  /// declarative-part walk skips the rest; they fail only when referenced.
+  /// others are skipped, not rejected, and fail only when referenced.
   bool isSupportedTypeDecl(ada_node &decl) {
     std::optional<ada_node> canon = libadalang::canonicalType(decl);
     if (!canon)
@@ -2491,8 +2491,8 @@ private:
       return mlir::success();
     };
 
-    // Emit one declaration at the current insertion point; no-op for kinds we
-    // don't handle.
+    // Emit one declaration at the current insertion point. Return failure for
+    // kinds we don't handle.
     auto emitDecl = [&](ada_node &decl) -> mlir::LogicalResult {
       if (mlir::failed(checkResolution(decl)))
         return mlir::failure();
@@ -2508,8 +2508,15 @@ private:
         return mlir::success();
       case ada_subp_body:
         return mlirGenSubpBody(decl) ? mlir::success() : mlir::failure();
-      default:
+      // The following nodes are queried when needed, no need to visit them.
+      case ada_subp_decl:
+      case ada_enum_rep_clause:
         return mlir::success();
+      default:
+        mlir::emitError(loc(decl),
+                        "unsupported declaration in declarative part: ")
+            << libadalang::image(&decl);
+        return mlir::failure();
       }
     };
     // ada.subp/ada.type are symbols routed into the interior ada.decls; locals
