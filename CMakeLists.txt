@@ -64,10 +64,11 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 add_subdirectory(include)
 
-# Format all C++ sources in-place using clang-format.
+# Format all C and C++ sources in-place using clang-format.
 file(GLOB_RECURSE ALL_CXX_SOURCES
   ${CMAKE_SOURCE_DIR}/*.cpp
   ${CMAKE_SOURCE_DIR}/*.h
+  ${CMAKE_SOURCE_DIR}/*.c
 )
 find_program(CLANG_FORMAT clang-format)
 if(CLANG_FORMAT)
@@ -120,6 +121,7 @@ else()
   set(LALVM_LIBADALANG_VERSION_MAJOR 9999)
 endif()
 
+add_subdirectory(runtime)
 add_subdirectory(test)
 
 add_llvm_executable(lalvm
