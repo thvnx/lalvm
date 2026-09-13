@@ -127,6 +127,10 @@ std::optional<ada_node> referencedDecl(ada_node &name);
 /// name resolution fails or finds nothing.
 std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
 
+/// Return the specification kind of the compilation unit `root`. Either
+/// "package spec" or "subprogram spec", or `std::nullopt` for a body.
+std::optional<llvm::StringRef> specKind(ada_node &root);
+
 } // namespace libadalang
 } // namespace frontend
 

@@ -460,6 +460,14 @@ int main(int argc, char **argv) {
     libadalang::AdaAST ast(inputFilename, projectFile);
     if (ast.emitParserDiagnostics())
       return 1;
+    // A specification has no code to generate. The MLIR and LLVM IR dumps stay
+    // available for inspection.
+    if (emitAction == Action::EmitObject || emitAction == Action::EmitAssembly)
+      if (auto kind = libadalang::specKind(ast.getUnitRootNode())) {
+        llvm::errs() << "cannot generate code for file " << inputFilename
+                     << " (" << *kind << ")\n";
+        return 1;
+      }
     if (int error = loadMLIR(ast, context, module))
       return error;
   }
