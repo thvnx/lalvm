@@ -5,7 +5,9 @@
 
 #include "frontend/DiagnosticPrinter.h"
 
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorOr.h"
@@ -428,6 +430,23 @@ std::optional<llvm::StringRef> libadalang::specKind(ada_node &root) {
       break;
     }
   return "spec";
+}
+
+mlir::Location libadalang::sourceLocation(mlir::MLIRContext &context,
+                                          const ada_node &node) {
+  // const_cast: the Libadalang C API has no const-qualified overloads: the
+  // underlying objects are never actually const.
+  ada_node *n = const_cast<ada_node *>(&node);
+  ada_source_location_range range;
+  ada_node_sloc_range(n, &range);
+  char *filename = ada_unit_filename(ada_node_unit(n));
+  // StringAttr::get copies the string into the context, so filename can be
+  // freed immediately.
+  auto result = mlir::FileLineColRange::get(
+      mlir::StringAttr::get(&context, filename), range.start.line,
+      range.start.column, range.end.line, range.end.column);
+  free(filename);
+  return result;
 }
 
 bool libadalang::emitSolverDiagnostics(ada_node *node) {

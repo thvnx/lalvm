@@ -349,23 +349,7 @@ private:
 
   /// Helper conversion for a Libadalang AST location to an MLIR location.
   mlir::Location loc(const ada_node &node) {
-    // const_cast: libadalang C API doesn't have const-qualified overloads;
-    // the underlying objects are never actually const.
-    ada_node *n = const_cast<ada_node *>(&node);
-    ada_source_location_range loc_range;
-    ada_node_sloc_range(n, &loc_range);
-
-    ada_source_location loc_start = loc_range.start;
-    ada_source_location loc_end = loc_range.end;
-    char *filename = ada_unit_filename(ada_node_unit(n));
-
-    // getStringAttr copies the string into the MLIR context, so filename can
-    // be freed immediately.
-    auto result = mlir::FileLineColRange::get(builder.getStringAttr(filename),
-                                              loc_start.line, loc_start.column,
-                                              loc_end.line, loc_end.column);
-    free(filename);
-    return result;
+    return libadalang::sourceLocation(*builder.getContext(), node);
   }
 
   /// Bind a DefiningName node to a Value in declValues.
