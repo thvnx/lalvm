@@ -16,6 +16,8 @@
 
 namespace mlir {
 class Diagnostic;
+class Location;
+class MLIRContext;
 } // namespace mlir
 
 namespace frontend {
@@ -130,6 +132,9 @@ std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
 /// Return the specification kind of the compilation unit `root`. Either
 /// "package spec" or "subprogram spec", or `std::nullopt` for a body.
 std::optional<llvm::StringRef> specKind(ada_node &root);
+
+/// Convert the source location range of `node` to an MLIR location.
+mlir::Location sourceLocation(mlir::MLIRContext &context, const ada_node &node);
 
 } // namespace libadalang
 } // namespace frontend
