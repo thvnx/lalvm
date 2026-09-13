@@ -403,8 +403,7 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   // @todo Add an optional optimization pipeline via
   // mlir::makeOptimizingTransformer.
   if (emitAction == Action::EmitLLVMIR)
-    return writeTextOutput(
-        [&](llvm::raw_ostream &os) { os << *llvmModule << "\n"; });
+    return writeTextOutput([&](llvm::raw_ostream &os) { os << *llvmModule; });
 
   return emitMachineCode(*llvmModule, tm, emitAction == Action::EmitObject);
 }
@@ -476,10 +475,8 @@ int main(int argc, char **argv) {
     if (debugInfo)
       flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/false)
           .useLocalScope();
-    return writeTextOutput([&](llvm::raw_ostream &os) {
-      module->print(os, flags);
-      os << "\n";
-    });
+    return writeTextOutput(
+        [&](llvm::raw_ostream &os) { module->print(os, flags); });
   }
   case Action::EmitLLVMIR:
   case Action::EmitObject:
