@@ -853,8 +853,12 @@ std::string SubpOp::getMangledName() {
     name += seg;
   }
   if (isPublic())
-    return "_ada_" + name;
+    return libraryLevelSymbol(name);
   return name;
+}
+
+std::string mlir::ada::libraryLevelSymbol(llvm::StringRef name) {
+  return ("_ada_" + name).str();
 }
 
 /// Builds a `SubpOp` and creates its entry block with arguments matching the
