@@ -38,6 +38,10 @@ namespace ada {
 /// rather than the qualified, collision-disambiguated symbol.
 llvm::StringRef bareName(llvm::StringRef qualified);
 
+/// Return the GNAT ABI symbol of a library-level subprogram: `name` with the
+/// `_ada_` prefix.
+std::string libraryLevelSymbol(llvm::StringRef name);
+
 /// Resolve the nested symbol `name` visible from `from`, honoring Ada scoping:
 /// walk the enclosing scopes and, at each `ada.subp`, search its `ada.decls`
 /// SymbolTable children (which `lookupNearestSymbolFrom` cannot reach, since
