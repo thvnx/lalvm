@@ -455,6 +455,8 @@ private:
       // Context clauses (@rm{10-1-2}): resolved by libadalang, no codegen.
       // Return without descending, so their names do not warn as unhandled.
       return mlir::success();
+    case ada_package_decl:
+      return mlirGenPackageDecl(node);
     case ada_compilation_unit:
     case ada_ada_node_list:
     case ada_library_item:
@@ -2759,6 +2761,28 @@ private:
     else
       ada_begin_block_f_stmts(&blockNode, &stmts);
     return visit(stmts);
+  }
+
+  /// Lower a package declaration by visiting the public and private declaration
+  /// parts.
+  mlir::LogicalResult mlirGenPackageDecl(ada_node &decl) {
+    builder.setInsertionPointToStart(adaModule.getBody());
+
+    ada_node public_part = {}, private_part = {};
+
+    if (!ada_base_package_decl_f_public_part(&decl, &public_part) ||
+        ada_node_is_null(&public_part) ||
+        mlir::failed(mlirGenDeclarativePart(public_part)))
+      return mlir::failure();
+
+    if (!ada_base_package_decl_f_private_part(&decl, &private_part))
+      return mlir::failure();
+
+    // The private part of a package is null when not specified.
+    if (!ada_node_is_null(&private_part))
+      return mlirGenDeclarativePart(private_part);
+
+    return mlir::success();
   }
 
   /// Unwrap an Ada-qualified value (`!ada.qual<T, @...>`) to its underlying
