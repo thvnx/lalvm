@@ -11,6 +11,7 @@ STRIP_FROM_PATH  = @PROJECT_SOURCE_DIR@ @PROJECT_BINARY_DIR@
 # op-reference produced by mlir-tblgen.
 INPUT         = @PROJECT_SOURCE_DIR@/README.md \
                 @PROJECT_SOURCE_DIR@/docs \
+                @PROJECT_SOURCE_DIR@/runtime \
                 @PROJECT_SOURCE_DIR@/include \
                 @PROJECT_SOURCE_DIR@/frontend \
                 @PROJECT_SOURCE_DIR@/mlir \

@@ -176,6 +176,12 @@ itself only emits for the host):
 lalvm --emit=llvm add.adb | llc -mtriple=aarch64-linux-gnu -o add.s
 ```
 
+To turn a unit into a program, `tools/lalvm-make <file.adb>` compiles it with
+`lalvm --emit=obj`, then binds and links it with the GNAT toolchain against the
+GNAT runtime (`gnatmake`, `gnatbind` and `gnatlink` must be on `PATH`). Without
+GNAT, see [building a program without
+GNAT](runtime/gnatstub/README.md#building-a-program-without-gnat).
+
 ## Documentation
 
 - [Architecture and pipeline](docs/architecture.md): the `--emit` pipeline and

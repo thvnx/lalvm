@@ -13,3 +13,23 @@ raised CONSTRAINT_ERROR : <file>:<line> overflow check failed
 This is a temporary substitute, until LALVM's own Ada runtime provides the
 proper support. The `gnatstub` CMake target builds the archive into
 `<build>/lib/`.
+
+## Building a program without GNAT
+
+A program needs a `main` for the C runtime startup code to call. `lalvm --bind`
+emits it for the program whose main unit is given: `main` calls the main
+subprogram and returns the exit status. The main unit must be the body of a
+parameterless library-level subprogram, a procedure or a function returning
+`Integer`.
+
+Compile the unit, bind it, then link both objects with the stub through the C
+compiler, which brings in the startup files and the C library:
+
+```sh
+lalvm --emit=obj main.adb
+lalvm --bind main.adb
+cc main.o b_main.o <build>/lib/libgnatstub.a -o main
+```
+
+Note that `--bind` composes with `--emit`. For example, `--emit=llvm` dumps the
+bind module as LLVM IR.
