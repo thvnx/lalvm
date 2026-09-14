@@ -3,6 +3,10 @@ find_program(NOT_TOOL not HINTS ${LLVM_TOOLS_BINARY_DIR} REQUIRED)
 find_program(LLC llc HINTS ${LLVM_TOOLS_BINARY_DIR} REQUIRED)
 find_program(LLVM_DWARFDUMP llvm-dwarfdump HINTS ${LLVM_TOOLS_BINARY_DIR} REQUIRED)
 
+# Some execution tests link the GNAT stub (runtime/gnatstub).
+set(LALVM_GNATSTUB_ARCHIVE
+  ${LLVM_LIBRARY_OUTPUT_INTDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}gnatstub${CMAKE_STATIC_LIBRARY_SUFFIX})
+
 configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.py.in
   ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.py
@@ -11,7 +15,7 @@ configure_lit_site_cfg(
 
 add_lit_testsuite(check-lalvm "Running lalvm tests"
   ${CMAKE_CURRENT_BINARY_DIR}
-  DEPENDS lalvm
+  DEPENDS lalvm gnatstub
 )
 
 # Merge the profiles a coverage-instrumented `check-lalvm` run writes (see

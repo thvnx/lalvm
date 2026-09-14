@@ -9,5 +9,7 @@ config.lalvm_build_root = "@CMAKE_BINARY_DIR@"
 config.coverage = "@LALVM_COVERAGE@" == "ON"
 config.asan = "Address" in "@LLVM_USE_SANITIZER@"
 config.libadalang_version_major = @LALVM_LIBADALANG_VERSION_MAJOR@
+config.cc = "@CMAKE_C_COMPILER@"
+config.gnatstub = "@LALVM_GNATSTUB_ARCHIVE@"
 
 lit_config.load_config(config, "@CMAKE_CURRENT_SOURCE_DIR@/lit.cfg.py")
