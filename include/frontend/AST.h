@@ -133,6 +133,9 @@ std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
 /// "package spec" or "subprogram spec", or `std::nullopt` for a body.
 std::optional<llvm::StringRef> specKind(ada_node &root);
 
+/// Return whether the subprogram specification `subpSpec` denotes a function.
+bool isFunction(ada_node &subpSpec);
+
 /// Convert the source location range of `node` to an MLIR location.
 mlir::Location sourceLocation(mlir::MLIRContext &context, const ada_node &node);
 

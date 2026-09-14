@@ -2550,12 +2550,12 @@ private:
     ada_node ada_subp_spec;
     ada_base_subp_body_f_subp_spec(&subp_body, &ada_subp_spec);
 
-    ada_node ret_type_expr;
-    ada_subp_spec_f_subp_returns(&ada_subp_spec, &ret_type_expr);
-    bool isProc = ada_node_is_null(&ret_type_expr);
+    bool isProc = !libadalang::isFunction(ada_subp_spec);
 
     // Guard to function returning array: this is not supported yet.
     if (!isProc) {
+      ada_node ret_type_expr;
+      ada_subp_spec_f_subp_returns(&ada_subp_spec, &ret_type_expr);
       std::optional<ada_node> ret_type_decl =
           libadalang::designatedTypeDecl(ret_type_expr);
       if (ret_type_decl && libadalang::isArrayTypeDecl(ret_type_decl.value())) {

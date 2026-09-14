@@ -100,11 +100,13 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
   if (params)
     ada_node_array_dec_ref(params);
 
-  ada_node returns = {};
-  ada_subp_spec_f_subp_returns(&spec, &returns);
-  bool isFunction = !ada_node_is_null(&returns);
-  if (isFunction && !isStandardInteger(returns))
-    return error(returns, "the main function must return Integer");
+  bool isFunction = LAL::isFunction(spec);
+  if (isFunction) {
+    ada_node returns = {};
+    ada_subp_spec_f_subp_returns(&spec, &returns);
+    if (!isStandardInteger(returns))
+      return error(returns, "the main function must return Integer");
+  }
 
   ada_node defName = {};
   if (!ada_basic_decl_p_defining_name(&item, &defName) ||
