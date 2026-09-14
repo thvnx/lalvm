@@ -6,6 +6,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 
+#include "ada/Binder.h"
 #include "ada/Dialect.h"
 #include "ada/MLIRGen.h"
 #include "ada/Passes.h"
@@ -89,6 +90,13 @@ static cl::opt<enum Action> emitAction(
     cl::values(clEnumValN(EmitObject, "obj", "output an object file")),
     cl::values(clEnumValN(EmitAssembly, "asm", "output target assembly")),
     cl::init(EmitObject), cl::cat(lalvmCategory));
+
+// Bind the program whose main unit is the input (see ada/Binder.h) instead of
+// the unit's code. The bind module is emitted as MLIR.
+static cl::opt<bool> bindAction(
+    "bind",
+    cl::desc("Emit the bind module of the program whose main unit is given"),
+    cl::init(false), cl::cat(lalvmCategory));
 
 static cl::opt<std::string> outputFilename("o",
                                            cl::desc("Output filename "
@@ -257,14 +265,15 @@ writeTextOutput(llvm::function_ref<void(llvm::raw_ostream &)> print) {
 // Run the LLVM backend to emit an object file or target assembly for
 // `llvmModule` (using host target machine `tm`). Output goes to -o when given,
 // otherwise to the input basename with a .o/.s extension (in the current
-// directory), mirroring a compiler's default object/assembly output.
+// directory), mirroring a compiler's default object/assembly output. The bind
+// object gets a `b_` prefix, so it sits next to the unit's own object.
 static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
                            bool emitObject) {
   std::string path = outputFilename;
   if (outputFilename.getNumOccurrences() == 0) {
     llvm::StringRef stem =
         inputFilename == "-" ? "a" : llvm::sys::path::stem(inputFilename);
-    path = stem.str() + (emitObject ? ".o" : ".s");
+    path = (bindAction ? "b_" : "") + stem.str() + (emitObject ? ".o" : ".s");
   }
 
   // Writing a binary object to a terminal produces garbage; require -o (llc
@@ -309,8 +318,10 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
 
 static int emitLLVMIR(mlir::MLIRContext &context,
                       mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  if (int error = applyLoweringPasses(context, module))
-    return error;
+  // The bind module is LLVM dialect already: nothing to lower.
+  if (!bindAction)
+    if (int error = applyLoweringPasses(context, module))
+      return error;
 
   // Register the translation to LLVM IR with the MLIR context.
   mlir::registerBuiltinDialectTranslation(context);
@@ -345,7 +356,8 @@ static int emitLLVMIR(mlir::MLIRContext &context,
         llvmContext, llvm::MDString::get(llvmContext, commandLine)));
   }
 
-  if (debugInfo) {
+  // The bind module has no Ada source to describe: -g leaves it alone.
+  if (debugInfo && !bindAction) {
     // Request DWARF 5 so the backend emits the modern `.debug_names`
     // accelerator table instead of the deprecated GNU `.debug_pubnames`
     // (the name-table kind stays at its default; the DWARF version is the
@@ -436,6 +448,10 @@ int main(int argc, char **argv) {
       llvm::errs() << "Can't dump a Libadalang AST when the input is MLIR\n";
       return 1;
     }
+    if (bindAction) {
+      llvm::errs() << "Can't dump a Libadalang AST when binding\n";
+      return 1;
+    }
     libadalang::AdaAST ast(inputFilename, projectFile);
     if (ast.emitParserDiagnostics())
       return 1;
@@ -454,22 +470,36 @@ int main(int argc, char **argv) {
   mlir::OwningOpRef<mlir::ModuleOp> module;
 
   if (isMLIRInput) {
+    if (bindAction) {
+      llvm::errs() << "Can't bind when the input is MLIR\n";
+      return 1;
+    }
     if (int error = loadMLIRFile(context, module))
       return error;
   } else {
     libadalang::AdaAST ast(inputFilename, projectFile);
     if (ast.emitParserDiagnostics())
       return 1;
-    // A specification has no code to generate. The MLIR and LLVM IR dumps stay
-    // available for inspection.
-    if (emitAction == Action::EmitObject || emitAction == Action::EmitAssembly)
-      if (auto kind = libadalang::specKind(ast.getUnitRootNode())) {
-        llvm::errs() << "cannot generate code for file " << inputFilename
-                     << " (" << *kind << ")\n";
+    if (bindAction) {
+      // The binder diagnoses what is not a main unit itself.
+      if (!ast.isValid())
         return 1;
-      }
-    if (int error = loadMLIR(ast, context, module))
-      return error;
+      module = lalvm::bind(context, ast.getUnitRootNode());
+      if (!module)
+        return 1;
+    } else {
+      // A specification has no code to generate. The MLIR and LLVM IR dumps
+      // stay available for inspection.
+      if (emitAction == Action::EmitObject ||
+          emitAction == Action::EmitAssembly)
+        if (auto kind = libadalang::specKind(ast.getUnitRootNode())) {
+          llvm::errs() << "cannot generate code for file " << inputFilename
+                       << " (" << *kind << ")\n";
+          return 1;
+        }
+      if (int error = loadMLIR(ast, context, module))
+        return error;
+    }
   }
 
   switch (emitAction) {
