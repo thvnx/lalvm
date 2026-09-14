@@ -19,6 +19,14 @@ config.substitutions.append(('%lalvm',
 # so they can `REQUIRES: gnat` and skip cleanly where it is not installed.
 if shutil.which('gnatmake'):
     config.available_features.add('gnat')
+
+# Execution tests without GNAT link the unit's object, the bind object and the
+# GNAT stub with the configured C compiler (`cc`).
+cc = shutil.which(config.cc) if config.cc else None
+if cc:
+    config.available_features.add('cc')
+    config.substitutions.append(('%cc', cc))
+config.substitutions.append(('%gnatstub', config.gnatstub))
 config.substitutions.append(('%FileCheck',
     os.path.join(config.llvm_tools_dir, 'FileCheck')))
 config.substitutions.append(('%not',
