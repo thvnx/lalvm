@@ -2766,6 +2766,13 @@ private:
   mlir::LogicalResult mlirGenPackageDecl(ada_node &decl) {
     builder.setInsertionPointToStart(adaModule.getBody());
 
+    ada_node def_name = {};
+    if (!ada_basic_decl_p_defining_name(&decl, &def_name) ||
+        ada_node_is_null(&def_name))
+      return mlir::emitError(loc(decl), "failed to get the package name");
+    scopeStack.push_back(canonicalFqn(def_name));
+    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
+
     ada_node public_part = {}, private_part = {};
 
     if (!ada_base_package_decl_f_public_part(&decl, &public_part) ||
@@ -2789,6 +2796,13 @@ private:
   /// time (@rm{7-2}).
   mlir::LogicalResult mlirGenPackageBody(ada_node &body) {
     builder.setInsertionPointToStart(adaModule.getBody());
+
+    ada_node def_name = {};
+    if (!ada_basic_decl_p_defining_name(&body, &def_name) ||
+        ada_node_is_null(&def_name))
+      return mlir::emitError(loc(body), "failed to get the package name");
+    scopeStack.push_back(canonicalFqn(def_name));
+    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
 
     ada_node declarative_part = {};
 

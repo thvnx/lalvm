@@ -1,21 +1,11 @@
-//===- Dialect.cpp - Ada dialect registration in MLIR ---------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-//
-// This file implements the Ada dialect: custom assembly format and
-// operation verification.
-//
+// Copyright (c) 2024-2026 The LALVM Project
+
 // NOTE: doxygen 1.15.0 limitation. Ops with more than one builder defined in
 // this file trigger "no uniquely matching class member found" warnings. Doxygen
 // scans Ops.h.inc globally and, when two overloads share the same parameter
 // prefix, it cannot uniquely match each implementation to its declaration.
 // Prefer a single builder per op to keep the generated docs warning-free.
-//
-//===----------------------------------------------------------------------===//
 
 #include "ada/Dialect.h"
 
@@ -831,8 +821,8 @@ static llvm::StringRef gnatOperatorName(llvm::StringRef sym, unsigned numArgs) {
 /// Return the GNAT ABI name for this subprogram, derived from the unique
 /// qualified dialect sym_name: split on the dot, map operator segments to their
 /// GNAT O-names (e.g. + to Oadd) via gnatOperatorName, and join with double
-/// underscores (e.g. proc.b.inner to proc__b__inner). Library-level
-/// subprograms (public symbol visibility) get the _ada_ prefix; reading
+/// underscores (e.g. proc.b.inner to proc__b__inner). Library subprogram units
+/// (a public symbol with a single segment) get the _ada_ prefix; reading
 /// visibility rather than the op's parent keeps the name stable across passes
 /// that move the op to module level.
 std::string SubpOp::getMangledName() {
@@ -852,7 +842,9 @@ std::string SubpOp::getMangledName() {
       name += "__";
     name += seg;
   }
-  if (isPublic())
+  // Only library subprogram units are prefixed by `_ada_` (GNAT), i.e. a public
+  // symbol with no enclosing scope (segs.size() == 1).
+  if (isPublic() && segs.size() == 1)
     return libraryLevelSymbol(name);
   return name;
 }

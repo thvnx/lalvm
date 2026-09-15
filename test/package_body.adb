@@ -1,13 +1,17 @@
 -- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 -- Copyright (c) 2026 The LALVM Project
 
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s
+-- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- CHECK:      module @package_body {
--- CHECK-NEXT:   ada.subp @initialize() {
--- CHECK:          ada.return
--- CHECK-NEXT:   }
--- CHECK-NEXT: }
+-- MLIR:      module @package_body {
+-- MLIR-NEXT:   ada.subp @package_body.initialize() {
+-- MLIR:          ada.return
+-- MLIR-NEXT:   }
+-- MLIR-NEXT: }
+
+-- LLVM:      define void @package_body__initialize() {
+-- LLVM-NEXT:   ret void
 
 package body Package_Body is
 

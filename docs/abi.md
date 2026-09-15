@@ -4,7 +4,7 @@
 
 LALVM follows GNAT's symbol naming convention:
 
-- **Library-level subprograms** get the `_ada_` prefix: `procedure Foo` becomes
+- **Library subprogram units** get the `_ada_` prefix: `procedure Foo` becomes
   `_ada_foo`.
 - **Nested subprograms** get a `parent__child` mangled name without the prefix:
   `procedure Inner` inside `procedure Outer` becomes `outer__inner`.
