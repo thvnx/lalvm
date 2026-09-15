@@ -441,6 +441,8 @@ private:
       return mlir::success();
     case ada_package_decl:
       return mlirGenPackageDecl(node);
+    case ada_package_body:
+      return mlirGenPackageBody(node);
     case ada_compilation_unit:
     case ada_ada_node_list:
     case ada_library_item:
@@ -2455,6 +2457,10 @@ private:
   /// (required once a nested subprogram captures it) and is bound before a
   /// later nested subprogram is emitted, while a symbol is still available by
   /// name to the locals around it.
+  ///
+  /// @todo Reword that comment. This not true anymore: library-level
+  /// declarative parts, are already SymbolTable operations, so no `ada.decls`
+  /// is generated in those cases.
   mlir::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
     // Visit every declaration in source order, invoking `fn`.
     auto forEachDecl =
@@ -2521,8 +2527,11 @@ private:
         })))
       return mlir::failure();
 
-    // No symbols: emit the locals inline in source order, no ada.decls needed.
-    if (!hasSymbols)
+    bool atLibraryLevel = builder.getInsertionBlock() == adaModule.getBody();
+
+    // No symbols or library-level declarative part: emit the locals inline
+    // in source order, no ada.decls needed.
+    if (!hasSymbols || atLibraryLevel)
       return forEachDecl(emitDecl);
 
     // Otherwise route each declaration in source order: locals just before the
@@ -2765,6 +2774,23 @@ private:
     // The private part of a package is null when not specified.
     if (!ada_node_is_null(&private_part))
       return mlirGenDeclarativePart(private_part);
+
+    return mlir::success();
+  }
+
+  /// Lower a package body by visiting its declarative part.
+  ///
+  /// @todo Add support for the sequence of statements to execute at elaboration
+  /// time (@rm{7-2}).
+  mlir::LogicalResult mlirGenPackageBody(ada_node &body) {
+    builder.setInsertionPointToStart(adaModule.getBody());
+
+    ada_node declarative_part = {};
+
+    if (!ada_package_body_f_decls(&body, &declarative_part) ||
+        ada_node_is_null(&declarative_part) ||
+        mlir::failed(mlirGenDeclarativePart(declarative_part)))
+      return mlir::failure();
 
     return mlir::success();
   }
