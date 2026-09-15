@@ -2483,6 +2483,8 @@ private:
       return mlir::success();
     };
 
+    bool atLibraryLevel = builder.getInsertionBlock() == adaModule.getBody();
+
     // Emit one declaration at the current insertion point. Return failure for
     // kinds we don't handle.
     auto emitDecl = [&](ada_node &decl) -> mlir::LogicalResult {
@@ -2492,6 +2494,11 @@ private:
       case ada_number_decl:
         return mlirGenNumberDecl(decl);
       case ada_object_decl:
+        // Library-level objects are globals (not a stack slot). Requires more
+        // Ada dialect support to handle globals!
+        if (atLibraryLevel)
+          return mlir::emitError(loc(decl),
+                                 "library-level objects are not supported");
         return mlirGenObjectDecl(decl);
       case ada_concrete_type_decl:
       case ada_subtype_decl:
@@ -2526,8 +2533,6 @@ private:
           return mlir::success();
         })))
       return mlir::failure();
-
-    bool atLibraryLevel = builder.getInsertionBlock() == adaModule.getBody();
 
     // No symbols or library-level declarative part: emit the locals inline
     // in source order, no ada.decls needed.
