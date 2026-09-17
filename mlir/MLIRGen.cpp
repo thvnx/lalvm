@@ -2561,6 +2561,9 @@ private:
   /// `ada.subp` op, binds argument SSA values in the symbol table, then walks
   /// the statement list to emit the body.
   mlir::Operation *mlirGenSubpBody(ada_node &subp_body) {
+    // Restore the insertion point after the new op on exit.
+    mlir::OpBuilder::InsertionGuard guard(builder);
+
     ada_node ada_subp_spec;
     ada_base_subp_body_f_subp_spec(&subp_body, &ada_subp_spec);
 
@@ -2790,7 +2793,8 @@ private:
     return mlir::success();
   }
 
-  /// Lower a package body by visiting its declarative part.
+  /// Lower a package body by visiting its declarative part (after having
+  /// visited its declaration part).
   ///
   /// @todo Add support for the sequence of statements to execute at elaboration
   /// time (@rm{7-2}).
@@ -2803,6 +2807,12 @@ private:
       return mlir::emitError(loc(body), "failed to get the package name");
     scopeStack.push_back(canonicalFqn(def_name));
     auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
+
+    // Process the spec of that body.
+    std::optional<ada_node> spec = libadalang::declPart(body);
+
+    if (spec && mlir::failed(mlirGenPackageDecl(spec.value())))
+      return mlir::failure();
 
     ada_node declarative_part = {};
 

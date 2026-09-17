@@ -139,6 +139,10 @@ bool isFunction(ada_node &subpSpec);
 /// Convert the source location range of `node` to an MLIR location.
 mlir::Location sourceLocation(mlir::MLIRContext &context, const ada_node &node);
 
+/// Return the declaration part of `body` (the specification), or std::nullopt
+/// when the unit provider finds none.
+std::optional<ada_node> declPart(ada_node &body);
+
 } // namespace libadalang
 } // namespace frontend
 

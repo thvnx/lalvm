@@ -455,6 +455,14 @@ mlir::Location libadalang::sourceLocation(mlir::MLIRContext &context,
   return result;
 }
 
+std::optional<ada_node> libadalang::declPart(ada_node &body) {
+  ada_node decl = {};
+  if (ada_body_node_p_decl_part(&body, /*imprecise_fallback=*/0, &decl) &&
+      !ada_node_is_null(&decl))
+    return decl;
+  return std::nullopt;
+}
+
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_bool resolved;
   if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)
