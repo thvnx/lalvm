@@ -44,6 +44,8 @@ implemented.
   `Boolean`).
 - User-defined operator functions (definitions and calls mangled to GNAT
   O-names).
+- Packages: a body is compiled together with its spec into one module. No
+  library-level objects, no elaboration yet.
 
 ## Parameters
 
