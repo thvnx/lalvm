@@ -297,6 +297,11 @@ mlir::Diagnostic &libadalang::operator<<(mlir::Diagnostic &diag,
 }
 
 bool libadalang::AdaAST::emitParserDiagnostics() const {
+  return libadalang::emitParserDiagnostics(root);
+}
+
+bool libadalang::emitParserDiagnostics(const ada_node &node) {
+  ada_analysis_unit unit = ada_node_unit(const_cast<ada_node *>(&node));
   if (!unit)
     return false;
   unsigned count = ada_unit_diagnostic_count(unit);

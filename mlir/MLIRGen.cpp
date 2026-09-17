@@ -2811,7 +2811,13 @@ private:
     // Process the spec of that body.
     std::optional<ada_node> spec = libadalang::declPart(body);
 
-    if (spec && mlir::failed(mlirGenPackageDecl(spec.value())))
+    if (!spec)
+      return mlir::emitError(loc(def_name), "specification of package ")
+             << libadalang::getName(&def_name, /*canonical=*/false)
+             << " not found";
+    if (libadalang::emitParserDiagnostics(spec.value()))
+      return mlir::failure();
+    if (mlir::failed(mlirGenPackageDecl(spec.value())))
       return mlir::failure();
 
     ada_node declarative_part = {};

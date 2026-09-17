@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 -- Copyright (c) 2026 The LALVM Project
 
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm --emit=mlir -P %S/prj.gpr %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm --emit=llvm -P %S/prj.gpr %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR:      module @package_body {
 -- MLIR-NEXT:   ada.subp @package_body.initialize() {
