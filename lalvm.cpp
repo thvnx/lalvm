@@ -445,8 +445,9 @@ int main(int argc, char **argv) {
     }
   }
 
-  bool isMLIRInput = inputType == InputType::MLIR ||
-                     llvm::StringRef(inputFilename).ends_with(".mlir");
+  bool isMLIRInput = inputType.getNumOccurrences()
+                         ? inputType == InputType::MLIR
+                         : llvm::StringRef(inputFilename).ends_with(".mlir");
 
   // EmitAST is Ada-only and needs no MLIR context.
   if (emitAction == Action::EmitAST) {
