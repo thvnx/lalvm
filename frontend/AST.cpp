@@ -109,10 +109,20 @@ static std::string declRef(ada_node decl, ada_node *from) {
 static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
   // Absent optional children and empty lists carry no information in a dump
   // without field names: skip them.
-  ada_bool isEmptyList = 0;
-  if (ada_node_is_null(node) ||
-      (ada_ada_list_is_empty_list(node, &isEmptyList) && isEmptyList))
+  if (ada_node_is_null(node))
     return;
+#if LALVM_LIBADALANG_VERSION_MAJOR >= 27
+  // The property only succeeds on list nodes.
+  ada_bool isEmptyList = 0;
+  if (ada_ada_list_is_empty_list(node, &isEmptyList) && isEmptyList)
+    return;
+#else
+  // List kinds range from `ada_ada_node_list` to `ada_variant_list`.
+  ada_node_kind_enum nodeKind = ada_node_kind(node);
+  if (nodeKind >= ada_ada_node_list && nodeKind <= ada_variant_list &&
+      ada_node_children_count(node) == 0)
+    return;
+#endif
 
   // Colors follow clang's -ast-dump. WithColor only emits escape codes when
   // `os` is a terminal (or under --color).
