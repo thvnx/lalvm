@@ -49,6 +49,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -433,11 +434,16 @@ int main(int argc, char **argv) {
   cl::HideUnrelatedOptions(lalvmCategory);
   cl::ParseCommandLineOptions(argc, argv, "Ada to LLVM Compiler\n");
 
-  // Join the raw invocation for `--record-command-line` (cl leaves argv
-  // intact); emitted into `llvm.commandline` in `emitLLVMIR`.
-  if (recordCommandLine)
-    for (int i = 0; i < argc; ++i)
-      commandLine += (i ? " " : "") + std::string(argv[i]);
+  // Join the raw invocation for `--record-command-line` emitted into
+  // `llvm.commandline` in `emitLLVMIR`.
+  if (recordCommandLine) {
+    llvm::raw_string_ostream os(commandLine);
+    for (int i = 0; i < argc; ++i) {
+      if (i)
+        os << ' ';
+      llvm::sys::printArg(os, argv[i], /*Quote=*/true);
+    }
+  }
 
   bool isMLIRInput = inputType == InputType::MLIR ||
                      llvm::StringRef(inputFilename).ends_with(".mlir");
