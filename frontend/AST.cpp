@@ -13,6 +13,8 @@
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstdlib>
@@ -69,19 +71,86 @@ static void fprint_text(llvm::raw_ostream &stream, ada_text text,
     stream << '"';
 }
 
-static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
-  if (ada_node_is_null(node)) {
-    print_indent(os, level);
-    os << "<null node>\n";
-    return;
-  }
+/// Canonical fully qualified name of `decl`'s defining name (e.g.
+/// `standard.integer`), or "?" when Libadalang cannot give it.
+static std::string declFqn(ada_node decl) {
+  ada_node defName = {};
+  ada_string_type fqn;
+  if (!ada_basic_decl_p_defining_name(&decl, &defName) ||
+      ada_node_is_null(&defName) ||
+      !ada_defining_name_p_canonical_fully_qualified_name(&defName, &fqn))
+    return "?";
+  char *buf;
+  size_t len;
+  ada_string_to_utf8(fqn, &buf, &len);
+  std::string name(buf, len);
+  free(buf);
+  ada_string_dec_ref(fqn);
+  return name;
+}
 
-  ada_text img;
-  ada_node_image(node, &img);
+/// `declFqn (decl)` followed by `@line:col` of the declaration's start, with
+/// the file name before it when the declaration is in another unit than `from`
+/// (e.g. `standard.integer@__standard:4:3`).
+static std::string declRef(ada_node decl, ada_node *from) {
+  std::string ref = declFqn(decl) + "@";
+  ada_analysis_unit unit = ada_node_unit(&decl);
+  if (unit != ada_node_unit(from)) {
+    char *filename = ada_unit_filename(unit);
+    ref += llvm::sys::path::filename(filename).str() + ":";
+    free(filename);
+  }
+  ada_source_location_range r;
+  ada_node_sloc_range(&decl, &r);
+  return ref + std::to_string(r.start.line) + ":" +
+         std::to_string(r.start.column);
+}
+
+static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
+  // Absent optional children and empty lists carry no information in a dump
+  // without field names: skip them.
+  ada_bool isEmptyList = 0;
+  if (ada_node_is_null(node) ||
+      (ada_ada_list_is_empty_list(node, &isEmptyList) && isEmptyList))
+    return;
+
+  // Colors follow clang's -ast-dump. WithColor only emits escape codes when
+  // `os` is a terminal (or under --color).
+  using llvm::raw_ostream;
+  using llvm::WithColor;
   print_indent(os, level);
-  fprint_text(os, img, false);
-  os << "\n";
-  ada_destroy_text(&img);
+  // Kind, then the source text for a token node, then the range.
+  ada_text kind;
+  ada_kind_name(ada_node_kind(node), &kind);
+  fprint_text(WithColor(os, raw_ostream::GREEN, /*Bold=*/true).get(), kind,
+              /*with_quotes=*/false);
+  ada_destroy_text(&kind);
+  if (ada_node_is_token_node(node)) {
+    ada_text text;
+    ada_node_text(node, &text);
+    os << ' ';
+    fprint_text(WithColor(os, raw_ostream::CYAN).get(), text,
+                /*with_quotes=*/true);
+    ada_destroy_text(&text);
+  }
+  ada_source_location_range r;
+  ada_node_sloc_range(node, &r);
+  os << ' ';
+  WithColor(os, raw_ostream::YELLOW).get()
+      << '[' << r.start.line << ':' << r.start.column << '-' << r.end.line
+      << ':' << r.end.column << ']';
+
+  // Name resolution information (print nothing on failure).
+  ada_bool isDefining = 1;
+  ada_node decl = {};
+  if (ada_name_p_is_defining(node, &isDefining) && !isDefining &&
+      ada_name_p_referenced_decl(node, /*imprecise_fallback=*/0, &decl) &&
+      !ada_node_is_null(&decl))
+    WithColor(os, raw_ostream::BLUE).get() << " ref=" << declRef(decl, node);
+  ada_node type = {};
+  if (ada_expr_p_expression_type(node, &type) && !ada_node_is_null(&type))
+    WithColor(os, raw_ostream::BLUE).get() << " type=" << declRef(type, node);
+  os << '\n';
 
   unsigned count = ada_node_children_count(node);
   for (unsigned i = 0; i < count; ++i) {
@@ -188,6 +257,13 @@ libadalang::AdaAST::~AdaAST() {
 }
 
 void libadalang::dump(ada_node *node, llvm::raw_ostream &os) {
+  if (!ada_node_is_null(node)) {
+    char *filename = ada_unit_filename(ada_node_unit(node));
+    llvm::WithColor(os, llvm::raw_ostream::SAVEDCOLOR, /*Bold=*/true).get()
+        << "file " << llvm::sys::path::filename(filename);
+    os << '\n';
+    free(filename);
+  }
   dump_image(os, node, 0);
 }
 
