@@ -383,6 +383,7 @@ private:
     switch (ada_node_kind(&node)) {
     case ada_subp_body:
     case ada_null_subp_decl:
+    case ada_expr_function:
       // Top-level subprograms are emitted at module scope. The insertion point
       // is set here rather than inside mlirGenSubpBody so that nested
       // subprograms (processed via mlirGenDeclarativePart) are instead emitted
@@ -2508,6 +2509,7 @@ private:
         return mlir::success();
       case ada_subp_body:
       case ada_null_subp_decl:
+      case ada_expr_function:
         return mlirGenSubpBody(decl) ? mlir::success() : mlir::failure();
       // The following nodes are queried when needed, no need to visit them.
       case ada_subp_decl:
@@ -2526,7 +2528,8 @@ private:
       auto kind = ada_node_kind(&decl);
       return ((kind == ada_concrete_type_decl || kind == ada_subtype_decl) &&
               isSupportedTypeDecl(decl)) ||
-             kind == ada_subp_body || kind == ada_null_subp_decl;
+             kind == ada_subp_body || kind == ada_null_subp_decl ||
+             kind == ada_expr_function;
     };
 
     bool hasSymbols = false;
@@ -2674,8 +2677,8 @@ private:
       declare(entry.id, arg);
     }
 
-    // ada_null_subp_decl doesn't have declarations nor statements, so do not
-    // visit decls nor stmts in that case.
+    // ada_null_subp_decl and ada_expr_function don't have declarations nor
+    // statements, so do not visit decls nor stmts in that case.
     ada_node decls = {};
     ada_subp_body_f_decls(&subp_body, &decls);
     if (!ada_node_is_null(&decls))
@@ -2697,6 +2700,28 @@ private:
         mlir::ada::ReturnOp::create(builder,
                                     mlir::UnknownLoc::get(builder.getContext()),
                                     mlir::Value{});
+    }
+
+    // Expr function has one expression to visit and to return.
+    if (ada_node_kind(&subp_body) == ada_expr_function) {
+      ada_node expr = {};
+      ada_expr_function_f_expr(&subp_body, &expr);
+
+      if (ada_node_is_null(&expr)) {
+        mlir::emitError(loc(subp_body),
+                        "can't get the expression of the expression function");
+        op->erase();
+        return nullptr;
+      }
+
+      mlir::FailureOr<mlir::Value> retVal = mlirGenReturnExpr(expr);
+
+      if (mlir::failed(retVal)) {
+        op->erase();
+        return nullptr;
+      }
+
+      mlir::ada::ReturnOp::create(builder, loc(expr), retVal.value());
     }
 
     // Fuse each recorded label's `DILabelRef` marker onto its anchor op,
@@ -3644,14 +3669,9 @@ private:
     return mlir::success();
   }
 
-  /// Emit a return operation. This will return failure if any generation fails.
-  mlir::LogicalResult mlirGenReturn(ada_node &return_stmt) {
-    auto location = loc(return_stmt);
-
-    ada_node return_expr;
-    ada_return_stmt_f_return_expr(&return_stmt, &return_expr);
-
-    // In Ada, a procedure return carries no value; only function returns do.
+  /// Return the expression to be used in a return statement. Returns a null
+  /// value for a procedure's return.
+  mlir::FailureOr<mlir::Value> mlirGenReturnExpr(ada_node &return_expr) {
     mlir::Value expr = nullptr;
     if (!ada_node_is_null(&return_expr)) {
       expr = visit_expr(return_expr);
@@ -3666,11 +3686,23 @@ private:
         if (!results.empty())
           if (auto retType =
                   mlir::dyn_cast<mlir::ada::QualType>(results.front()))
-            expr = coerce(expr, retType, location);
+            expr = coerce(expr, retType, loc(return_expr));
       }
     }
+    return expr;
+  }
 
-    mlir::ada::ReturnOp::create(builder, location, expr);
+  /// Emit a return operation or a failure if any generation fails.
+  mlir::LogicalResult mlirGenReturn(ada_node &return_stmt) {
+    ada_node return_expr = {};
+    ada_return_stmt_f_return_expr(&return_stmt, &return_expr);
+
+    mlir::FailureOr<mlir::Value> expr = mlirGenReturnExpr(return_expr);
+
+    if (mlir::failed(expr))
+      return mlir::failure();
+
+    mlir::ada::ReturnOp::create(builder, loc(return_stmt), expr.value());
     return mlir::success();
   }
 
