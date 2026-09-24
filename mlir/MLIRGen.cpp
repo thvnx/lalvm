@@ -382,8 +382,6 @@ private:
 
     switch (ada_node_kind(&node)) {
     case ada_subp_body:
-    case ada_null_subp_decl:
-    case ada_expr_function:
       // Top-level subprograms are emitted at module scope. The insertion point
       // is set here rather than inside mlirGenSubpBody so that nested
       // subprograms (processed via mlirGenDeclarativePart) are instead emitted
@@ -392,6 +390,19 @@ private:
       if (!mlirGenSubpBody(node))
         return mlir::failure();
       return mlir::success();
+    case ada_null_subp_decl:
+    case ada_expr_function: {
+      // Null procedure and expression functions can't be library units (see
+      // @rm{10-1-1}).
+      ada_node parent = libadalang::parent(&node);
+      if (ada_node_kind(&parent) == ada_library_item)
+        return mlir::emitError(loc(node),
+                               ada_node_kind(&node) == ada_null_subp_decl
+                                   ? "null procedure cannot be a library unit"
+                                   : "expression function cannot be a library "
+                                     "unit");
+      return mlirGenSubpBody(node) ? mlir::success() : mlir::failure();
+    }
     case ada_return_stmt:
       return mlirGenReturn(node);
     case ada_assign_stmt:
