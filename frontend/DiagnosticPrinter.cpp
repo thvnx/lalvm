@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
+
 #include "frontend/DiagnosticPrinter.h"
 #include "frontend/AST.h"
 
@@ -132,7 +135,8 @@ void frontend::DiagnosticPrinter::emitDiag(
 }
 
 void frontend::DiagnosticPrinter::emitDiag(mlir::Diagnostic &diag) const {
-  if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(diag.getLocation()))
+  // Look through NameLoc/FusedLoc wrappers for the file position.
+  if (auto flc = diag.getLocation()->findInstanceOf<mlir::FileLineColRange>())
     printPrefix(llvm::sys::path::filename(flc.getFilename().getValue()),
                 flc.getStartLine(), flc.getStartColumn());
   else
@@ -141,4 +145,9 @@ void frontend::DiagnosticPrinter::emitDiag(mlir::Diagnostic &diag) const {
   printSeverity(diag.getSeverity());
   diag.print(llvm::errs());
   llvm::errs() << '\n';
+
+  // Attached notes, such as the failing operation MLIR adds to a verifier error
+  // under --mlir-print-op-on-diagnostic (on by default).
+  for (mlir::Diagnostic &note : diag.getNotes())
+    emitDiag(note);
 }
