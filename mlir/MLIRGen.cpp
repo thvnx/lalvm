@@ -382,6 +382,7 @@ private:
 
     switch (ada_node_kind(&node)) {
     case ada_subp_body:
+    case ada_null_subp_decl:
       // Top-level subprograms are emitted at module scope. The insertion point
       // is set here rather than inside mlirGenSubpBody so that nested
       // subprograms (processed via mlirGenDeclarativePart) are instead emitted
@@ -2506,6 +2507,7 @@ private:
           return mlirGenTypeDecl(decl);
         return mlir::success();
       case ada_subp_body:
+      case ada_null_subp_decl:
         return mlirGenSubpBody(decl) ? mlir::success() : mlir::failure();
       // The following nodes are queried when needed, no need to visit them.
       case ada_subp_decl:
@@ -2524,7 +2526,7 @@ private:
       auto kind = ada_node_kind(&decl);
       return ((kind == ada_concrete_type_decl || kind == ada_subtype_decl) &&
               isSupportedTypeDecl(decl)) ||
-             kind == ada_subp_body;
+             kind == ada_subp_body || kind == ada_null_subp_decl;
     };
 
     bool hasSymbols = false;
@@ -2556,10 +2558,10 @@ private:
     return mlir::success();
   }
 
-  /// Lower one Ada subprogram body to an `ada.subp` operation.
-  /// This is the main codegen entry point for a subprogram: it creates the
-  /// `ada.subp` op, binds argument SSA values in the symbol table, then walks
-  /// the statement list to emit the body.
+  /// Lower one Ada subprogram body to an `ada.subp` operation. This is the main
+  /// codegen entry point for a subprogram: it creates the `ada.subp` op, binds
+  /// argument SSA values in the symbol table, then walks the statement list to
+  /// emit the body.
   mlir::Operation *mlirGenSubpBody(ada_node &subp_body) {
     // Restore the insertion point after the new op on exit.
     mlir::OpBuilder::InsertionGuard guard(builder);
@@ -2672,23 +2674,24 @@ private:
       declare(entry.id, arg);
     }
 
-    ada_node decls;
+    // ada_null_subp_decl doesn't have declarations nor statements, so do not
+    // visit decls nor stmts in that case.
+    ada_node decls = {};
     ada_subp_body_f_decls(&subp_body, &decls);
     if (!ada_node_is_null(&decls))
       if (mlir::failed(mlirGenDeclarativePart(decls)))
         return nullptr;
 
-    ada_node stmts;
+    ada_node stmts = {};
     ada_subp_body_f_stmts(&subp_body, &stmts);
 
-    if (mlir::failed(visit(stmts))) {
+    if (!ada_node_is_null(&stmts) && mlir::failed(visit(stmts))) {
       op->erase();
       return nullptr;
     }
 
-    // Procedures have no explicit return statement; add an implicit one,
-    // unless the body already ended in a terminator (e.g. an explicit return,
-    // possibly inside a block that dissolved into this region).
+    // Procedures can have no explicit return statement, so add an implicit one
+    // unless the body already ended in a terminator.
     if (isProc) {
       if (!currentBlockTerminated())
         mlir::ada::ReturnOp::create(builder,
