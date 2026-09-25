@@ -47,11 +47,13 @@ LLVM by a sequence of MLIR passes. The dialect's operations:
 | `ada.alloca`      | Stack slot for a local object (a `memref` of an `!ada.qual`).                                                                                     |
 | `ada.constant`    | A typed scalar constant.                                                                                                                          |
 | `ada.coerce`      | Representation conversion between related subtypes (widen, narrow, or to base).                                                                   |
-| `ada.binop`       | Predefined binary arithmetic (`+`, `-`, `*`, `/`), with an optional `checks<overflow\|division>` group.                                           |
+| `ada.binop`       | Predefined arithmetic (`+`, `-`, `*`, `/`) or logical (`and`, `or`, `xor`) operator, with an optional `checks<overflow\|division>` group.         |
 | `ada.cmp`         | Relational comparison (`=`, `/=`, `<`, ...); Boolean result.                                                                                      |
+| `ada.unop`        | Predefined unary operator (`not` on Boolean and modular types).                                                                                   |
 | `ada.range`       | A subtype's constraint as a first-class `(low, high)` descriptor value (static or dynamic bounds).                                                |
 | `ada.range_check` | `Constraint_Error` range check of a value against an `ada.range`.                                                                                 |
 | `ada.attr`        | Scalar attribute (`'First`/`'Last`) read from a range descriptor.                                                                                 |
+| `ada.index`       | Location of an array element: a `memref` of the component, from the array's `memref` and a zero-based offset.                                     |
 | `ada.unwrap`      | Exposes the machine value under an `!ada.qual`, dropping the Ada identity.                                                                        |
 | `ada.null`        | The null statement.                                                                                                                               |
 | `ada.decls`       | Symbol container for nested subprograms and local types.                                                                                          |
@@ -83,6 +85,10 @@ The generator and passes, in pipeline order:
   the LLVM dialect, giving nested (private) subprograms internal linkage.
 - **AdaDebugInfoPass** (`mlir/AdaDebugInfo.cpp`): post-lowering pass that emits
   `dbg.declare`/`dbg.value` intrinsics from `NameLoc` annotations on LLVM ops.
+
+Outside that pipeline, the **Binder** (`mlir/Binder.cpp`, run by `--bind`),
+emits the bind module of a program from its main unit directly in the LLVM
+dialect.
 
 Ada parsing is handled by [Libadalang](https://github.com/AdaCore/libadalang)
 through its C API (`include/frontend/AST.h`, `frontend/AST.cpp`).

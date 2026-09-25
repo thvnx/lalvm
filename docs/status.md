@@ -8,7 +8,8 @@ implemented.
 
 - Integer and real literals; named numbers
 - Binary arithmetic: `+`, `-`, `*`, `/`
-- Relational comparisons: `=`, `/=`
+- Relational comparisons: `=`, `/=`, `<`, `<=`, `>`, `>=`
+- Logical operators: `and`, `or`, `xor`, `not` (Boolean and modular types)
 - If expressions and parenthesized expressions
 - Variable and parameter references
 - Function calls (including nested)
@@ -28,7 +29,8 @@ implemented.
 - Assignments, `return`, `null`
 - Procedure calls
 - `if` statements
-- Loop statements: `while` and bare `loop`, with `exit` (named or plain)
+- Loop statements: `while`, bare `loop` and `for` over an integer range (with
+  `reverse`), with `exit` and `exit when` (named or plain)
 - `goto` statements and labels
 - Block statements (`begin`/`end` and `declare`/`begin`/`end`)
 
@@ -42,6 +44,7 @@ implemented.
 - Named numbers (`N : constant := 42`).
 - Type declarations: integer, float, modular integer, enum (including
   `Boolean`).
+- Null procedures and expression functions.
 - User-defined operator functions (definitions and calls mangled to GNAT
   O-names).
 - Packages: a body is compiled together with its spec into one module. No

@@ -5,7 +5,7 @@ LALVM is a prototype Ada-to-LLVM compiler using AdaCore's
 [MLIR](https://mlir.llvm.org/) as an intermediate representation, and
 [LLVM](https://llvm.org/) for the backend.
 
-This README covers building and day-to-day use. See the [Documentation
+This README covers building and day-to-day use. See the [documentation
 section](#documentation) below for more content about the architecture and
 pipeline, symbol naming and debug info, the supported Ada subset, and the
 development workflow (testing/formatting/code
