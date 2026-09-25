@@ -12,6 +12,16 @@
       }
     },
     {
+      "name": "release",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "",
+        "LLVM_ENABLE_ASSERTIONS": "OFF"
+      }
+    },
+    {
       "name": "coverage",
       "inherits": "debug",
       "binaryDir": "${sourceDir}/build-cov",
@@ -32,6 +42,10 @@
     {
       "name": "debug",
       "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
     },
     {
       "name": "coverage",
