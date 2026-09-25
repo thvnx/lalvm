@@ -146,6 +146,9 @@ mlir::Location sourceLocation(mlir::MLIRContext &context, const ada_node &node);
 /// when the unit provider finds none.
 std::optional<ada_node> declPart(ada_node &body);
 
+/// Return the version of the Libadalang library.
+std::string version();
+
 } // namespace libadalang
 } // namespace frontend
 

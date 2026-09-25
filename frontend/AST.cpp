@@ -554,6 +554,20 @@ std::optional<ada_node> libadalang::declPart(ada_node &body) {
   return std::nullopt;
 }
 
+std::string libadalang::version() {
+  char *version = nullptr;
+  char *buildDate = nullptr;
+  ada_get_versions(&version, &buildDate);
+
+  std::string result;
+  if (version)
+    result = version;
+
+  free(version);
+  free(buildDate);
+  return result;
+}
+
 bool libadalang::emitSolverDiagnostics(ada_node *node) {
   ada_bool resolved;
   if (!ada_ada_node_p_resolve_names(node, &resolved) || resolved)

@@ -151,6 +151,11 @@ static std::string commandLine;
 ///       before lowering.
 static llvm::codegen::RegisterCodeGenFlags codeGenFlags;
 
+static std::string lalvmVersion() {
+  return "lalvm (LLVM " LLVM_VERSION_STRING ", Libadalang " +
+         libadalang::version() + ")";
+}
+
 // Load a .mlir file directly, bypassing Libadalang entirely.
 static int loadMLIRFile(mlir::MLIRContext &context,
                         mlir::OwningOpRef<mlir::ModuleOp> &module) {
@@ -342,11 +347,9 @@ static int emitLLVMIR(mlir::MLIRContext &context,
 
   // Stamp the compiler identity into `llvm.ident` (it lands in the object's
   // `.comment` section), mirroring how clang and GNAT record their version.
-  // lalvm has no version of its own yet, so report the LLVM it was built with.
   llvm::NamedMDNode *ident = llvmModule->getOrInsertNamedMetadata("llvm.ident");
   ident->addOperand(llvm::MDNode::get(
-      llvmContext, llvm::MDString::get(
-                       llvmContext, "lalvm (LLVM " LLVM_VERSION_STRING ")")));
+      llvmContext, llvm::MDString::get(llvmContext, lalvmVersion())));
 
   // Under -record-command-line, stamp the invocation into `llvm.commandline`
   // (see the flag). The backend lowers it to the object's command-line section.
@@ -429,6 +432,10 @@ int main(int argc, char **argv) {
   mlir::registerMLIRContextCLOptions();
   mlir::registerTransformsPasses();
   mlir::registerPassManagerCLOptions();
+
+  cl::SetVersionPrinter(
+      [](llvm::raw_ostream &os) { os << lalvmVersion() << "\n"; });
+
   // Hide the options LLVM/MLIR back ends register so --help lists only lalvm's
   // own options.
   cl::HideUnrelatedOptions(lalvmCategory);
