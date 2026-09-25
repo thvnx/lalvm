@@ -83,6 +83,12 @@ cmake --preset=debug
 cmake --build --preset=debug
 ```
 
+Optionally, install it with:
+
+``` sh
+cmake --install build --prefix /opt/lalvm
+```
+
 `CMakeUserPresets.json` is gitignored; each developer maintains their own copy.
 `CMakePresets.json` is committed and holds the shared build settings (Ninja,
 Debug mode, assertions enabled).

@@ -121,6 +121,9 @@ else()
   set(LALVM_LIBADALANG_VERSION_MAJOR 9999)
 endif()
 
+# Defines the installation directory variables according to the GNU standards.
+include(GNUInstallDirs)
+
 add_subdirectory(runtime)
 add_subdirectory(test)
 
@@ -164,3 +167,8 @@ target_link_libraries(lalvm
 )
 target_compile_definitions(lalvm PRIVATE
   LALVM_LIBADALANG_VERSION_MAJOR=${LALVM_LIBADALANG_VERSION_MAJOR})
+
+# Keep the Libadalang directory in the installed binary's RPATH, since
+# libadalang.so is linked from outside the install tree.
+set_target_properties(lalvm PROPERTIES INSTALL_RPATH_USE_LINK_PATH ON)
+install(TARGETS lalvm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

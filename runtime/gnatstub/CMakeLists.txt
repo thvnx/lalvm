@@ -10,3 +10,4 @@ target_compile_options(gnatstub PRIVATE -Wall -Wextra)
 set_target_properties(gnatstub PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   ARCHIVE_OUTPUT_DIRECTORY ${LLVM_LIBRARY_OUTPUT_INTDIR})
+install(TARGETS gnatstub ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
