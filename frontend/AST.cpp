@@ -282,12 +282,16 @@ std::string libadalang::getName(ada_node *node, bool canonical) {
   case ada_identifier:
   case ada_defining_name: {
     ada_text text;
-    if (canonical) {
-      ada_symbol_type symbol;
-      ada_name_p_canonical_text(node, &symbol);
+    ada_symbol_type symbol;
+    if (canonical && ada_name_p_canonical_text(node, &symbol)) {
       ada_symbol_text(&symbol, &text);
-    } else
+    } else {
+      if (canonical)
+        frontend::DiagnosticPrinter().emitDiag(
+            *node, mlir::DiagnosticSeverity::Warning,
+            "can't get the canonical name, fallback to its source text");
       ada_node_text(node, &text);
+    }
     std::string name = textToString(text);
     // Operator names use Ada double-quote syntax (e.g. `"*"`, `"and"`). Strip
     // the surrounding quotes so MLIR displays them as @"*" / @and instead of

@@ -94,16 +94,17 @@ formatSolverDiag(const ada_internal_solver_diagnostic &diag) {
   return msg;
 }
 
-// Print "filename:line:col: error: <msg>" for a node's source location.
-static void emitNodeError(ada_node *node, llvm::StringRef msg) {
+void frontend::DiagnosticPrinter::emitDiag(ada_node &node,
+                                           mlir::DiagnosticSeverity severity,
+                                           llvm::StringRef msg) const {
   ada_source_location_range sloc = {{0, 0}, {0, 0}};
-  ada_node_sloc_range(node, &sloc);
-  ada_analysis_unit unit = ada_node_unit(node);
+  ada_node_sloc_range(&node, &sloc);
+  ada_analysis_unit unit = ada_node_unit(&node);
   char *rawFilename = ada_unit_filename(unit);
   printPrefix(llvm::sys::path::filename(rawFilename), sloc.start.line,
               sloc.start.column);
   free(rawFilename);
-  printSeverity(mlir::DiagnosticSeverity::Error);
+  printSeverity(severity);
   llvm::errs() << msg << "\n";
 }
 
@@ -125,13 +126,14 @@ void frontend::DiagnosticPrinter::emitDiag(
     if (!ada_node_is_null(&refNode) && ada_node_is_null(&declNode)) {
       ada_text text;
       ada_node_text(&refNode, &text);
-      emitNodeError(&refNode, "no matching candidate for \"" +
-                                  libadalang::textToString(text) + "\"");
+      emitDiag(refNode, mlir::DiagnosticSeverity::Error,
+               "no matching candidate for \"" + libadalang::textToString(text) +
+                   "\"");
       break;
     }
   }
 
-  emitNodeError(&locNode, formatSolverDiag(diag));
+  emitDiag(locNode, mlir::DiagnosticSeverity::Error, formatSolverDiag(diag));
 }
 
 void frontend::DiagnosticPrinter::emitDiag(mlir::Diagnostic &diag) const {

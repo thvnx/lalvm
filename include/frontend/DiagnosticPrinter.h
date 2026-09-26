@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
+
 #ifndef FRONTEND_DIAGNOSTIC_PRINTER_H
 #define FRONTEND_DIAGNOSTIC_PRINTER_H
 
@@ -31,6 +34,13 @@ public:
   /// from the diagnostic object itself.
   /// @param diag Diagnostic to print.
   void emitDiag(mlir::Diagnostic &diag) const;
+
+  /// Print a diagnostic at the source location of a Libadalang node.
+  /// @param node     Node whose start location prefixes the message.
+  /// @param severity Severity to print.
+  /// @param msg      Message to print.
+  void emitDiag(ada_node &node, mlir::DiagnosticSeverity severity,
+                llvm::StringRef msg) const;
 };
 
 } // namespace frontend
