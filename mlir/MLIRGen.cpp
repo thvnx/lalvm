@@ -1105,8 +1105,7 @@ private:
       return {};
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
     if (!typeOp) {
-      mlir::emitWarning(location, "ada.type not emitted for this type; "
-                                  "Ada type identity will be lost");
+      mlir::emitError(location, "ada.type not emitted for this type");
       return {};
     }
     return qualTypeFor(typeOp, mlirType);
