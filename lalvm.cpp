@@ -324,10 +324,19 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
 
 static int emitLLVMIR(mlir::MLIRContext &context,
                       mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  // The bind module is LLVM dialect already: nothing to lower.
-  if (!bindAction)
+  // The bind module is LLVM dialect already: nothing to lower. Under -g, it
+  // only needs a compile unit and a DISubprogram for `main`.
+  if (!bindAction) {
     if (int error = applyLoweringPasses(context, module))
       return error;
+  } else if (debugInfo) {
+    mlir::PassManager pm(module.get()->getName());
+    pm.addPass(mlir::ada::createDICompileUnitAdaPass());
+    pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+    if (mlir::failed(mlir::applyPassManagerCLOptions(pm)) ||
+        mlir::failed(pm.run(*module)))
+      return 1;
+  }
 
   // Register the translation to LLVM IR with the MLIR context.
   mlir::registerBuiltinDialectTranslation(context);
@@ -360,14 +369,15 @@ static int emitLLVMIR(mlir::MLIRContext &context,
         llvmContext, llvm::MDString::get(llvmContext, commandLine)));
   }
 
-  // The bind module has no Ada source to describe: -g leaves it alone.
-  if (debugInfo && !bindAction) {
+  if (debugInfo)
     // Request DWARF 5 so the backend emits the modern `.debug_names`
     // accelerator table instead of the deprecated GNU `.debug_pubnames`
     // (the name-table kind stays at its default; the DWARF version is the
     // selector, see `DwarfCompileUnit::hasDwarfPubSections`).
     llvmModule->addModuleFlag(llvm::Module::Max, "Dwarf Version", 5);
 
+  // The bind module declares no Ada type.
+  if (debugInfo && !bindAction) {
     // Arrays reuse enum and subrange nodes for components and indices.
     mlir::ada::DITypeBySymName diTypes =
         mlir::ada::buildEnumDITypes(*llvmModule, *module);
