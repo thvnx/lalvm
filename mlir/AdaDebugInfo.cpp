@@ -39,6 +39,7 @@
 
 #include "ada/Dialect.h"
 #include "ada/Passes.h"
+#include "lalvm/Support.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
@@ -746,7 +747,7 @@ struct DICompileUnitAdaPass
                               llvm::sys::path::parent_path(filePath));
     auto cuAttr = LLVM::DICompileUnitAttr::get(
         DistinctAttr::create(UnitAttr::get(ctx)), llvm::dwarf::DW_LANG_Ada2012,
-        fileAttr, StringAttr::get(ctx, "lalvm"),
+        fileAttr, StringAttr::get(ctx, lalvm::version()),
         /*isOptimized=*/false, LLVM::DIEmissionKind::Full);
     module->setLoc(FusedLoc::get(ctx, {module.getLoc()}, cuAttr));
   }

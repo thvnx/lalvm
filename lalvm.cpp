@@ -13,7 +13,6 @@
 #include "ada/PostTranslationDITypes.h"
 
 #include "llvm/CodeGen/CommandFlags.h"
-#include "llvm/Config/llvm-config.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
@@ -55,6 +54,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "frontend/AST.h"
+#include "lalvm/Support.h"
 
 // Command line
 
@@ -150,11 +150,6 @@ static std::string commandLine;
 ///       needed; it also requires applying the target datalayout to the module
 ///       before lowering.
 static llvm::codegen::RegisterCodeGenFlags codeGenFlags;
-
-static std::string lalvmVersion() {
-  return "lalvm (LLVM " LLVM_VERSION_STRING ", Libadalang " +
-         libadalang::version() + ")";
-}
 
 // Load a .mlir file directly, bypassing Libadalang entirely.
 static int loadMLIRFile(mlir::MLIRContext &context,
@@ -358,7 +353,7 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   // `.comment` section), mirroring how clang and GNAT record their version.
   llvm::NamedMDNode *ident = llvmModule->getOrInsertNamedMetadata("llvm.ident");
   ident->addOperand(llvm::MDNode::get(
-      llvmContext, llvm::MDString::get(llvmContext, lalvmVersion())));
+      llvmContext, llvm::MDString::get(llvmContext, lalvm::version())));
 
   // Under -record-command-line, stamp the invocation into `llvm.commandline`
   // (see the flag). The backend lowers it to the object's command-line section.
@@ -444,7 +439,7 @@ int main(int argc, char **argv) {
   mlir::registerPassManagerCLOptions();
 
   cl::SetVersionPrinter(
-      [](llvm::raw_ostream &os) { os << lalvmVersion() << "\n"; });
+      [](llvm::raw_ostream &os) { os << lalvm::version() << "\n"; });
 
   // Hide the options LLVM/MLIR back ends register so --help lists only lalvm's
   // own options.

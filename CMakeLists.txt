@@ -139,6 +139,7 @@ add_llvm_executable(lalvm
   mlir/AdaDebugInfo.cpp
   mlir/PostTranslationDITypes.cpp
   frontend/AST.cpp
+  lalvm/Support.cpp
   lalvm.cpp
 
   DEPENDS
