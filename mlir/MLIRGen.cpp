@@ -868,7 +868,7 @@ private:
     if (!operand)
       return nullptr;
     return mlir::ada::UnOp::create(builder, loc(unop), operand.getType(), kind,
-                                   operand);
+                                   operand, mlir::ada::AdaChecksAttr{});
   }
 
   /// Resolve the type of a literal expression. For universal types
