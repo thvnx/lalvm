@@ -1,14 +1,5 @@
-//===- Ops.td - Ada dialect operation definitions ----------*- tablegen -*-===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-//
-// Defines the operations of the Ada dialect.
-//
-//===----------------------------------------------------------------------===//
+// Copyright (c) 2024-2026 The LALVM Project
 
 #ifndef ADA_OPS
 #define ADA_OPS
@@ -516,16 +507,21 @@ def UnOp : Ada_Op<"unop", [Pure, SameOperandsAndResultType]> {
     result share one type, so the quoted-operator spelling carries a single
     type.
 
+    An optional `checks<...>` group lists the run-time checks the operation
+    must perform. `-X` can overflow when `X` is equal to `T'First`.
+
     ```mlir
     %0 = ada.unop "not" %b : !ada.qual<i1, @standard.boolean>
     ```
   }];
 
-  let arguments = (ins AdaUnaryOp:$kind, AnyType:$operand);
+  let arguments = (ins AdaUnaryOp:$kind, AnyType:$operand,
+                       OptionalAttr<AdaChecks>:$checks);
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
-    custom<Operator>($kind) $operand attr-dict `:` type($result)
+    custom<Operator>($kind) $operand custom<Checks>($checks) attr-dict
+    `:` type($result)
   }];
   let hasVerifier = 1;
 }
