@@ -939,6 +939,10 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
       }
       return success();
     }
+    case ada::AdaUnaryOp::Abs:
+    case ada::AdaUnaryOp::Plus:
+    case ada::AdaUnaryOp::Minus:
+      return rewriter.notifyMatchFailure(op, "unsupported unary operator");
     }
     return rewriter.notifyMatchFailure(op, "unsupported unary operator");
   }

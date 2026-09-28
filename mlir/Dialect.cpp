@@ -746,9 +746,19 @@ llvm::LogicalResult UnOp::verify() {
   mlir::Type type = getOperand().getType();
   if (auto typedType = mlir::dyn_cast<ada::QualType>(type))
     type = typedType.getMlirType();
-  if (!mlir::isa<mlir::IntegerType>(type))
+
+  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
     return emitOpError() << "unsupported operand type " << type
-                         << "; expected integer (Boolean)";
+                         << "; expected integer or float";
+
+  if (mlir::isa<mlir::FloatType>(type) && getKind() == AdaUnaryOp::Not)
+    return emitOpError() << "unsupported operand type " << type
+                         << "; expected integer";
+
+  if (type.isInteger(1) && getKind() != AdaUnaryOp::Not)
+    return emitOpError() << "unsupported operand type " << type
+                         << "; expected integer or float";
+
   return mlir::success();
 }
 

@@ -80,7 +80,7 @@ def AdaRelationalOp : I32EnumAttr<"AdaRelationalOp",
 
 def AdaUnaryOp : I32EnumAttr<"AdaUnaryOp",
     "Ada predefined unary operator kind",
-    [AdaOp_Not]> {
+    [AdaOp_Not, AdaOp_Plus, AdaOp_Minus, AdaOp_Abs]> {
   let cppNamespace = "::mlir::ada";
 }
 
