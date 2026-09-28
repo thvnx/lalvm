@@ -831,8 +831,17 @@ private:
 
     mlir::ada::AdaUnaryOp kind;
     switch (ada_node_kind(&op)) {
+    case ada_op_abs:
+      kind = mlir::ada::AdaUnaryOp::Abs;
+      break;
+    case ada_op_minus:
+      kind = mlir::ada::AdaUnaryOp::Minus;
+      break;
     case ada_op_not:
       kind = mlir::ada::AdaUnaryOp::Not;
+      break;
+    case ada_op_plus:
+      kind = mlir::ada::AdaUnaryOp::Plus;
       break;
     default:
       mlir::emitError(loc(unop), "invalid unary operator '")
@@ -858,17 +867,28 @@ private:
     if (!boolOrModular)
       if (mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, loc(unop)))
         boolOrModular = isModularTypeOp(typeOp);
-    if (!boolOrModular) {
+    if (kind == mlir::ada::AdaUnaryOp::Not && !boolOrModular) {
       mlir::emitError(loc(unop),
                       "operator \"not\" requires a Boolean or modular operand");
       return nullptr;
     }
 
+    // `abs` and `-` on a signed integer overflow on T'Base'First (@rm{4-5}(11),
+    // @rm{3-5-4}(9)). @todo Omit the overflow check when the operand is
+    // statically known not to be T'Base'First.
+    bool isInteger = resultType.getMlirType().isInteger();
+    mlir::ada::AdaChecksAttr checks;
+    if ((kind == mlir::ada::AdaUnaryOp::Abs ||
+         kind == mlir::ada::AdaUnaryOp::Minus) &&
+        isInteger && !boolOrModular)
+      checks = mlir::ada::AdaChecksAttr::get(builder.getContext(),
+                                             mlir::ada::AdaChecks::Overflow);
+
     operand = coerce(operand, resultType, loc(unop));
     if (!operand)
       return nullptr;
     return mlir::ada::UnOp::create(builder, loc(unop), operand.getType(), kind,
-                                   operand, mlir::ada::AdaChecksAttr{});
+                                   operand, checks);
   }
 
   /// Resolve the type of a literal expression. For universal types
