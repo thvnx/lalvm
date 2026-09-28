@@ -734,6 +734,12 @@ private:
     if (!typeOp || !mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
                        typeOp.getTypeInfoAttr()))
       return std::nullopt;
+    // @todo Libadalang 27 bug: `eval_as_int` computes a modular expression
+    // without wrapping each operation (@rm{3-5-4}(19)), so `(3 - 4) / 2` of a
+    // `mod 10` type evaluates to 0 instead of 4. Leave modular expressions
+    // unfolded until the bug is fixed.
+    if (isModularTypeOp(typeOp))
+      return std::nullopt;
     auto value = libadalang::evalExprAsInt(expr);
     if (!value) {
       mlir::emitError(location, "failed to evaluate static integer expression");
@@ -820,6 +826,9 @@ private:
   /// share the operator's type, so the operand is coerced to the resolved
   /// result type (which also takes a subtype operand to its base).
   mlir::Value mlirGenUnOp(ada_node &unop) {
+    if (auto folded = tryEmitStaticIntExpr(unop))
+      return *folded;
+
     ada_node operandNode;
     ada_un_op_f_expr(&unop, &operandNode);
     mlir::Value operand = visit_expr(operandNode);
