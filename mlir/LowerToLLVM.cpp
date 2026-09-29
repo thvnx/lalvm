@@ -917,13 +917,19 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
   LogicalResult
   matchAndRewrite(ada::UnOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    mlir::Location loc = op.getLoc();
+    mlir::Type type = adaptor.getOperand().getType();
+
+    ada::AdaChecks checks = {};
+    if (ada::AdaChecksAttr a = op.getChecksAttr())
+      checks = a.getValue();
+
+    mlir::IntegerAttr modulus;
+    if (auto qual = mlir::dyn_cast<ada::QualType>(op.getOperand().getType()))
+      modulus = getModularModulus(op, qual);
+
     switch (op.getKind()) {
     case ada::AdaUnaryOp::Not: {
-      mlir::Location loc = op.getLoc();
-      mlir::Type type = adaptor.getOperand().getType();
-      mlir::IntegerAttr modulus;
-      if (auto qual = mlir::dyn_cast<ada::QualType>(op.getOperand().getType()))
-        modulus = getModularModulus(op, qual);
       // A modular `not` complements within the modulus: `(modulus - 1) - X`
       // (correct for any modulus; a full-width `2**w` one folds to the all-ones
       // xor). Boolean is a single-bit flip: xor with true.
@@ -939,10 +945,87 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
       }
       return success();
     }
-    case ada::AdaUnaryOp::Abs:
+    case ada::AdaUnaryOp::Abs: {
+      mlir::Value x = adaptor.getOperand();
+
+      if (mlir::isa<mlir::FloatType>(type)) {
+        rewriter.replaceOpWithNewOp<LLVM::FAbsOp>(op, type, x);
+      } else if (modulus) {
+        // A modular value is never negative, `abs` is the identity.
+        rewriter.replaceOp(op, x);
+      } else {
+        // Signed integer unary 'abs' is `x < 0 ? -x : x`.
+        mlir::Value zero = constInt(rewriter, loc, type, 0);
+        mlir::Value isNeg = arith::CmpIOp::create(
+            rewriter, loc, arith::CmpIPredicate::slt, x, zero);
+        mlir::Value neg = {};
+        if (!ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow)) {
+          neg = arith::SubIOp::create(rewriter, loc, zero, x);
+        } else {
+          auto module = op->getParentOfType<mlir::ModuleOp>();
+          auto st = LLVM::LLVMStructType::getLiteral(
+              rewriter.getContext(), {type, rewriter.getI1Type()});
+          mlir::Value wo =
+              LLVM::SSubWithOverflowOp::create(rewriter, loc, st, zero, x);
+          mlir::Value res = extractField(rewriter, loc, wo, 0);
+          mlir::Value ovf = extractField(rewriter, loc, wo, 1);
+          if (mlir::failed(
+                  emitConstraintRaise(rewriter, loc, module, ovf,
+                                      "__gnat_rcheck_CE_Overflow_Check")))
+            return mlir::failure();
+          neg = res;
+        }
+        rewriter.replaceOpWithNewOp<arith::SelectOp>(op, isNeg, neg, x);
+      }
+      return mlir::success();
+    }
     case ada::AdaUnaryOp::Plus:
+      // Unary '+' is the identity.
+      rewriter.replaceOp(op, adaptor.getOperand());
+      return mlir::success();
     case ada::AdaUnaryOp::Minus:
-      return rewriter.notifyMatchFailure(op, "unsupported unary operator");
+      // Unary '-' is `0 - x` for integers: `LLVM::SSubWithOverflowOp` when
+      // checked (overflow), `arith.subi` otherwise. `arith.negf` for float.
+      if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow)) {
+        auto module = op->getParentOfType<mlir::ModuleOp>();
+        auto st = LLVM::LLVMStructType::getLiteral(
+            rewriter.getContext(), {type, rewriter.getI1Type()});
+        mlir::Value lhs = constInt(rewriter, loc, type, 0);
+        mlir::Value rhs = adaptor.getOperand();
+        mlir::Value wo =
+            LLVM::SSubWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
+        mlir::Value res = extractField(rewriter, loc, wo, 0);
+        mlir::Value ovf = extractField(rewriter, loc, wo, 1);
+        if (mlir::failed(emitConstraintRaise(
+                rewriter, loc, module, ovf, "__gnat_rcheck_CE_Overflow_Check")))
+          return mlir::failure();
+        rewriter.replaceOp(op, res);
+      } else {
+        unsigned width = mlir::isa<mlir::IntegerType>(type)
+                             ? mlir::cast<mlir::IntegerType>(type).getWidth()
+                             : 0;
+        if (mlir::isa<mlir::FloatType>(type)) {
+          rewriter.replaceOpWithNewOp<arith::NegFOp>(op, adaptor.getOperand());
+        } else if (modulus && !(modulus.getValue().isPowerOf2() &&
+                                modulus.getValue().logBase2() == width)) {
+          // For modular arithmetic, `0 - x` is only correct when the modulus is
+          // exactly `2**width`. For other modulus, `-X` is `m - X` for a
+          // nonzero `X` and 0 for `X = 0` (@rm{4-5-4}(3)): lower to
+          // `select (X == 0), 0, (m - X)`.
+          mlir::Value x = adaptor.getOperand();
+          mlir::Value zero = constInt(rewriter, loc, type, 0);
+          mlir::Value m = constInt(rewriter, loc, type,
+                                   modulus.getValue().zextOrTrunc(width));
+          mlir::Value isZero = arith::CmpIOp::create(
+              rewriter, loc, arith::CmpIPredicate::eq, x, zero);
+          mlir::Value neg = arith::SubIOp::create(rewriter, loc, m, x);
+          rewriter.replaceOpWithNewOp<arith::SelectOp>(op, isZero, zero, neg);
+        } else {
+          rewriter.replaceOpWithNewOp<arith::SubIOp>(
+              op, constInt(rewriter, loc, type, 0), adaptor.getOperand());
+        }
+      }
+      return mlir::success();
     }
     return rewriter.notifyMatchFailure(op, "unsupported unary operator");
   }
