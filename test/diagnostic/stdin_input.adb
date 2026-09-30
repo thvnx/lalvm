@@ -7,7 +7,7 @@
 -- CHECK-NOT: file name does not match unit name
 -- CHECK:     module @__stdin
 
--- PROJECT: Can't read standard input when -P is used
+-- PROJECT: can't read standard input when -P is used
 
 procedure Stdin_Input is
 begin

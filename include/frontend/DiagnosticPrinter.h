@@ -5,6 +5,7 @@
 #define FRONTEND_DIAGNOSTIC_PRINTER_H
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 
 #include "mlir/IR/Diagnostics.h"
 
@@ -41,6 +42,13 @@ public:
   /// @param msg      Message to print.
   void emitDiag(ada_node &node, mlir::DiagnosticSeverity severity,
                 llvm::StringRef msg) const;
+
+  /// Print a driver diagnostic, which has no source location, as
+  /// "lalvm: severity: message".
+  /// @param severity Severity to print.
+  /// @param msg      Message to print.
+  void emitDiag(mlir::DiagnosticSeverity severity,
+                const llvm::Twine &msg) const;
 };
 
 } // namespace frontend

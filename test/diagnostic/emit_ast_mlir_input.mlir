@@ -1,8 +1,9 @@
-// `--emit=ast` dumps the Libadalang tree, which does not exist for MLIR input.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
 
 // RUN: %not %lalvm --emit=ast %s 2>&1 | %FileCheck %s
 
-// CHECK: Can't dump a Libadalang AST when the input is MLIR
+// CHECK: can't dump a Libadalang AST when the input is MLIR
 
 module {
 }

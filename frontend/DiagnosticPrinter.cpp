@@ -108,6 +108,13 @@ void frontend::DiagnosticPrinter::emitDiag(ada_node &node,
   llvm::errs() << msg << "\n";
 }
 
+void frontend::DiagnosticPrinter::emitDiag(mlir::DiagnosticSeverity severity,
+                                           const llvm::Twine &msg) const {
+  llvm::errs() << "lalvm: ";
+  printSeverity(severity);
+  llvm::errs() << msg << "\n";
+}
+
 void frontend::DiagnosticPrinter::emitDiag(
     const ada_internal_solver_diagnostic &diag) const {
   if (!diag.location)

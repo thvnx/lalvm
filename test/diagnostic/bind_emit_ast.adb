@@ -3,7 +3,7 @@
 
 -- RUN: %not %lalvm --bind --emit=ast %s 2>&1 | %FileCheck %s
 
--- CHECK: Can't dump a Libadalang AST when binding
+-- CHECK: can't dump a Libadalang AST when binding
 
 procedure Bind_Emit_Ast is
 begin
