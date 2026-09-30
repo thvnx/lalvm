@@ -488,13 +488,12 @@ struct IndexOpLowering : public OpConversionPattern<ada::IndexOp> {
 // AdaToLLVM RewritePatterns: Binary operations
 //===----------------------------------------------------------------------===//
 
-// Value of a checked signed-integer arithmetic tree when it is a compile-time
-// constant that does not overflow, else nullopt. After `mem2reg` the promoted
-// locals are constants, so such an operation provably cannot raise and needs no
-// overflow check -- the plain arith op is emitted instead and LLVM folds it,
-// matching GNAT, which folds e.g. `X + Y` to a literal when X and Y have known
-// values. Only overflow-flagged (signed, no modulus) `+`/`-`/`*` are evaluated,
-// with exact two's-complement `APInt` arithmetic.
+// Value of a checked signed integer expression whose operands are all
+// constants, or nullopt if it is not constant or overflows. Such an operation
+// cannot raise, so the caller emits the plain arith op without an overflow
+// check, and LLVM folds it. Constants typically come from `mem2reg` promoting
+// locals. Handles checked binary `+`, `-`, `*` and unary `-`, `abs`, in exact
+// two's complement `APInt` arithmetic. Unary `+` is the identity.
 static std::optional<llvm::APInt> evalConstInt(mlir::Value v) {
   if (auto c = v.getDefiningOp<ada::ConstantOp>())
     if (auto ia = mlir::dyn_cast<mlir::IntegerAttr>(c.getValue()))
@@ -502,6 +501,31 @@ static std::optional<llvm::APInt> evalConstInt(mlir::Value v) {
   if (auto c = v.getDefiningOp<arith::ConstantOp>())
     if (auto ia = mlir::dyn_cast<mlir::IntegerAttr>(c.getValue()))
       return ia.getValue();
+  if (auto un = v.getDefiningOp<ada::UnOp>()) {
+    if (un.getKind() == ada::AdaUnaryOp::Plus)
+      return evalConstInt(un.getOperand());
+    ada::AdaChecksAttr checks = un.getChecksAttr();
+    if (!checks ||
+        !ada::bitEnumContainsAny(checks.getValue(), ada::AdaChecks::Overflow))
+      return std::nullopt;
+    std::optional<llvm::APInt> x = evalConstInt(un.getOperand());
+    if (!x)
+      return std::nullopt;
+    llvm::APInt zero = llvm::APInt::getZero(x->getBitWidth());
+    bool overflow = false;
+    llvm::APInt result;
+    switch (un.getKind()) {
+    case ada::AdaUnaryOp::Minus:
+      result = zero.ssub_ov(*x, overflow);
+      break;
+    case ada::AdaUnaryOp::Abs:
+      result = x->isNegative() ? zero.ssub_ov(*x, overflow) : *x;
+      break;
+    default:
+      return std::nullopt;
+    }
+    return overflow ? std::nullopt : std::optional<llvm::APInt>(result);
+  }
   auto bin = v.getDefiningOp<ada::BinOp>();
   if (!bin)
     return std::nullopt;
@@ -959,7 +983,8 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
         mlir::Value isNeg = arith::CmpIOp::create(
             rewriter, loc, arith::CmpIPredicate::slt, x, zero);
         mlir::Value neg = {};
-        if (!ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow)) {
+        if (!ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) ||
+            evalConstInt(op.getResult())) {
           neg = arith::SubIOp::create(rewriter, loc, zero, x);
         } else {
           auto module = op->getParentOfType<mlir::ModuleOp>();
@@ -986,7 +1011,8 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
     case ada::AdaUnaryOp::Minus:
       // Unary '-' is `0 - x` for integers: `LLVM::SSubWithOverflowOp` when
       // checked (overflow), `arith.subi` otherwise. `arith.negf` for float.
-      if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow)) {
+      if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) &&
+          !evalConstInt(op.getResult())) {
         auto module = op->getParentOfType<mlir::ModuleOp>();
         auto st = LLVM::LLVMStructType::getLiteral(
             rewriter.getContext(), {type, rewriter.getI1Type()});
