@@ -115,12 +115,29 @@ static cl::opt<std::string>
 static cl::alias projectFileAlias("project", cl::desc("Alias for -P"),
                                   cl::aliasopt(projectFile));
 
-// Optimization level. -O1 enables mem2reg (promoting locals to SSA); -O0, the
-// default, leaves locals in memory so they stay breakable and inspectable.
-static cl::opt<unsigned> optLevel("O", cl::Prefix, cl::init(0),
-                                  cl::desc("Optimization level"),
-                                  cl::value_desc("level"),
-                                  cl::cat(lalvmCategory));
+// `-O<level>` parser: a bare `-O` means `-O1`, and the level is 0 to 3.
+struct OptLevelParser : cl::parser<unsigned> {
+  using cl::parser<unsigned>::parser;
+  bool parse(cl::Option &opt, llvm::StringRef argName, llvm::StringRef arg,
+             unsigned &value) {
+    if (arg.empty()) {
+      value = 1;
+      return false;
+    }
+    if (cl::parser<unsigned>::parse(opt, argName, arg, value))
+      return true;
+    if (value > 3)
+      return opt.error("optimization level " + arg + " not in range 0 .. 3");
+    return false;
+  }
+};
+
+// LALVM optimization level. It also selects the machine code generator's
+// optimization level (via `CodeGenOptLevel`).
+static cl::opt<unsigned, false, OptLevelParser>
+    optLevel("O", cl::Prefix, cl::ValueOptional, cl::init(0),
+             cl::desc("Optimization level"), cl::value_desc("level"),
+             cl::cat(lalvmCategory));
 
 // Debug info is emitted only under -g; without it the DI passes are skipped.
 // Source locations still ride on ops (diagnostics, exception messages).
@@ -412,7 +429,8 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   std::unique_ptr<llvm::TargetMachine> tmOwner(target->createTargetMachine(
       triple, llvm::codegen::getCPUStr(), llvm::codegen::getFeaturesStr(),
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple), relocModel,
-      llvm::codegen::getExplicitCodeModel()));
+      llvm::codegen::getExplicitCodeModel(),
+      llvm::CodeGenOpt::getLevel(optLevel).value()));
   if (!tmOwner) {
     llvm::errs() << "Could not create target machine for " << triple.str()
                  << "\n";
