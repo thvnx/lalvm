@@ -51,6 +51,7 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "frontend/AST.h"
@@ -270,13 +271,14 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
 static int
 writeTextOutput(llvm::function_ref<void(llvm::raw_ostream &)> print) {
   std::error_code ec;
-  llvm::raw_fd_ostream out(outputFilename, ec, llvm::sys::fs::OF_Text);
+  llvm::ToolOutputFile out(outputFilename, ec, llvm::sys::fs::OF_Text);
   if (ec) {
     llvm::errs() << "Could not open output file '" << outputFilename
                  << "': " << ec.message() << "\n";
     return 1;
   }
-  print(out);
+  print(out.os());
+  out.keep();
   return 0;
 }
 
@@ -304,7 +306,7 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
   }
 
   std::error_code ec;
-  llvm::raw_fd_ostream out(
+  llvm::ToolOutputFile out(
       path, ec, emitObject ? llvm::sys::fs::OF_None : llvm::sys::fs::OF_Text);
   if (ec) {
     llvm::errs() << "Could not open output file '" << path
@@ -314,10 +316,10 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
 
   // addPassesToEmitFile writes via pwrite; a non-seekable stream (e.g. a pipe)
   // must be buffered first.
-  llvm::raw_pwrite_stream *os = &out;
+  llvm::raw_pwrite_stream *os = &out.os();
   std::unique_ptr<llvm::buffer_ostream> buffered;
-  if (!out.supportsSeeking()) {
-    buffered = std::make_unique<llvm::buffer_ostream>(out);
+  if (!out.os().supportsSeeking()) {
+    buffered = std::make_unique<llvm::buffer_ostream>(out.os());
     os = buffered.get();
   }
 
@@ -331,6 +333,7 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
     return 1;
   }
   pm.run(llvmModule);
+  out.keep();
   return 0;
 }
 
