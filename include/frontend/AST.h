@@ -23,6 +23,9 @@ class MLIRContext;
 namespace frontend {
 namespace libadalang {
 
+/// Buffer name given to Libadalang for an input read from standard input.
+inline constexpr llvm::StringLiteral kStdinName = "__stdin";
+
 /// Dump an ada_node tree to `os`.
 void dump(ada_node *node, llvm::raw_ostream &os);
 

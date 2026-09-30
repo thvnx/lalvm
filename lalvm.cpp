@@ -482,6 +482,11 @@ int main(int argc, char **argv) {
                          ? inputType == InputType::MLIR
                          : llvm::StringRef(inputFilename).ends_with(".mlir");
 
+  if (!isMLIRInput && inputFilename == "-" && !projectFile.empty()) {
+    llvm::errs() << "Can't read standard input when -P is used\n";
+    return 1;
+  }
+
   // EmitAST is Ada-only and needs no MLIR context.
   if (emitAction == Action::EmitAST) {
     if (isMLIRInput) {

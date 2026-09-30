@@ -248,7 +248,10 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
                                   1, 8);
   abort_on_exception();
 
-  unit = ada_get_analysis_unit_from_buffer(context, filename.data(), nullptr,
+  // `-` is standard input: give Libadalang a readable buffer name instead.
+  std::string bufferName =
+      filename == "-" ? std::string(kStdinName) : filename.str();
+  unit = ada_get_analysis_unit_from_buffer(context, bufferName.c_str(), nullptr,
                                            buffer.data(), buffer.size(),
                                            ada_default_grammar_rule);
   abort_on_exception();

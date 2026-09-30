@@ -106,9 +106,13 @@ public:
     char *filename = ada_unit_filename(ada_node_unit(&compilationUnit));
     llvm::StringRef stem = llvm::sys::path::stem(filename);
     adaModule = mlir::ModuleOp::create(loc(compilationUnit), stem);
+    // Standard input has no file name to match the unit name against.
+    bool fromStdin =
+        llvm::sys::path::filename(filename) == libadalang::kStdinName;
     free(filename);
 
-    verifyUnitFileName(compilationUnit);
+    if (!fromStdin)
+      verifyUnitFileName(compilationUnit);
 
     // Use a simple Libadalang AST traversal approach based on the C API.
     if (mlir::failed(visit(compilationUnit)))
