@@ -2,6 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
+-- XFAIL: libadalang-26
 
 -- A static unary expression (RM 4.9) folds to a single `ada.constant`, with no
 -- `ada.unop`. A modular one is not folded yet: Libadalang's `eval_as_int` does
