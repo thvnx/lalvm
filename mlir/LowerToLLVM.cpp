@@ -485,8 +485,20 @@ struct IndexOpLowering : public OpConversionPattern<ada::IndexOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// AdaToLLVM RewritePatterns: Binary operations
+// AdaToLLVM RewritePatterns: Binary/Unary operations
 //===----------------------------------------------------------------------===//
+
+/// Whether `op` carries any of the checks in `checks`.
+template <typename OpTy>
+static bool hasAnyChecks(OpTy op, ada::AdaChecks checks) {
+  ada::AdaChecksAttr attr = op.getChecksAttr();
+  return attr && ada::bitEnumContainsAny(attr.getValue(), checks);
+}
+
+/// Whether `op` carries an overflow check (@rm{11-5}).
+template <typename OpTy> static bool hasOverflowCheck(OpTy op) {
+  return hasAnyChecks(op, ada::AdaChecks::Overflow);
+}
 
 // Value of a checked signed integer expression whose operands are all
 // constants, or nullopt if it is not constant or overflows. Such an operation
@@ -504,9 +516,7 @@ static std::optional<llvm::APInt> evalConstInt(mlir::Value v) {
   if (auto un = v.getDefiningOp<ada::UnOp>()) {
     if (un.getKind() == ada::AdaUnaryOp::Plus)
       return evalConstInt(un.getOperand());
-    ada::AdaChecksAttr checks = un.getChecksAttr();
-    if (!checks ||
-        !ada::bitEnumContainsAny(checks.getValue(), ada::AdaChecks::Overflow))
+    if (!hasOverflowCheck(un))
       return std::nullopt;
     std::optional<llvm::APInt> x = evalConstInt(un.getOperand());
     if (!x)
@@ -529,9 +539,7 @@ static std::optional<llvm::APInt> evalConstInt(mlir::Value v) {
   auto bin = v.getDefiningOp<ada::BinOp>();
   if (!bin)
     return std::nullopt;
-  ada::AdaChecksAttr checks = bin.getChecksAttr();
-  if (!checks ||
-      !ada::bitEnumContainsAny(checks.getValue(), ada::AdaChecks::Overflow))
+  if (!hasOverflowCheck(bin))
     return std::nullopt;
   std::optional<llvm::APInt> l = evalConstInt(bin.getLhs());
   std::optional<llvm::APInt> r = evalConstInt(bin.getRhs());
@@ -594,16 +602,12 @@ private:
     if (!mlir::isa<mlir::IntegerType>(type))
       return std::nullopt;
     ada::AdaBinaryOp kind = op.getKind();
-    ada::AdaChecks checks = {};
-    if (ada::AdaChecksAttr a = op.getChecksAttr())
-      checks = a.getValue();
 
     // Signed +/-/* carrying the overflow flag lower to the LLVM checked
     // intrinsic and trap to the GNAT runtime on overflow (@rm{4-5}). An
     // unflagged or provably-safe compile-time-constant +/-/* is left to the
     // plain lowering, which LLVM folds.
-    if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) &&
-        !evalConstInt(op.getResult())) {
+    if (hasOverflowCheck(op) && !evalConstInt(op.getResult())) {
       mlir::Location loc = op.getLoc();
       auto module = op->getParentOfType<mlir::ModuleOp>();
       auto st = LLVM::LLVMStructType::getLiteral(rewriter.getContext(),
@@ -646,7 +650,7 @@ private:
       bool modular = static_cast<bool>(getModularModulus(
           op, mlir::cast<ada::QualType>(op.getResult().getType())));
 
-      if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Division)) {
+      if (hasAnyChecks(op, ada::AdaChecks::Division)) {
         auto module = op->getParentOfType<mlir::ModuleOp>();
         unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
 
@@ -944,10 +948,6 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
     mlir::Location loc = op.getLoc();
     mlir::Type type = adaptor.getOperand().getType();
 
-    ada::AdaChecks checks = {};
-    if (ada::AdaChecksAttr a = op.getChecksAttr())
-      checks = a.getValue();
-
     mlir::IntegerAttr modulus;
     if (auto qual = mlir::dyn_cast<ada::QualType>(op.getOperand().getType()))
       modulus = getModularModulus(op, qual);
@@ -983,8 +983,7 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
         mlir::Value isNeg = arith::CmpIOp::create(
             rewriter, loc, arith::CmpIPredicate::slt, x, zero);
         mlir::Value neg = {};
-        if (!ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) ||
-            evalConstInt(op.getResult())) {
+        if (!hasOverflowCheck(op) || evalConstInt(op.getResult())) {
           neg = arith::SubIOp::create(rewriter, loc, zero, x);
         } else {
           auto module = op->getParentOfType<mlir::ModuleOp>();
@@ -1011,8 +1010,7 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
     case ada::AdaUnaryOp::Minus:
       // Unary '-' is `0 - x` for integers: `LLVM::SSubWithOverflowOp` when
       // checked (overflow), `arith.subi` otherwise. `arith.negf` for float.
-      if (ada::bitEnumContainsAny(checks, ada::AdaChecks::Overflow) &&
-          !evalConstInt(op.getResult())) {
+      if (hasOverflowCheck(op) && !evalConstInt(op.getResult())) {
         auto module = op->getParentOfType<mlir::ModuleOp>();
         auto st = LLVM::LLVMStructType::getLiteral(
             rewriter.getContext(), {type, rewriter.getI1Type()});
