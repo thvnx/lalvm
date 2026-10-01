@@ -15,6 +15,10 @@ namespace frontend {
 
 /// Formats and prints diagnostics to stderr in the standard
 /// "basename:line:col: severity: message" format.
+///
+/// @todo Add a warnings-as-errors state to print warnings as errors and record
+/// that an error was reported, so that the driver can fail. Users would then
+/// share one printer instead of creating a temporary per diagnostic.
 class DiagnosticPrinter {
 public:
   DiagnosticPrinter() = default;
@@ -50,6 +54,11 @@ public:
   void emitDiag(mlir::DiagnosticSeverity severity,
                 const llvm::Twine &msg) const;
 };
+
+/// Shortcuts for `DiagnosticPrinter().emitDiag(...)`.
+void emitErrorDiag(const llvm::Twine &msg);
+void emitErrorDiag(ada_node &node, llvm::StringRef msg);
+void emitWarningDiag(ada_node &node, llvm::StringRef msg);
 
 } // namespace frontend
 

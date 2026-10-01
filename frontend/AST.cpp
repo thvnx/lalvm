@@ -27,8 +27,8 @@ static bool print_exception(bool or_silent) {
   const ada_exception *exc = ada_get_last_exception();
   if (exc != nullptr) {
     char *exc_name = ada_exception_name(exc->kind);
-    llvm::errs() << "Got an exception (" << exc_name << "):\n  "
-                 << exc->information << "\n";
+    frontend::emitErrorDiag(llvm::Twine("Libadalang raised ") + exc_name +
+                            ": " + exc->information);
     free(exc_name);
     return true;
   }
@@ -166,7 +166,7 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
   for (unsigned i = 0; i < count; ++i) {
     ada_node child;
     if (ada_node_child(node, i, &child) == 0)
-      llvm::errs() << "Error while getting a child\n";
+      frontend::emitWarningDiag(*node, "can't get child " + std::to_string(i));
     dump_image(os, &child, level + 1);
   }
 }
@@ -200,7 +200,7 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
 #endif
     if (errors) {
       for (int i = 0; i < errors->length; ++i)
-        llvm::errs() << "project error: " << errors->c_ptr[i] << "\n";
+        frontend::emitErrorDiag(llvm::Twine("project: ") + errors->c_ptr[i]);
       ada_free_string_array(errors);
     }
     if (loadFailed || !project) {
@@ -236,7 +236,7 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
       llvm::MemoryBuffer::getFileOrSTDIN(filename);
   if (std::error_code ec = fileOrErr.getError()) {
     valid = false;
-    llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+    frontend::emitErrorDiag("could not open input file: " + ec.message());
     return;
   }
   auto buffer = fileOrErr.get()->getBuffer();
@@ -305,8 +305,9 @@ std::string libadalang::getName(ada_node *node, bool canonical) {
     return name;
   }
   default:
-    llvm::errs() << "Can't get name of node: " << libadalang::image(node)
-                 << "\n";
+    std::string img;
+    llvm::raw_string_ostream(img) << libadalang::image(node);
+    frontend::emitErrorDiag(*node, "can't get the name of " + img);
     return {};
   }
 }
@@ -610,8 +611,8 @@ bool libadalang::emitSolverDiagnostics(ada_node *node) {
       if (diags->items[i].round == lastRound)
         printer.emitDiag(diags->items[i]);
   } else {
-    llvm::errs()
-        << "error: name resolution failed but no diagnostics to report\n";
+    frontend::emitErrorDiag(
+        *node, "name resolution failed with no diagnostic to report");
   }
   if (diags)
     ada_internal_solver_diagnostic_array_dec_ref(diags);

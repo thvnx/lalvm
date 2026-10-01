@@ -160,3 +160,15 @@ void frontend::DiagnosticPrinter::emitDiag(mlir::Diagnostic &diag) const {
   for (mlir::Diagnostic &note : diag.getNotes())
     emitDiag(note);
 }
+
+void frontend::emitErrorDiag(const llvm::Twine &msg) {
+  DiagnosticPrinter().emitDiag(mlir::DiagnosticSeverity::Error, msg);
+}
+
+void frontend::emitErrorDiag(ada_node &node, llvm::StringRef msg) {
+  DiagnosticPrinter().emitDiag(node, mlir::DiagnosticSeverity::Error, msg);
+}
+
+void frontend::emitWarningDiag(ada_node &node, llvm::StringRef msg) {
+  DiagnosticPrinter().emitDiag(node, mlir::DiagnosticSeverity::Warning, msg);
+}

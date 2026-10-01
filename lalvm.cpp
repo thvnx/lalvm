@@ -63,12 +63,6 @@
 namespace cl = llvm::cl;
 namespace libadalang = frontend::libadalang;
 
-// Print a driver error and return the exit status of a failed compilation.
-static int emitErrorDiag(const llvm::Twine &msg) {
-  frontend::DiagnosticPrinter().emitDiag(mlir::DiagnosticSeverity::Error, msg);
-  return 1;
-}
-
 // lalvm's own options live in this category; HideUnrelatedOptions (in main)
 // hides everything LLVM/MLIR back ends register from --help.
 static cl::OptionCategory lalvmCategory("lalvm options");
@@ -182,7 +176,8 @@ static int loadMLIRFile(mlir::MLIRContext &context,
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
       llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
   if (std::error_code ec = fileOrErr.getError()) {
-    return emitErrorDiag("could not open input file: " + ec.message());
+    frontend::emitErrorDiag("could not open input file: " + ec.message());
+    return 1;
   }
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
@@ -192,7 +187,8 @@ static int loadMLIRFile(mlir::MLIRContext &context,
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
   module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
   if (!module) {
-    return emitErrorDiag("can't load file " + inputFilename);
+    frontend::emitErrorDiag("can't load file " + inputFilename);
+    return 1;
   }
   return 0;
 }
@@ -278,8 +274,9 @@ writeTextOutput(llvm::function_ref<void(llvm::raw_ostream &)> print) {
   std::error_code ec;
   llvm::ToolOutputFile out(outputFilename, ec, llvm::sys::fs::OF_Text);
   if (ec) {
-    return emitErrorDiag("could not open output file '" + outputFilename +
-                         "': " + ec.message());
+    frontend::emitErrorDiag("could not open output file '" + outputFilename +
+                            "': " + ec.message());
+    return 1;
   }
   print(out.os());
   out.keep();
@@ -304,17 +301,19 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
   // does the same). Assembly is text and prints fine.
   if (emitObject && path == "-" &&
       llvm::sys::Process::StandardOutIsDisplayed()) {
-    return emitErrorDiag(
+    frontend::emitErrorDiag(
         "refusing to write a binary object file to the terminal; "
         "use -o <file>");
+    return 1;
   }
 
   std::error_code ec;
   llvm::ToolOutputFile out(
       path, ec, emitObject ? llvm::sys::fs::OF_None : llvm::sys::fs::OF_Text);
   if (ec) {
-    return emitErrorDiag("could not open output file '" + path +
-                         "': " + ec.message());
+    frontend::emitErrorDiag("could not open output file '" + path +
+                            "': " + ec.message());
+    return 1;
   }
 
   // addPassesToEmitFile writes via pwrite; a non-seekable stream (e.g. a pipe)
@@ -331,8 +330,9 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
                              emitObject
                                  ? llvm::CodeGenFileType::ObjectFile
                                  : llvm::CodeGenFileType::AssemblyFile)) {
-    return emitErrorDiag(llvm::Twine("target cannot emit a ") +
-                         (emitObject ? "object" : "assembly") + " file");
+    frontend::emitErrorDiag(llvm::Twine("target cannot emit a ") +
+                            (emitObject ? "object" : "assembly") + " file");
+    return 1;
   }
   pm.run(llvmModule);
   out.keep();
@@ -364,7 +364,8 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   llvm::LLVMContext llvmContext;
   auto llvmModule = mlir::translateModuleToLLVMIR(*module, llvmContext);
   if (!llvmModule) {
-    return emitErrorDiag("failed to emit LLVM IR");
+    frontend::emitErrorDiag("failed to emit LLVM IR");
+    return 1;
   }
 
   llvmModule->setModuleIdentifier(llvm::sys::path::filename(inputFilename));
@@ -419,7 +420,8 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(triple, lookupError);
   if (!target) {
-    return emitErrorDiag("could not look up target: " + lookupError);
+    frontend::emitErrorDiag("could not look up target: " + lookupError);
+    return 1;
   }
   llvm::Reloc::Model relocModel =
       llvm::codegen::getExplicitRelocModel().value_or(llvm::Reloc::PIC_);
@@ -435,7 +437,9 @@ static int emitLLVMIR(mlir::MLIRContext &context,
       llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOpt::getLevel(optLevel).value()));
   if (!tmOwner) {
-    return emitErrorDiag("could not create target machine for " + triple.str());
+    frontend::emitErrorDiag("could not create target machine for " +
+                            triple.str());
+    return 1;
   }
   llvm::TargetMachine &tm = *tmOwner;
   mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(), &tm);
@@ -481,17 +485,20 @@ int main(int argc, char **argv) {
                          : llvm::StringRef(inputFilename).ends_with(".mlir");
 
   if (!isMLIRInput && inputFilename == "-" && !projectFile.empty()) {
-    return emitErrorDiag("can't read standard input when -P is used");
+    frontend::emitErrorDiag("can't read standard input when -P is used");
+    return 1;
   }
 
   // EmitAST is Ada-only and needs no MLIR context.
   if (emitAction == Action::EmitAST) {
     if (isMLIRInput) {
-      return emitErrorDiag(
+      frontend::emitErrorDiag(
           "can't dump a Libadalang AST when the input is MLIR");
+      return 1;
     }
     if (bindAction) {
-      return emitErrorDiag("can't dump a Libadalang AST when binding");
+      frontend::emitErrorDiag("can't dump a Libadalang AST when binding");
+      return 1;
     }
     libadalang::AdaAST ast(inputFilename, projectFile);
     if (ast.emitParserDiagnostics())
@@ -512,7 +519,8 @@ int main(int argc, char **argv) {
 
   if (isMLIRInput) {
     if (bindAction) {
-      return emitErrorDiag("can't bind when the input is MLIR");
+      frontend::emitErrorDiag("can't bind when the input is MLIR");
+      return 1;
     }
     if (int error = loadMLIRFile(context, module))
       return error;
@@ -533,8 +541,9 @@ int main(int argc, char **argv) {
       if (emitAction == Action::EmitObject ||
           emitAction == Action::EmitAssembly)
         if (auto kind = libadalang::specKind(ast.getUnitRootNode())) {
-          return emitErrorDiag("cannot generate code for file " +
-                               inputFilename + " (" + kind->str() + ")");
+          frontend::emitErrorDiag("cannot generate code for file " +
+                                  inputFilename + " (" + kind->str() + ")");
+          return 1;
         }
       if (int error = loadMLIR(ast, context, module))
         return error;
