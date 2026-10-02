@@ -515,6 +515,12 @@ int main(int argc, char **argv) {
   context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
   context.getOrLoadDialect<mlir::memref::MemRefDialect>();
   context.getOrLoadDialect<mlir::scf::SCFDialect>();
+  // Print all diagnostics (warnings are not emitted by default).
+  mlir::ScopedDiagnosticHandler diagHandler(
+      &context, [](mlir::Diagnostic &diag) {
+        frontend::DiagnosticPrinter().emitDiag(diag);
+        return mlir::success();
+      });
   mlir::OwningOpRef<mlir::ModuleOp> module;
 
   if (isMLIRInput) {
