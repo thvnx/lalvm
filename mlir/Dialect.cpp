@@ -786,11 +786,11 @@ llvm::StringRef mlir::ada::bareName(llvm::StringRef qualified) {
   llvm::StringRef seg = qualified.rsplit('.').second;
   if (seg.empty())
     seg = qualified;
-  // Drop the collision suffix added by MLIRGen's makeUnique. Only LALVM ever
-  // introduces a double underscore; canonical Ada names never contain
-  // consecutive underscores, so its presence unambiguously marks the suffix.
+  // Drop the `__N` collision suffix added by MLIRGen's makeUnique. Other double
+  // underscores (in names LALVM generates) are kept.
   size_t pos = seg.rfind("__");
-  if (pos != llvm::StringRef::npos)
+  if (pos != llvm::StringRef::npos && pos + 2 < seg.size() &&
+      llvm::all_of(seg.substr(pos + 2), llvm::isDigit))
     seg = seg.substr(0, pos);
   return seg;
 }
