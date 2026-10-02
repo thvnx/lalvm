@@ -999,67 +999,73 @@ private:
     return std::make_pair(lo.getValue(), hi.getValue());
   }
 
-  /// The static range an integer literal of type `type_decl` must satisfy at
-  /// compile time, with the (sub)type whose `int_info` it came from (for
-  /// diagnostics): the subtype's own bounds when static, else its canonical
-  /// base type's. Empty for a universal type or a fully dynamic subtype, whose
-  /// check is left to run time.
-  struct StaticRange {
-    llvm::APInt lo, hi;
-    ada_node type_decl;
-  };
-  std::optional<StaticRange> staticIntCheckRange(ada_node type_decl,
-                                                 mlir::Location location) {
-    if (libadalang::isUniversalTypeDecl(type_decl))
-      return std::nullopt;
-    if (auto b = ownStaticBounds(type_decl, location))
-      return StaticRange{b->first, b->second, type_decl};
-    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
-    if (canon && !libadalang::isUniversalTypeDecl(canon.value()))
-      if (auto b = ownStaticBounds(canon.value(), location))
-        return StaticRange{b->first, b->second, canon.value()};
-    return std::nullopt;
-  }
-
-  /// Emit the two static Constraint_Check (@rm{11-5}) diagnostics when `value`
-  /// lies outside the static range `[lo, hi]` of type `typeName`; returns true
-  /// when out of range. `APSInt` spans the operands' differing widths and
-  /// signedness, so `value` is compared exactly, never width-truncated first.
-  bool diagnoseOutOfRange(const llvm::APInt &value, const llvm::APInt &lo,
-                          const llvm::APInt &hi, llvm::StringRef typeName,
-                          mlir::Location location) {
+  /// Whether `value` lies in `[lo, hi]`. `APSInt` spans the operands' differing
+  /// widths and signedness, so `value` is compared exactly, never
+  /// width-truncated first.
+  static bool inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
+                            const llvm::APInt &hi) {
     llvm::APSInt v(value, /*isUnsigned=*/false);
-    if (llvm::APSInt::compareValues(v, llvm::APSInt(lo, false)) < 0 ||
-        llvm::APSInt::compareValues(v, llvm::APSInt(hi, false)) > 0) {
-      mlir::emitError(location, "value not in range of type \"")
-          << typeName << "\"";
-      mlir::emitError(location, "static expression fails Constraint_Check");
-      return true;
-    }
-    return false;
+    return llvm::APSInt::compareValues(v, llvm::APSInt(lo, false)) >= 0 &&
+           llvm::APSInt::compareValues(v, llvm::APSInt(hi, false)) <= 0;
   }
 
-  /// Emit a range-checked `ada.constant` for integer `value` of type
-  /// `type_decl`: the static Constraint_Check (@rm{11-5}), resolved at emission
-  /// like GNAT's front end (a value outside the target subtype's static range
-  /// fails at compile time; a dynamic-bound subtype falls through to the
-  /// run-time check), then the constant. Returns null on a failed check (a
-  /// diagnostic is emitted).
+  /// A static value outside the base range of its type is illegal
+  /// (@rm{4-9}(35)): emit the two errors and return true.
+  bool diagnoseOutOfBaseRange(const llvm::APInt &value, const llvm::APInt &lo,
+                              const llvm::APInt &hi, llvm::StringRef typeName,
+                              mlir::Location location) {
+    if (inStaticRange(value, lo, hi))
+      return false;
+    mlir::emitError(location, "value not in range of type \"")
+        << typeName << "\"";
+    mlir::emitError(location, "static expression fails Constraint_Check");
+    return true;
+  }
+
+  /// A static value inside the base range but outside the static range of a
+  /// subtype is legal, but its range check fails (@rm{11-5}): warn, as GNAT
+  /// does, and return true so the caller keeps the run-time check.
+  bool warnOutOfSubtypeRange(const llvm::APInt &value, const llvm::APInt &lo,
+                             const llvm::APInt &hi, llvm::StringRef typeName,
+                             mlir::Location location) {
+    if (inStaticRange(value, lo, hi))
+      return false;
+    mlir::emitWarning(location, "value not in range of type \"")
+        << typeName << "\"";
+    mlir::emitWarning(location, "Constraint_Error will be raised at run time");
+    return true;
+  }
+
+  /// Emit an `ada.constant` for integer `value` of type `type_decl`. A value
+  /// outside the base range is an error. A value outside the subtype's own
+  /// static range is emitted in the base type and coerced to the subtype,
+  /// which warns and emits the range check that raises at run time. Returns
+  /// null on error (a diagnostic is emitted).
   mlir::Value emitCheckedIntConstant(const llvm::APInt &value,
                                      ada_node type_decl,
                                      mlir::Location location) {
-    if (auto sr = staticIntCheckRange(type_decl, location)) {
-      ada_node defName;
-      std::string name =
-          ada_basic_decl_p_defining_name(&sr->type_decl, &defName)
-              ? canonicalFqn(defName)
-              : libadalang::getName(&sr->type_decl);
-      if (diagnoseOutOfRange(value, sr->lo, sr->hi, name, location))
-        return nullptr;
-    }
+    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
+    ada_node base = canon ? canon.value() : type_decl;
+    if (!libadalang::isUniversalTypeDecl(base))
+      if (auto b = ownStaticBounds(base, location)) {
+        ada_node defName;
+        std::string name = ada_basic_decl_p_defining_name(&base, &defName)
+                               ? canonicalFqn(defName)
+                               : libadalang::getName(&base);
+        if (diagnoseOutOfBaseRange(value, b->first, b->second, name, location))
+          return nullptr;
+      }
     mlir::ada::QualType type = getAdaQualType(type_decl, location);
     if (!type)
       return nullptr;
+    if (auto b = ownStaticBounds(type_decl, location))
+      if (!inStaticRange(value, b->first, b->second)) {
+        mlir::ada::QualType baseType = getAdaQualType(base, location);
+        if (!baseType)
+          return nullptr;
+        return coerce(emitIntConstant(value, baseType, location), type,
+                      location);
+      }
     return emitIntConstant(value, type, location);
   }
 
@@ -1233,15 +1239,16 @@ private:
       if (!range)
         return coerced;
     } else {
-      // Static bounds: resolve a static source value here like a literal site
-      // (on the exact value); a dynamic one checks against constant bounds,
-      // reusing one descriptor per block rather than re-emitting per check.
+      // Static bounds: a static source value in range needs no check, and one
+      // out of range warns and keeps the check, which raises at run time. A
+      // dynamic value checks against constant bounds, reusing one descriptor
+      // per block rather than re-emitting per check.
       if (auto cst = src.getDefiningOp<mlir::ada::ConstantOp>())
-        if (auto valAttr = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
-          diagnoseOutOfRange(valAttr.getValue(), loAttr.getValue(),
-                             hiAttr.getValue(), typeOp.getSymName(), location);
-          return coerced;
-        }
+        if (auto valAttr = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue()))
+          if (!warnOutOfSubtypeRange(valAttr.getValue(), loAttr.getValue(),
+                                     hiAttr.getValue(), typeOp.getSymName(),
+                                     location))
+            return coerced;
       // The bounds have the base type (RM 3.5); it shares the subtype's
       // machine type, so reuse `target.getMlirType()`.
       auto baseQual = mlir::ada::QualType::get(
