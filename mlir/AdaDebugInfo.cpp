@@ -513,8 +513,13 @@ struct AdaDebugInfoPass
         diType = lookupNamedDIType(ctx, elemType, typeOpCache);
       if (!diType) {
         auto intType = dyn_cast<IntegerType>(elemType);
-        if (!intType)
-          continue; // silently skip floats without type info
+        if (!intType) {
+          // No Ada type (MLIR input): skip the variable.
+          entry.op->emitWarning()
+              << "missing ada.type for variable '" << entry.name.getValue()
+              << "', skipping debug info";
+          continue;
+        }
         diType = makeDIIntType(ctx, intType);
       }
       auto varInfo = LLVM::DILocalVariableAttr::get(
@@ -566,8 +571,12 @@ struct AdaDebugInfoPass
             diType = lookupNamedDIType(ctx, argType, typeOpCache);
           if (!diType) {
             auto intType = dyn_cast<IntegerType>(argType);
-            if (!intType)
-              continue; // float without type info: skip silently
+            if (!intType) {
+              // No Ada type (MLIR input): skip the parameter.
+              func.emitWarning("missing ada.type for parameter '")
+                  << nl.getName().getValue() << "', skipping debug info";
+              continue;
+            }
             diType = makeDIIntType(ctx, intType);
           }
           // Ada `in` parameters are read-only (@rm{6-1}): wrap in const, as
@@ -592,16 +601,19 @@ struct AdaDebugInfoPass
               }
             }
             if (!elemType) {
-              func.emitWarning("reference parameter '")
-                  << nl.getName().getValue()
-                  << "' has no load/store uses; skipping debug info";
+              func.emitWarning("no load or store for reference parameter '")
+                  << nl.getName().getValue() << "', skipping debug info";
               continue;
             }
             diType = lookupNamedDIType(ctx, elemType, typeOpCache);
             if (!diType) {
               auto intElemType = dyn_cast<IntegerType>(elemType);
-              if (!intElemType)
-                continue; // silently skip floats and other unsupported types
+              if (!intElemType) {
+                // No Ada type (MLIR input): skip the parameter.
+                func.emitWarning("missing ada.type for parameter '")
+                    << nl.getName().getValue() << "', skipping debug info";
+                continue;
+              }
               diType = makeDIIntType(ctx, intElemType);
             }
           }
