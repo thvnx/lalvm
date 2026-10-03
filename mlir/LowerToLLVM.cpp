@@ -341,18 +341,29 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
   }
 };
 
+/// The GNAT runtime entry point raising Constraint_Error for each check kind.
+static llvm::StringRef raiseEntry(ada::RangeCheckOp) {
+  return "__gnat_rcheck_CE_Range_Check";
+}
+static llvm::StringRef raiseEntry(ada::IndexCheckOp) {
+  return "__gnat_rcheck_CE_Index_Check";
+}
+
 // OpConversionPattern: lowers the Constraint_Check (@rm{11-5}) to a compare
 // against the bound pair and a conditional branch to a raise block that calls
 // the GNAT runtime and is unreachable. Type-preserving: the checked value
 // flows through unchanged into the continuation.
-struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
-  using OpConversionPattern<ada::RangeCheckOp>::OpConversionPattern;
+template <typename OpTy>
+struct InRangeCheckOpLowering : public OpConversionPattern<OpTy> {
+  using OpConversionPattern<OpTy>::OpConversionPattern;
+  using OpAdaptor = typename OpConversionPattern<OpTy>::OpAdaptor;
 
   LogicalResult
-  matchAndRewrite(ada::RangeCheckOp op, OpAdaptor adaptor,
+  matchAndRewrite(OpTy op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     mlir::Location loc = op.getLoc();
-    auto module = op->getParentOfType<mlir::ModuleOp>();
+    mlir::Operation *operation = op;
+    auto module = operation->getParentOfType<mlir::ModuleOp>();
     mlir::Value value = adaptor.getValue();
 
     // Bounds: read the two fields of the lowered descriptor. `extractvalue` of
@@ -382,8 +393,8 @@ struct RangeCheckOpLowering : public OpConversionPattern<ada::RangeCheckOp> {
     }
     mlir::Value bad = LLVM::OrOp::create(rewriter, loc, below, above);
 
-    if (mlir::failed(emitConstraintRaise(rewriter, loc, module, bad,
-                                         "__gnat_rcheck_CE_Range_Check")))
+    if (mlir::failed(
+            emitConstraintRaise(rewriter, loc, module, bad, raiseEntry(op))))
       return mlir::failure();
 
     rewriter.replaceOp(op, value);
@@ -1299,8 +1310,9 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
                UnOpLowering, UnwrapOpLowering, SubpOpLowering,
                ConstantOpLowering, CoerceOpLowering, RangeOpLowering,
-               RangeCheckOpLowering, AttrOpLowering, IndexOpLowering>(
-      typeConverter, &getContext());
+               InRangeCheckOpLowering<ada::RangeCheckOp>,
+               InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
+               IndexOpLowering>(typeConverter, &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));

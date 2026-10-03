@@ -554,20 +554,21 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
 }
 
 //===----------------------------------------------------------------------===//
-// RangeCheckOp
+// RangeCheckOp and IndexCheckOp
 //===----------------------------------------------------------------------===//
 
-mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
+/// Forward the value of a statically passing in-range check.
+template <typename OpTy>
+static mlir::OpFoldResult foldInRangeCheck(OpTy op, mlir::Attribute valAttr) {
   // Defense-in-depth only: MLIRGen resolves static checks at emission time and
   // never emits a statically-passing one, and the pipeline runs no
   // canonicalizer. Should a statically-passing check reach here anyway, drop
   // it by forwarding the value, but only when the bounds and the value are
   // all compile-time constants and the value provably lies within range.
-  auto rangeOp = getRange().getDefiningOp<RangeOp>();
+  auto rangeOp = op.getRange().template getDefiningOp<RangeOp>();
   if (!rangeOp)
     return {};
   auto [loAttr, hiAttr] = rangeOp.staticBounds();
-  mlir::Attribute valAttr = adaptor.getValue();
   if (!loAttr || !hiAttr || !valAttr)
     return {};
 
@@ -582,7 +583,7 @@ mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
     // sound either way, at the cost of not folding some negative-bound ranges
     // (acceptable for a defense-in-depth fold).
     if (l.sle(x) && x.sle(h) && l.ule(x) && x.ule(h))
-      return getValue();
+      return op.getValue();
     return {};
   }
   if (auto lo = mlir::dyn_cast<mlir::FloatAttr>(loAttr)) {
@@ -597,9 +598,17 @@ mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
     bool geLo = loCmp == APFloat::cmpGreaterThan || loCmp == APFloat::cmpEqual;
     bool leHi = hiCmp == APFloat::cmpLessThan || hiCmp == APFloat::cmpEqual;
     if (geLo && leHi)
-      return getValue();
+      return op.getValue();
   }
   return {};
+}
+
+mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
+  return foldInRangeCheck(*this, adaptor.getValue());
+}
+
+mlir::OpFoldResult IndexCheckOp::fold(FoldAdaptor adaptor) {
+  return foldInRangeCheck(*this, adaptor.getValue());
 }
 
 //===----------------------------------------------------------------------===//

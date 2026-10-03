@@ -23,6 +23,10 @@ _Noreturn void __gnat_rcheck_CE_Range_Check(const char *file, int line) {
   raiseConstraintError(file, line, "range check failed");
 }
 
+_Noreturn void __gnat_rcheck_CE_Index_Check(const char *file, int line) {
+  raiseConstraintError(file, line, "index check failed");
+}
+
 _Noreturn void __gnat_rcheck_CE_Divide_By_Zero(const char *file, int line) {
   raiseConstraintError(file, line, "divide by zero");
 }

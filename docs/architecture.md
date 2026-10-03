@@ -52,6 +52,7 @@ LLVM by a sequence of MLIR passes. The dialect's operations:
 | `ada.unop`        | Predefined unary operator (`not` on Boolean and modular types).                                                                                   |
 | `ada.range`       | A subtype's constraint as a first-class `(low, high)` descriptor value (static or dynamic bounds).                                                |
 | `ada.range_check` | `Constraint_Error` range check of a value against an `ada.range`.                                                                                 |
+| `ada.index_check` | `Constraint_Error` index check of an array index against an `ada.range`.                                                                          |
 | `ada.attr`        | Scalar attribute (`'First`/`'Last`) read from a range descriptor.                                                                                 |
 | `ada.index`       | Location of an array element: a `memref` of the component, from the array's `memref` and a zero-based offset.                                     |
 | `ada.unwrap`      | Exposes the machine value under an `!ada.qual`, dropping the Ada identity.                                                                        |

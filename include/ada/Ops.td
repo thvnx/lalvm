@@ -347,44 +347,50 @@ def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
 }
 
 //===----------------------------------------------------------------------===//
-// RangeCheckOp
+// InRangeCheckOps
 //===----------------------------------------------------------------------===//
 
-// Constraint_Check (@rm{11-5}) against a subtype's range, raising
-// Constraint_Error on violation. Type-preserving `(T) -> (T)` on the target
-// subtype's `!ada.qual`: MLIRGen coerces the value to that subtype first
-// (`ada.coerce`) and then checks it, so keeping the result type equal to the
-// operand type is what lets the static-pass folder forward the value (a fold
-// may only return a value of the result's own type). Not `Pure`: raising is
-// observable. The two `TypesMatchWith` constraints pin the value to the result
-// type and the range to the matching `!ada.range` (same machine type and
-// subtype symbol); they also drive assembly inference, so only the result
-// `!ada.qual` is printed.
-def RangeCheckOp : Ada_Op<"range_check", [
+// Checks that a value lies within a range, raising Constraint_Error otherwise
+// (@rm{11-5}). The result is the checked value with the same `!ada.qual` type,
+// so a check known to pass folds to its operand. Not `Pure` since it can raise.
+// Each kind of check (range or index) is its own op built from this class.
+class Ada_InRangeCheckOp<string mnemonic> : Ada_Op<mnemonic, [
     TypesMatchWith<"checked value type is the result type", "result", "value",
                    "$_self">,
     TypesMatchWith<"range matches the checked subtype", "result", "range",
                    "::mlir::ada::RangeType::get($_self.getContext(), "
                    "::mlir::cast<::mlir::ada::QualType>($_self).getMlirType(), "
                    "::mlir::cast<::mlir::ada::QualType>($_self).getAdaType())">]> {
-  let summary = "Ada Constraint_Check against a subtype range";
-  let description = [{
-    Checks that `value` lies within `range`, raising `Constraint_Error`
-    otherwise (@rm{11-5}). Type-preserving: `value` and the result share the
-    target subtype's `!ada.qual` type, and `range` is the matching `!ada.range`
-    (same machine type and subtype symbol).
-
-    ```mlir
-    %c = ada.range_check %v, %r : !ada.qual<i32, @standard.positive>
-    ```
-  }];
-
   let arguments = (ins Ada_QualType:$value, Ada_RangeType:$range);
   let results = (outs Ada_QualType:$result);
   let assemblyFormat =
       "$value `,` $range attr-dict `:` qualified(type($result))";
 
   let hasFolder = 1;
+}
+
+def RangeCheckOp : Ada_InRangeCheckOp<"range_check"> {
+  let summary = "Ada Range_Check against a subtype range";
+  let description = [{
+    Range_Check (@rm{11-5}): a value converted or assigned to a constrained
+    subtype.
+
+    ```mlir
+    %c = ada.range_check %v, %r : !ada.qual<i32, @standard.positive>
+    ```
+  }];
+}
+
+def IndexCheckOp : Ada_InRangeCheckOp<"index_check"> {
+  let summary = "Ada Index_Check against an array index range";
+  let description = [{
+    Index_Check (@rm{4-1-1}, @rm{11-5}): an index of an indexed component
+    checked against the array's index range.
+
+    ```mlir
+    %c = ada.index_check %i, %r : !ada.qual<i32, @p.vec_index>
+    ```
+  }];
 }
 
 //===----------------------------------------------------------------------===//
