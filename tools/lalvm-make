@@ -1,44 +1,58 @@
-#!/usr/bin/env bash
-# Compile an Ada file with lalvm and link it using the GNAT runtime.
-# Usage: ./lalvm-make <file.adb>
-# The lalvm binary defaults to `lalvm` on PATH; override with LALVM=<path>.
-#
-# Steps:
-#   1. gnatmake <file.adb>     — build with GNAT to get a .ali (and discard .o)
-#   2. lalvm --emit=obj        — recompile to .o using lalvm
-#   3. gnatbind -x <file.ali>  — generate Ada elaboration binder
-#   4. gnatlink <file.ali>     — link against the GNAT runtime
+#!/usr/bin/env python3
+"""Compile an Ada file with lalvm and link it using the GNAT runtime.
 
-set -euo pipefail
+Usage: lalvm-make <file.adb>
+The lalvm binary defaults to `lalvm` on PATH; override with LALVM=<path>.
 
-run() { echo "+ $*" >&2; "$@"; }
+Steps:
+  1. gnatmake <file.adb>     build with GNAT to get a .ali (and discard .o)
+  2. lalvm --emit=obj        recompile to .o using lalvm
+  3. gnatbind -x <file.ali>  generate the Ada elaboration binder
+  4. gnatlink <file.ali>     link against the GNAT runtime
+"""
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: lalvm-make <file.adb>" >&2
-  exit 1
-fi
+import os
+import subprocess
+import sys
+from pathlib import Path
 
-ADB=$1
 
-if [[ ! -f "$ADB" ]]; then
-  echo "Error: file not found: $ADB" >&2
-  exit 1
-fi
+def run(*cmd: str) -> None:
+    """Echo `cmd` to stderr, then run it, exiting with its status on failure."""
+    print("+ " + " ".join(cmd), file=sys.stderr)
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
 
-LALVM="${LALVM:-lalvm}"
-BASE=$(basename "$ADB" .adb)
-OBJ="${BASE}.o"
-ALI="${BASE}.ali"
 
-# Step 1 — compile with GNAT to produce the .ali file.
-run gnatmake -q -f "$ADB"
+def main() -> None:
+    if len(sys.argv) != 2:
+        print("Usage: lalvm-make <file.adb>", file=sys.stderr)
+        sys.exit(1)
 
-# Step 2 — replace the .o with one produced by lalvm.
-run mv "$OBJ" "${BASE}.gnat.o"
-run "$LALVM" --emit=obj "$ADB" -o "$OBJ"
+    adb = sys.argv[1]
+    if not Path(adb).is_file():
+        print(f"Error: file not found: {adb}", file=sys.stderr)
+        sys.exit(1)
 
-# Step 3 — bind.
-run gnatbind -x "$ALI"
+    lalvm = os.environ.get("LALVM", "lalvm")
+    base = Path(adb).name.removesuffix(".adb")
+    obj = f"{base}.o"
+    ali = f"{base}.ali"
 
-# Step 4 — link.
-run gnatlink "$ALI"
+    # Step 1: compile with GNAT to produce the .ali file.
+    run("gnatmake", "-q", "-f", adb)
+
+    # Step 2: replace the .o with one produced by lalvm.
+    os.replace(obj, f"{base}.gnat.o")
+    run(lalvm, "--emit=obj", adb, "-o", obj)
+
+    # Step 3: bind.
+    run("gnatbind", "-x", ali)
+
+    # Step 4: link.
+    run("gnatlink", ali)
+
+
+if __name__ == "__main__":
+    main()
