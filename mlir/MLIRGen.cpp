@@ -2289,6 +2289,22 @@ private:
     if (!lo || !hi)
       return mlir::failure();
 
+    // The index constraint defines an anonymous index subtype (@rm{3-6}(13)),
+    // emitted next to the array type so it shares its scope.
+    mlir::ada::TypeOp indexBaseOp = indexOp;
+    if (auto base = indexOp.getBaseAttr())
+      indexBaseOp = mlir::cast<mlir::ada::TypeOp>(
+          mlir::ada::lookupSymbolFrom(indexOp, base.getValue()));
+    std::string prefix = scopePrefixForInsertion();
+    std::string simple = mlir::ada::kAnonymousTypePrefix.str() +
+                         mlir::ada::bareName(*typeName).str() + "_index_1";
+    auto indexSubtype = mlir::ada::TypeOp::create(
+        builder, location,
+        makeUnique(prefix.empty() ? simple : prefix + "." + simple),
+        indexBaseOp.getMlirType(), subtypeInfo(indexBaseOp, lo_node, hi_node),
+        mlir::FlatSymbolRefAttr::get(indexBaseOp.getSymNameAttr()));
+    indexSym = mlir::FlatSymbolRefAttr::get(indexSubtype.getSymNameAttr());
+
     // Extent is the element count: `hi - lo + 1`.
     int64_t extent = hi->getSExtValue() - lo->getSExtValue() + 1;
     auto *ctx = builder.getContext();

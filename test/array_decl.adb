@@ -7,7 +7,8 @@
 
 -- ada.alloca is printed first since the type declaration is nested into ada.decls.
 -- MLIR: ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array_decl.vec>>
--- MLIR: ada.type @array_decl.vec : !ada.array<i32[i32 x 10]> = #ada.array_info<component @standard.integer, dim @standard.integer range 1 to 10>
+-- MLIR: ada.type @array_decl.__anonymous_vec_index_1 base @standard.integer : i32 = #ada.int_info<range 1 to 10>
+-- MLIR: ada.type @array_decl.vec : !ada.array<i32[i32 x 10]> = #ada.array_info<component @standard.integer, dim @array_decl.__anonymous_vec_index_1 range 1 to 10>
 
 -- allocate a llvm.array when lowering to LLVM
 -- LLVM: alloca [10 x i32]

@@ -3,7 +3,7 @@
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
--- CHECK: ada.type @array_neg_bounds.vec : !ada.array<i32[i32 x 11]> = #ada.array_info<component @standard.integer, dim @standard.integer range -5 to 5>
+-- CHECK: ada.type @array_neg_bounds.vec : !ada.array<i32[i32 x 11]> = #ada.array_info<component @standard.integer, dim @array_neg_bounds.__anonymous_vec_index_1 range -5 to 5>
 
 procedure Array_Neg_Bounds is
    type Vec is array (-5 .. 5) of Integer;

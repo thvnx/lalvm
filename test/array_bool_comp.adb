@@ -4,7 +4,7 @@
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
--- CHECK: ada.type @array_bool_comp.flags : !ada.array<i1[i32 x 4]> = #ada.array_info<component @standard.boolean, dim @standard.integer range 1 to 4>
+-- CHECK: ada.type @array_bool_comp.flags : !ada.array<i1[i32 x 4]> = #ada.array_info<component @standard.boolean, dim @array_bool_comp.__anonymous_flags_index_1 range 1 to 4>
 
 procedure Array_Bool_Comp is
    type Flags is array (1 .. 4) of Boolean;
