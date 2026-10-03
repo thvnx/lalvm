@@ -1,9 +1,5 @@
-//===- PostTranslationDITypes.cpp - Post-translation DI type builders -----===//
-//
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Copyright (c) 2026 The LALVM Project
-//
-//===----------------------------------------------------------------------===//
 
 #include "ada/PostTranslationDITypes.h"
 #include "ada/Dialect.h"
@@ -414,10 +410,14 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
         intInfo.staticUpper()
             ? boundMD(intInfo.staticUpper(), boundTy)
             : dynBound(bounds ? bounds.getMetadata().getUpper() : nullptr);
+    // An object's anonymous subtype has no name in DWARF and is artificial.
+    bool anonymous = typeOp.isAnonymous();
     auto *subrange = db.createSubrangeType(
-        mlir::ada::bareName(typeOp.getSymName()),
+        anonymous ? llvm::StringRef()
+                  : mlir::ada::bareName(typeOp.getSymName()),
         getOrCreateDIFile(db, fileCache, filePath), line, scope,
-        intType.getWidth(), /*AlignInBits=*/0, llvm::DINode::FlagZero,
+        intType.getWidth(), /*AlignInBits=*/0,
+        anonymous ? llvm::DINode::FlagArtificial : llvm::DINode::FlagZero,
         basicTypeFor(db, typeOp), loMD, hiMD,
         /*Stride=*/nullptr, /*Bias=*/nullptr);
     subrangeByName[typeOp.getSymName()] = subrange;

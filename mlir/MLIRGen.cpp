@@ -25,6 +25,7 @@
 
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/SaveAndRestore.h"
 
 namespace libadalang = frontend::libadalang;
 
@@ -240,6 +241,14 @@ private:
   // blocks); the top is the prefix for declarations emitted inside the
   // innermost scope.
   llvm::SmallVector<std::string> scopeStack;
+
+  // The `ada.decls` block of the declarative part being emitted, or null when
+  // it has none: where emitAnonymousSubtype puts an object's subtype.
+  mlir::Block *currentDeclsBlock = nullptr;
+
+  // The `ada.range` elaborated for each dynamic subtype, by symbol (see
+  // elaborateDynamicRange). Ada visibility guarantees it dominates every use.
+  llvm::DenseMap<mlir::Attribute, mlir::Value> dynamicRanges;
 
   // Enclosing loops, innermost last: the block to branch to on `exit`, and the
   // loop's source name (empty when unnamed) for `exit Loop_Name`.
@@ -1235,7 +1244,7 @@ private:
     mlir::IntegerAttr loAttr = info.staticLower(), hiAttr = info.staticUpper();
     if (!loAttr || !hiAttr) {
       // Dynamic bounds: the descriptor elaborated once at the subtype decl.
-      range = findDynamicRange(coerced.getDefiningOp(), target.getAdaType());
+      range = findDynamicRange(target.getAdaType());
       if (!range)
         return coerced;
     } else {
@@ -1612,8 +1621,7 @@ private:
 
     // Dynamic bound: read from the range descriptor elaborated at the subtype
     // declaration.
-    mlir::Value range = findDynamicRange(
-        builder.getInsertionBlock()->getParentOp(), type.getAdaType());
+    mlir::Value range = findDynamicRange(type.getAdaType());
     if (!range) {
       mlir::emitError(location, "no range descriptor in scope for '")
           << name << "'";
@@ -1930,46 +1938,22 @@ private:
                          external);
   }
 
-  /// Emit the ada.type for a subtype declaration (@rm{3-2-2}): representation
-  /// and `base` link come from the canonical type; type_info records only the
-  /// declaration's own constraint. Enum bounds resolve via the base metadata,
-  /// never eval_as_int (which yields positions; rep order equals position
-  /// order, @rm{13-4}); an unresolvable bound is dynamic (`?`).
+  /// The `type_info` of a subtype of `baseOp` constrained to `[lo, hi]`
+  /// (@rm{3-2-2}), or null when unconstrained (`lo` or `hi` null). An
+  /// unresolvable bound is dynamic (`?`).
+  ///
   /// @todo Record float subtype constraints once float_info models bounds.
-  mlir::LogicalResult mlirGenSubtypeDecl(ada_node &type_decl, bool external) {
-    auto location = loc(type_decl);
-    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
-    if (!canon)
-      return mlir::emitError(location,
-                             "failed to resolve the subtype's base type");
-    mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon.value(), location);
-    if (!baseOp)
-      return mlir::failure();
-
-    auto typeName = resolveTypeDeclName(type_decl, external);
-    if (mlir::failed(typeName))
-      return mlir::failure();
-
-    mlir::Attribute typeInfo;
-    ada_node indication{}, constraint{};
-    ada_internal_discrete_range range{};
-    bool constrained =
-        ada_subtype_decl_f_subtype(&type_decl, &indication) &&
-        !ada_node_is_null(&indication) &&
-        ada_subtype_indication_f_constraint(&indication, &constraint) &&
-        !ada_node_is_null(&constraint) &&
-        ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
-        !ada_node_is_null(&range.low_bound) &&
-        !ada_node_is_null(&range.high_bound);
-    mlir::Attribute baseInfo =
-        constrained ? baseOp.getTypeInfoAttr() : mlir::Attribute();
-    if (mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(baseInfo)) {
-      typeInfo = mlir::ada::IntegerTypeInfoAttr::get(
+  mlir::Attribute subtypeInfo(mlir::ada::TypeOp baseOp, ada_node lo,
+                              ada_node hi) {
+    if (ada_node_is_null(&lo) || ada_node_is_null(&hi))
+      return {};
+    mlir::Attribute baseInfo = baseOp.getTypeInfoAttr();
+    if (mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(baseInfo))
+      return mlir::ada::IntegerTypeInfoAttr::get(
           builder.getContext(), /*modulus=*/mlir::IntegerAttr(),
-          rangeBoundAttr(range.low_bound), rangeBoundAttr(range.high_bound));
-    } else if (auto enumInfo =
-                   mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
-                       baseInfo)) {
+          rangeBoundAttr(lo), rangeBoundAttr(hi));
+    if (auto enumInfo =
+            mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(baseInfo)) {
       auto repOf = [&](ada_node &bound) -> std::optional<int64_t> {
         std::optional<ada_node> lit = libadalang::referencedDecl(bound);
         if (!lit || ada_node_kind(&lit.value()) != ada_enum_literal_decl)
@@ -1985,78 +1969,135 @@ private:
           return minimalWidthIntAttr(llvm::APInt(64, *rep, /*isSigned=*/true));
         return mlir::UnitAttr::get(builder.getContext());
       };
-      typeInfo = mlir::ada::EnumTypeInfoAttr::get(
+      return mlir::ada::EnumTypeInfoAttr::get(
           builder.getContext(), builder.getArrayAttr({}), /*values=*/{},
-          boundAttr(range.low_bound), boundAttr(range.high_bound));
+          boundAttr(lo), boundAttr(hi));
+    }
+    return {};
+  }
+
+  /// Elaborate the dynamic range of `typeOp`, a subtype of `baseOp` constrained
+  /// to `[lo, hi]`, at the insertion point (@rm{3-2-2}(10)): evaluate its
+  /// bounds once and emit the `ada.range` that `findDynamicRange` recovers at
+  /// each check site. Evaluating the bounds here also runs their side effects
+  /// exactly once, even if the subtype is never referenced.
+  void elaborateDynamicRange(mlir::ada::TypeOp typeOp, mlir::ada::TypeOp baseOp,
+                             ada_node lo, ada_node hi,
+                             mlir::Location location) {
+    auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+        typeOp.getTypeInfoAttr());
+    if (!intInfo || !intInfo.hasRange() ||
+        (intInfo.staticLower() && intInfo.staticUpper()))
+      return;
+    // Bounds have the subtype's base type (@rm{3-5}). A static bound is an
+    // `ada.constant` and a dynamic one is its evaluated expression coerced to
+    // that base type (so both bounds share the base `!ada.qual`).
+    auto baseQual = mlir::ada::QualType::get(
+        builder.getContext(), baseOp.getMlirType(),
+        mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
+    auto boundValue = [&](ada_node &expr,
+                          mlir::IntegerAttr stat) -> mlir::Value {
+      if (stat)
+        return emitIntConstant(stat.getValue(), baseQual, location);
+      mlir::Value v = visit_expr(expr);
+      return v ? coerce(v, baseQual, loc(expr)) : mlir::Value();
+    };
+    mlir::Value loValue = boundValue(lo, intInfo.staticLower());
+    mlir::Value hiValue = boundValue(hi, intInfo.staticUpper());
+    if (loValue && hiValue)
+      dynamicRanges[typeOp.getSymNameAttr()] = emitRange(
+          loValue, hiValue,
+          mlir::FlatSymbolRefAttr::get(typeOp.getSymNameAttr()), location);
+  }
+
+  /// Emit the anonymous nominal subtype of object `id`, a subtype of
+  /// `markDecl`'s type constrained to `[lo, hi]` (@rm{3-3-1}(8)). Returns null
+  /// on failure (a diagnostic is emitted).
+  mlir::ada::TypeOp emitAnonymousSubtype(ada_node &id, ada_node &markDecl,
+                                         ada_node lo, ada_node hi,
+                                         mlir::Location location) {
+    std::optional<ada_node> canon = libadalang::canonicalType(markDecl);
+    if (!canon) {
+      mlir::emitError(location, "failed to resolve the subtype's base type");
+      return {};
+    }
+    mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon.value(), location);
+    if (!baseOp)
+      return {};
+
+    std::string prefix = scopePrefixForInsertion();
+    std::string simple =
+        mlir::ada::kAnonymousTypePrefix.str() + libadalang::getName(&id);
+    std::string name =
+        makeUnique(prefix.empty() ? simple : prefix + "." + simple);
+
+    mlir::ada::TypeOp typeOp;
+    {
+      mlir::OpBuilder::InsertionGuard guard(builder);
+      if (currentDeclsBlock)
+        builder.setInsertionPointToEnd(currentDeclsBlock);
+      else
+        builder.setInsertionPointToStart(adaModule.getBody());
+      typeOp = mlir::ada::TypeOp::create(
+          builder, location, name, baseOp.getMlirType(),
+          subtypeInfo(baseOp, lo, hi),
+          mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
+    }
+    elaborateDynamicRange(typeOp, baseOp, lo, hi, location);
+    return typeOp;
+  }
+
+  /// Emit the ada.type for a subtype declaration (@rm{3-2-2}): representation
+  /// and `base` link come from the canonical type. `type_info` records only the
+  /// declaration's own constraint (see `subtypeInfo`).
+  mlir::LogicalResult mlirGenSubtypeDecl(ada_node &type_decl, bool external) {
+    auto location = loc(type_decl);
+    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
+    if (!canon)
+      return mlir::emitError(location,
+                             "failed to resolve the subtype's base type");
+    mlir::ada::TypeOp baseOp = lookupOrEmitTypeOp(canon.value(), location);
+    if (!baseOp)
+      return mlir::failure();
+
+    auto typeName = resolveTypeDeclName(type_decl, external);
+    if (mlir::failed(typeName))
+      return mlir::failure();
+
+    ada_node indication = {}, constraint = {}, lo = {}, hi = {};
+    ada_internal_discrete_range range{};
+    if (ada_subtype_decl_f_subtype(&type_decl, &indication) &&
+        !ada_node_is_null(&indication) &&
+        ada_subtype_indication_f_constraint(&indication, &constraint) &&
+        !ada_node_is_null(&constraint) &&
+        ada_base_type_decl_p_discrete_range(&type_decl, &range)) {
+      lo = range.low_bound;
+      hi = range.high_bound;
     }
 
     auto typeOp = mlir::ada::TypeOp::create(
-        builder, location, *typeName, baseOp.getMlirType(), typeInfo,
+        builder, location, *typeName, baseOp.getMlirType(),
+        subtypeInfo(baseOp, lo, hi),
         mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
     typeDecls[type_decl.node] = typeOp;
 
-    // Elaborate a dynamic subtype's range once (@rm{3-2-2}): evaluate its
-    // bounds here and emit the `ada.range`, which `findDynamicRange` recovers
-    // at each check site. The bound values go in the body's entry block (before
-    // this `ada.decls`) so they dominate the checks, while the `ada.type`
-    // symbol stays in `ada.decls`. Evaluating the bounds here also runs their
-    // side effects exactly once, even if the subtype is never referenced.
-    auto intInfo =
-        mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(typeInfo);
-    if (intInfo && intInfo.hasRange() &&
-        (!intInfo.staticLower() || !intInfo.staticUpper())) {
-      mlir::Operation *declsOp = builder.getInsertionBlock()->getParentOp();
-      if (mlir::isa<mlir::ada::DeclsOp>(declsOp)) {
-        mlir::OpBuilder::InsertionGuard guard(builder);
-        builder.setInsertionPoint(declsOp);
-        // Bounds have the subtype's base type (RM 3.5). A static bound is an
-        // `ada.constant` of it; a dynamic one is its evaluated expression
-        // coerced to it (so both bounds share the base `!ada.qual`).
-        auto baseQual = mlir::ada::QualType::get(
-            builder.getContext(), baseOp.getMlirType(),
-            mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
-        auto boundValue = [&](ada_node &expr,
-                              mlir::IntegerAttr stat) -> mlir::Value {
-          if (stat)
-            return emitIntConstant(stat.getValue(), baseQual, location);
-          mlir::Value v = visit_expr(expr);
-          return v ? coerce(v, baseQual, loc(expr)) : mlir::Value();
-        };
-        mlir::Value lo = boundValue(range.low_bound, intInfo.staticLower());
-        mlir::Value hi = boundValue(range.high_bound, intInfo.staticUpper());
-        if (lo && hi)
-          emitRange(lo, hi,
-                    mlir::FlatSymbolRefAttr::get(typeOp.getSymNameAttr()),
-                    location);
-      }
+    // The bound values go in the body's entry block, before this `ada.decls`,
+    // so they dominate the checks, the `ada.type` symbol stays in `ada.decls`.
+    mlir::Operation *declsOp = builder.getInsertionBlock()->getParentOp();
+    if (mlir::isa<mlir::ada::DeclsOp>(declsOp)) {
+      mlir::OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPoint(declsOp);
+      elaborateDynamicRange(typeOp, baseOp, lo, hi, location);
     }
     return mlir::success();
   }
 
-  /// Find the `ada.range` elaborated for the subtype `sym` (by
-  /// mlirGenSubtypeDecl) in the entry block of an enclosing subprogram, or
-  /// null. Outer subprograms are searched too: a nested subprogram may
-  /// reference an outer dynamic subtype, and the descriptor is then an up-level
-  /// reference that ClosureConversion lifts into a parameter.
-  mlir::Value findDynamicRange(mlir::Operation *from,
-                               mlir::FlatSymbolRefAttr sym) {
-    // Start at the nearest enclosing subprogram, including `from` itself when
-    // it is one (an attribute use anchored on its `ada.subp` must see a range
-    // declared in that same subprogram).
-    mlir::ada::SubpOp start = mlir::dyn_cast<mlir::ada::SubpOp>(from);
-    if (!start)
-      start = from->getParentOfType<mlir::ada::SubpOp>();
-    for (auto subp = start; subp;
-         subp = subp->getParentOfType<mlir::ada::SubpOp>()) {
-      if (subp.getBody().empty())
-        continue;
-      for (mlir::Operation &op : subp.getBody().front())
-        if (auto rangeOp = mlir::dyn_cast<mlir::ada::RangeOp>(&op))
-          if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
-                  .getConstrainedType() == sym)
-            return rangeOp.getResult();
-    }
-    return {};
+  /// The `ada.range` elaborated for the dynamic subtype `sym` (see
+  /// elaborateDynamicRange), or null. A nested subprogram may reference an
+  /// outer dynamic subtype: the range is then an up-level reference that
+  /// ClosureConversion lifts into a parameter.
+  mlir::Value findDynamicRange(mlir::FlatSymbolRefAttr sym) {
+    return dynamicRanges.lookup(sym.getAttr());
   }
 
   /// Emit an ada.type op for an Ada type declaration (@rm{3-1}): enumeration
@@ -2354,58 +2395,16 @@ private:
     return true;
   }
 
-  /// Emit an object declaration (@rm{3-3-1}).
+  /// Emit an object declaration (@rm{3-3-1}): for each identifier, an
+  /// `ada.alloca` (an SSA value for a constant), initialized from the
+  /// expression or the type's Default_Value aspect. The subtype indication
+  /// gives the object's nominal subtype (a range constraint in it gives each
+  /// object its own anonymous subtype, see emitAnonymousSubtype), so its
+  /// initializer and assignments are range checked.
   ///
-  /// Syntax:
-  /// @code{.txt}
-  /// object_declaration ::=
-  ///     defining_identifier_list : [aliased] [constant] subtype_indication
-  ///         [:= expression] [aspect_specification];
-  ///   | defining_identifier_list : [aliased] [constant] access_definition
-  ///         [:= expression] [aspect_specification];
-  ///   | defining_identifier_list : [aliased] [constant] array_type_definition
-  ///         [:= expression] [aspect_specification];
-  ///   | single_task_declaration
-  ///   | single_protected_declaration
-  ///
-  /// defining_identifier_list ::=
-  ///   defining_identifier {, defining_identifier}
-  /// @endcode
-  ///
-  /// **Legality Rules**: An `object_declaration` without the reserved word
-  /// `constant` declares a variable object. If it has a `subtype_indication` or
-  /// an `array_type_definition` that defines an indefinite subtype, then there
-  /// shall be an initialization expression.
-  ///
-  /// **Static Semantics**: An `object_declaration` with the reserved word
-  /// `constant` declares a constant object. If it has an initialization
-  /// expression, then it is called a full constant declaration. Otherwise, it
-  /// is called a deferred constant declaration. The rules for deferred constant
-  /// declarations are given in 7.4. The rules for full constant declarations
-  /// are given in this subclause.
-  ///
-  /// Any declaration that includes a `defining_identifier_list` with more than
-  /// one `defining_identifier` is equivalent to a series of declarations each
-  /// containing one `defining_identifier` from the list, with the rest of the
-  /// text of the declaration copied for each declaration in the series, in the
-  /// same order as the list.
-  ///
-  /// The `subtype_indication`, `access_definition`, or full type definition of
-  /// an `object_declaration` defines the nominal subtype of the object. The
-  /// `object_declaration` declares an object of the type of the nominal
-  /// subtype.
-  ///
-  /// **Implementation details**:
-  ///
-  /// @attention Only the first grammar form (with `subtype_indication`) is
-  ///            supported, and only for scalar types. The `subtype_indication`
-  ///            is not consulted for the object's type; the MLIR type is
-  ///            inferred entirely from the initializer expression via
-  ///            Libadalang's `p_expected_expression_type`. The
-  ///            `access_definition`, `array_type_definition`,
-  ///            `single_task_declaration`, and `single_protected_declaration`
-  ///            forms are not handled.
-  ///
+  /// @todo Only a subtype indication is supported: no access definition, array
+  /// type definition, single task or protected declaration, deferred constant
+  /// or array initializer.
   mlir::LogicalResult mlirGenObjectDecl(ada_node &object_decl) {
     auto declLoc = loc(object_decl);
 
@@ -2422,6 +2421,17 @@ private:
                              "failed to resolve type expression");
     if (!lookupOrEmitTypeOp(typeDecl.value(), declLoc))
       return mlir::failure();
+
+    // A constraint in the subtype indication gives each object its own
+    // anonymous nominal subtype (@rm{3-3-1}(7-8)).
+    std::optional<std::pair<ada_node, ada_node>> bounds;
+    if (std::optional<ada_node> constraint =
+            libadalang::subtypeConstraint(type_expr)) {
+      bounds = libadalang::rangeConstraintBounds(constraint.value());
+      if (!bounds)
+        return mlir::emitError(loc(constraint.value()),
+                               "this form of constraint is not supported");
+    }
 
     ada_bool isConstant = 0;
     ada_basic_decl_p_is_constant_object(&object_decl, &isConstant);
@@ -2450,6 +2460,17 @@ private:
 
       auto elemType =
           mlir::cast<mlir::ada::QualType>(memrefType.getElementType());
+      mlir::MemRefType objType = memrefType;
+      if (bounds) {
+        mlir::ada::TypeOp sub = emitAnonymousSubtype(
+            id, typeDecl.value(), bounds->first, bounds->second, loc(id));
+        if (!sub)
+          return mlir::failure();
+        elemType = mlir::ada::QualType::get(
+            builder.getContext(), sub.getMlirType(),
+            mlir::FlatSymbolRefAttr::get(sub.getSymNameAttr()));
+        objType = mlir::MemRefType::get({}, elemType);
+      }
 
       mlir::Value init;
       if (!ada_node_is_null(&default_expr)) {
@@ -2477,8 +2498,7 @@ private:
             if (!init)
               return mlir::failure();
           }
-        auto allocaOp =
-            mlir::ada::AllocaOp::create(builder, loc(id), memrefType);
+        auto allocaOp = mlir::ada::AllocaOp::create(builder, loc(id), objType);
         setAdaNameLoc(mlir::Value(allocaOp), nameAttr);
         mlir::Value ptr = allocaOp;
         if (init) {
@@ -2536,6 +2556,8 @@ private:
     };
 
     bool atLibraryLevel = builder.getInsertionBlock() == adaModule.getBody();
+    llvm::SaveAndRestore<mlir::Block *> savedDeclsBlock(currentDeclsBlock,
+                                                        nullptr);
 
     // Emit one declaration at the current insertion point. Return failure for
     // kinds we don't handle.
@@ -2582,9 +2604,18 @@ private:
              kind == ada_expr_function;
     };
 
+    // An object with a constraint in its subtype indication stays inline, but
+    // its anonymous subtype is a symbol (see emitAnonymousSubtype).
+    auto hasAnonymousSubtype = [&](ada_node &decl) {
+      ada_node typeExpr = {};
+      return ada_node_kind(&decl) == ada_object_decl &&
+             ada_object_decl_f_type_expr(&decl, &typeExpr) &&
+             libadalang::subtypeConstraint(typeExpr).has_value();
+    };
+
     bool hasSymbols = false;
     if (mlir::failed(forEachDecl([&](ada_node &decl) {
-          hasSymbols |= isSymbol(decl);
+          hasSymbols |= isSymbol(decl) || hasAnonymousSubtype(decl);
           return mlir::success();
         })))
       return mlir::failure();
@@ -2599,6 +2630,7 @@ private:
     // into the nested subprogram, but the next iteration resets it here.
     auto declsOp = mlir::ada::DeclsOp::create(builder, loc(decls));
     mlir::Block *declsBlock = builder.createBlock(&declsOp.getBody());
+    currentDeclsBlock = declsBlock;
     if (mlir::failed(forEachDecl([&](ada_node &decl) {
           if (isSymbol(decl))
             builder.setInsertionPointToEnd(declsBlock);

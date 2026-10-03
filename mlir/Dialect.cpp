@@ -289,6 +289,10 @@ void TypeOp::print(mlir::OpAsmPrinter &p) {
   }
 }
 
+bool TypeOp::isAnonymous() {
+  return bareName(getSymName()).starts_with(kAnonymousTypePrefix);
+}
+
 llvm::LogicalResult TypeOp::verify() {
   if (mlir::Attribute info = getTypeInfoAttr()) {
     if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2024-2026 The LALVM Project
+
 #ifndef ADA_DIALECT_H
 #define ADA_DIALECT_H
 
@@ -37,6 +40,9 @@ namespace ada {
 /// human-facing names (DWARF DW_AT_name) where the simple source name is wanted
 /// rather than the qualified, collision-disambiguated symbol.
 llvm::StringRef bareName(llvm::StringRef qualified);
+
+/// Bare name prefix of the anonymous subtypes MLIRGen generates.
+inline constexpr llvm::StringLiteral kAnonymousTypePrefix = "__anonymous_";
 
 /// Return the GNAT ABI symbol of a library-level subprogram: `name` with the
 /// `_ada_` prefix.

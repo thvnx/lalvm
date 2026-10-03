@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringRef.h"
@@ -134,6 +135,15 @@ std::optional<ada_node> referencedDecl(ada_node &name);
 /// Return the type declaration `typeExpr` designates, or `std::nullopt` when
 /// name resolution fails or finds nothing.
 std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
+
+/// Return the bounds of `constraint`, when it is an `ada_range_constraint`, or
+/// `std::nullopt` for any other form (a Range attribute, a subtype name, etc).
+std::optional<std::pair<ada_node, ada_node>>
+rangeConstraintBounds(ada_node &constraint);
+
+/// Return the constraint of `typeExpr` when it is a subtype indication with
+/// one (`Integer range 1 ..10`), or `std::nullopt` otherwise.
+std::optional<ada_node> subtypeConstraint(ada_node &typeExpr);
 
 /// Return the specification kind of the compilation unit `root`. Either
 /// "package spec" or "subprogram spec", or `std::nullopt` for a body.

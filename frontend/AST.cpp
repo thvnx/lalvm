@@ -499,6 +499,28 @@ std::optional<ada_node> libadalang::referencedDecl(ada_node &name) {
   return std::nullopt;
 }
 
+std::optional<std::pair<ada_node, ada_node>>
+libadalang::rangeConstraintBounds(ada_node &constraint) {
+  ada_node spec = {}, range = {}, op = {}, lo = {}, hi = {};
+  if (ada_node_kind(&constraint) != ada_range_constraint ||
+      !ada_range_constraint_f_range(&constraint, &spec) ||
+      !ada_range_spec_f_range(&spec, &range) ||
+      ada_node_kind(&range) != ada_bin_op || !ada_bin_op_f_op(&range, &op) ||
+      ada_node_kind(&op) != ada_op_double_dot ||
+      !ada_bin_op_f_left(&range, &lo) || !ada_bin_op_f_right(&range, &hi))
+    return std::nullopt;
+  return std::make_pair(lo, hi);
+}
+
+std::optional<ada_node> libadalang::subtypeConstraint(ada_node &typeExpr) {
+  ada_node constraint = {};
+  if (ada_node_kind(&typeExpr) != ada_subtype_indication ||
+      !ada_subtype_indication_f_constraint(&typeExpr, &constraint) ||
+      ada_node_is_null(&constraint))
+    return std::nullopt;
+  return constraint;
+}
+
 std::optional<ada_node> libadalang::designatedTypeDecl(ada_node &typeExpr) {
   ada_node typeDecl = {};
   if (ada_type_expr_p_designated_type_decl(&typeExpr, &typeDecl) &&
