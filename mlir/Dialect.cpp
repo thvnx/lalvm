@@ -554,64 +554,6 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
 }
 
 //===----------------------------------------------------------------------===//
-// RangeCheckOp and IndexCheckOp
-//===----------------------------------------------------------------------===//
-
-/// Forward the value of a statically passing in-range check.
-template <typename OpTy>
-static mlir::OpFoldResult foldInRangeCheck(OpTy op, mlir::Attribute valAttr) {
-  // Defense-in-depth only: MLIRGen resolves static checks at emission time and
-  // never emits a statically-passing one, and the pipeline runs no
-  // canonicalizer. Should a statically-passing check reach here anyway, drop
-  // it by forwarding the value, but only when the bounds and the value are
-  // all compile-time constants and the value provably lies within range.
-  auto rangeOp = op.getRange().template getDefiningOp<RangeOp>();
-  if (!rangeOp)
-    return {};
-  auto [loAttr, hiAttr] = rangeOp.staticBounds();
-  if (!loAttr || !hiAttr || !valAttr)
-    return {};
-
-  if (auto lo = mlir::dyn_cast<mlir::IntegerAttr>(loAttr)) {
-    auto hi = mlir::dyn_cast<mlir::IntegerAttr>(hiAttr);
-    auto v = mlir::dyn_cast<mlir::IntegerAttr>(valAttr);
-    if (!hi || !v)
-      return {};
-    const llvm::APInt &l = lo.getValue(), &h = hi.getValue(), &x = v.getValue();
-    // Bounds are signless `iN`. Without the subtype's signedness, forward only
-    // when the value is in range under both signed and unsigned readings;
-    // sound either way, at the cost of not folding some negative-bound ranges
-    // (acceptable for a defense-in-depth fold).
-    if (l.sle(x) && x.sle(h) && l.ule(x) && x.ule(h))
-      return op.getValue();
-    return {};
-  }
-  if (auto lo = mlir::dyn_cast<mlir::FloatAttr>(loAttr)) {
-    auto hi = mlir::dyn_cast<mlir::FloatAttr>(hiAttr);
-    auto v = mlir::dyn_cast<mlir::FloatAttr>(valAttr);
-    if (!hi || !v)
-      return {};
-    using llvm::APFloat;
-    APFloat::cmpResult loCmp = v.getValue().compare(lo.getValue());
-    APFloat::cmpResult hiCmp = v.getValue().compare(hi.getValue());
-    // Positive tests so an unordered compare (NaN) does not fold.
-    bool geLo = loCmp == APFloat::cmpGreaterThan || loCmp == APFloat::cmpEqual;
-    bool leHi = hiCmp == APFloat::cmpLessThan || hiCmp == APFloat::cmpEqual;
-    if (geLo && leHi)
-      return op.getValue();
-  }
-  return {};
-}
-
-mlir::OpFoldResult RangeCheckOp::fold(FoldAdaptor adaptor) {
-  return foldInRangeCheck(*this, adaptor.getValue());
-}
-
-mlir::OpFoldResult IndexCheckOp::fold(FoldAdaptor adaptor) {
-  return foldInRangeCheck(*this, adaptor.getValue());
-}
-
-//===----------------------------------------------------------------------===//
 // AttrOp
 //===----------------------------------------------------------------------===//
 

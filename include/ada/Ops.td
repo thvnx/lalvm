@@ -351,9 +351,9 @@ def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
 //===----------------------------------------------------------------------===//
 
 // Checks that a value lies within a range, raising Constraint_Error otherwise
-// (@rm{11-5}). The result is the checked value with the same `!ada.qual` type,
-// so a check known to pass folds to its operand. Not `Pure` since it can raise.
-// Each kind of check (range or index) is its own op built from this class.
+// (@rm{11-5}). The result is the checked value with the same `!ada.qual` type.
+// Not `Pure` since it can raise. Each kind of check (range or index) is its
+// own op built from this class.
 class Ada_InRangeCheckOp<string mnemonic> : Ada_Op<mnemonic, [
     TypesMatchWith<"checked value type is the result type", "result", "value",
                    "$_self">,
@@ -365,8 +365,6 @@ class Ada_InRangeCheckOp<string mnemonic> : Ada_Op<mnemonic, [
   let results = (outs Ada_QualType:$result);
   let assemblyFormat =
       "$value `,` $range attr-dict `:` qualified(type($result))";
-
-  let hasFolder = 1;
 }
 
 def RangeCheckOp : Ada_InRangeCheckOp<"range_check"> {
