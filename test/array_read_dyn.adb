@@ -4,7 +4,10 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
 -- CHECK: %[[I:.*]] = memref.load %{{.*}}[] : memref<!ada.qual<i32, @standard.integer>>
--- CHECK: %[[OFF:.*]] = ada.binop "-" %[[I]], %{{.*}}
+-- CHECK: %[[SUB:.*]] = ada.coerce %[[I]] : {{.*}} to <i32, @array_read_dyn.__anonymous_vec_index_1>
+-- CHECK: %[[CHK:.*]] = ada.index_check %[[SUB]], %{{.*}}
+-- CHECK: %[[BASE:.*]] = ada.coerce %[[CHK]] : {{.*}} to <i32, @standard.integer>
+-- CHECK: %[[OFF:.*]] = ada.binop "-" %[[BASE]], %{{.*}}
 -- CHECK: ada.index %{{.*}}[%[[OFF]]] {{.*}}-> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
 
 procedure Array_Read_Dyn is

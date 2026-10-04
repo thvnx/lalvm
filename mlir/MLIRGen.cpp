@@ -1531,14 +1531,53 @@ private:
     auto info =
         mlir::cast<mlir::ada::ArrayTypeInfoAttr>(typeOp.getTypeInfoAttr());
 
-    // Raw Ada index, (@todo emit a range check).
+    // Index check (@rm{4-1-1}(7)): the index must lie within the array's
+    // bounds, recorded in `array_info`. A static index in range needs no check
+    // but one out of range warns and raises at run time.
     ada_node assoc = {}, indexExpr = {};
     ada_node_child(&suffix, 0, &assoc);
     ada_param_assoc_f_r_expr(&assoc, &indexExpr);
     mlir::Value rawIndex = visit_expr(indexExpr);
     if (!rawIndex)
       return nullptr;
-    auto indexQual = mlir::cast<mlir::ada::QualType>(rawIndex.getType());
+
+    // The anonymous index subtype (see mlirGenArrayTypeDecl), and its base
+    // type, where the offset is computed.
+    mlir::FlatSymbolRefAttr indexSym = info.getIndexTypes()[0];
+    auto indexOp = mlir::cast<mlir::ada::TypeOp>(
+        mlir::ada::lookupSymbolFrom(typeOp, indexSym.getValue()));
+    mlir::Type machine = layout.getIndexTypes()[0];
+    auto subQual =
+        mlir::ada::QualType::get(builder.getContext(), machine, indexSym);
+    auto indexQual = mlir::ada::QualType::get(builder.getContext(), machine,
+                                              indexOp.getBaseAttr());
+
+    std::optional<llvm::APInt> staticIndex;
+    if (auto cst = rawIndex.getDefiningOp<mlir::ada::ConstantOp>())
+      if (auto v = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue()))
+        staticIndex = v.getValue();
+    // Coerce to the base type but do not range check. An index check is
+    // generated below.
+    rawIndex = coerce(rawIndex, indexQual, location);
+    if (!rawIndex)
+      return nullptr;
+
+    llvm::APInt lo = info.staticLower(0).getValue();
+    llvm::APInt hi = info.staticUpper(0).getValue();
+    if (!staticIndex || warnOutOfSubtypeRange(staticIndex.value(), lo, hi,
+                                              indexSym.getValue(), location)) {
+      // Convert to the index (anonymous) subtype, check, and convert back to
+      // the base type to compute the offset. Using plain `ada.coerce` ops since
+      // `coerce` would add a range check.
+      mlir::Value range = staticRangeFor(indexSym, indexQual, lo, hi, location);
+      mlir::Value sub =
+          mlir::ada::CoerceOp::create(builder, location, subQual, rawIndex);
+      mlir::Value checked = mlir::ada::IndexCheckOp::create(
+          builder, location, subQual, sub, range);
+      rawIndex =
+          mlir::ada::CoerceOp::create(builder, location, indexQual, checked);
+    }
+
     auto intType = mlir::cast<mlir::IntegerType>(indexQual.getMlirType());
     mlir::Value first = emitIntConstant(
         llvm::APInt(intType.getWidth(), info.staticLower(0).getInt(),

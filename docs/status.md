@@ -23,6 +23,7 @@ implemented.
 - `Constraint_Error` range checks where a value flows into a constrained
   subtype; statically-resolved checks are decided at compile time (out-of-range
   static expressions are diagnosed, in-range ones emit no check).
+- `Constraint_Error` index checks on array indexing.
 
 ## Statements
 
