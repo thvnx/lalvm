@@ -164,9 +164,11 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
 
   unsigned count = ada_node_children_count(node);
   for (unsigned i = 0; i < count; ++i) {
-    ada_node child;
-    if (ada_node_child(node, i, &child) == 0)
+    ada_node child = {};
+    if (ada_node_child(node, i, &child) == 0) {
       frontend::emitWarningDiag(*node, "can't get child " + std::to_string(i));
+      continue;
+    }
     dump_image(os, &child, level + 1);
   }
 }
