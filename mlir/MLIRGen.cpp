@@ -2178,9 +2178,21 @@ private:
       auto modulusAP = libadalang::evalExprAsInt(expr);
       if (!modulusAP)
         return mlir::emitError(location, "invalid modular type modulus");
+      // Check the modular type limits (@rm{3-5-4}(7)).
+      // @todo Retrieve System.Max_Binary_Modulus and
+      //       System.Max_Nonbinary_Modulus through Libadalang.
+      if (!modulusAP->isStrictlyPositive())
+        return mlir::emitError(loc(expr), "modulus value must be positive");
+      unsigned bits = modulusAP->getActiveBits();
+      bool binary = modulusAP->isPowerOf2();
+      if (bits > 129 || (bits == 129 && !binary))
+        return mlir::emitError(loc(expr), "modulus exceeds limit (2 ** 128)");
+      if (bits > 32 && !binary)
+        return mlir::emitError(loc(expr),
+                               "nonbinary modulus exceeds limit (2 ** 32 - 1)");
       modulus = minimalWidthIntAttr(*modulusAP);
-      // Width holds 0 .. modulus-1, byte-rounded to a power of two (up to
-      // i128: GNAT's System.Max_Binary_Modulus is 2**128 with 128-bit ints).
+      // Width holds 0 .. modulus-1, byte-rounded to a power of two (at most
+      // i128, see above).
       unsigned need = modulusAP->ceilLogBase2();
       unsigned width = need <= 8    ? 8
                        : need <= 16 ? 16
@@ -3843,10 +3855,8 @@ private:
       return std::nullopt;
     }
     auto value = libadalang::bigIntToAPSInt(bigint);
-    // 18 is System.Max_Digits for x86-64 (the 80-bit extended type); GNAT
-    // emits the same error, located at the digits expression.
-    // @todo Retrieve the maximum from the System package (System.Max_Digits)
-    //       through Libadalang instead of hardcoding the x86-64 value.
+    // @todo Retrieve System.Max_Base_Digits and System.Max_Digits through
+    //       Libadalang instead of hardcoding the precision limit.
     if (!value || value->ugt(18)) {
       mlir::emitError(loc(digits_expr),
                       "digits value out of range, maximum is 18");
@@ -3999,6 +4009,8 @@ private:
     }
     unsigned bits =
         std::max(lo->getSignificantBits(), hi->getSignificantBits());
+    // @todo Retrieve System.Min_Int and System.Max_Int through Libadalang
+    //       to check the supported integer range (@rm{3-5-4}(6)).
     if (bits > 128) {
       mlir::emitError(diagLoc, "unsupported integer type wider than 128 bits");
       return mlir::Type{};
