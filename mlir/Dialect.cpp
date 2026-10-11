@@ -348,26 +348,32 @@ llvm::LogicalResult TypeOp::verify() {
                                  << " at dimension " << d;
         }
       }
-
-      // Best-effort component check, mirroring the base link below.
-      if (auto *sym = mlir::SymbolTable::lookupNearestSymbolFrom(
-              getOperation(), arrayInfo.getComponent()))
-        if (auto compOp = mlir::dyn_cast<ada::TypeOp>(sym))
-          if (compOp.getMlirType() != arrayType.getComponentType())
-            return emitOpError()
-                   << "array component '" << arrayInfo.getComponent().getValue()
-                   << "' has mlir_type " << compOp.getMlirType()
-                   << ", expected " << arrayType.getComponentType();
     }
   } else if (!getBaseAttr()) {
     return emitOpError()
            << "type without a base must carry a type_info attribute";
   }
+  return mlir::success();
+}
+
+/// Cross-check the types this one names.
+llvm::LogicalResult
+TypeOp::verifySymbolUses(mlir::SymbolTableCollection &symbolTables) {
+  // Best-effort component check, mirroring the base link below.
+  auto arrayInfo = mlir::dyn_cast_or_null<ArrayTypeInfoAttr>(getTypeInfoAttr());
+  auto arrayType = mlir::dyn_cast<ada::ArrayType>(getMlirType());
+  if (arrayInfo && arrayType)
+    if (auto compOp = symbolTables.lookupNearestSymbolFrom<TypeOp>(
+            getOperation(), arrayInfo.getComponent()))
+      if (compOp.getMlirType() != arrayType.getComponentType())
+        return emitOpError()
+               << "array component '" << arrayInfo.getComponent().getValue()
+               << "' has mlir_type " << compOp.getMlirType() << ", expected "
+               << arrayType.getComponentType();
   if (auto base = getBaseAttr()) {
     // Best-effort cross-check: hoisting moves type symbols across scopes
     // mid-pipeline, so an unresolved base is not an error here.
-    auto *sym =
-        mlir::SymbolTable::lookupNearestSymbolFrom(getOperation(), base);
+    auto *sym = symbolTables.lookupNearestSymbolFrom(getOperation(), base);
     if (auto baseOp = mlir::dyn_cast_or_null<TypeOp>(sym)) {
       if (baseOp.getMlirType() != getMlirType())
         return emitOpError()

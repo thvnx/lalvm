@@ -123,8 +123,11 @@ def AdaConversionKind : I32EnumAttr<"AdaConversionKind", "Ada conversion kind",
 // every stage, `HoistNestedSymbolOperations` lifts nested `ada.type` ops to
 // module level before lowering. This keeps them out of
 // `llvm.func` bodies (whose parent `LLVM::LLVMFuncOp` is not a `SymbolTable`),
-// where a `Symbol` would otherwise fail the post-pass verifier.
-def TypeOp : Ada_Op<"type", [Symbol]> {
+// where a `Symbol` would otherwise fail the post-pass verifier. The `base` and
+// array component links are checked in `verifySymbolUses`.
+def TypeOp : Ada_Op<"type",
+                    [Symbol,
+                     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Ada type declaration (metadata only)";
   let description = [{
     Metadata-only op with no runtime value: carries type information (name,
