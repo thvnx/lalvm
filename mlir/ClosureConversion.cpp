@@ -97,6 +97,10 @@ void ClosureConversionPass::runOnOperation() {
       auto args = subp.getBody().getArguments();
       ValueRange liftedArgs = args.drop_front(args.size() - captures.size());
 
+      // Also rewrite the uses in nested regions.
+      for (auto [capture, arg] : llvm::zip(captures, liftedArgs))
+        replaceAllUsesInRegionWith(capture, arg, subp.getBody());
+
       // Pass the captures at every call to this subprogram (matched by its
       // dialect FQN; mangling happens later).
       StringRef name = subp.getSymName();
