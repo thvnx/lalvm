@@ -787,16 +787,10 @@ private:
         !ada_node_is_null(&type_decl))
       resultType = getAdaQualType(type_decl, loc(binop));
 
-    // Relational operators (@rm{4-5-2}) take operands of a common type and
-    // yield Boolean. Coerce both operands to that operand type; the result is
-    // Boolean, so unlike arithmetic the result type cannot double as the
-    // operand coercion target. `coerce` is a no-op today, but is the eventual
-    // home for each operand's range/constraint check (@rm{4-5},
-    // Constraint_Error)
-    // -- which is required even when the operand and operator types are
-    // nominally identical, since the static type does not guarantee the value
-    // is in range. The Boolean result is coerced at the assignment/decl-init
-    // site.
+    // Relational operators (@rm{4-5-2}) yield Boolean, so the result type is
+    // not the coercion target. Coerce both operands to the base type of the
+    // left one
+    // (@rm{3-5}): no subtype constraint applies.
     switch (ada_node_kind(&op)) {
     case ada_op_eq:
     case ada_op_neq:
@@ -806,6 +800,7 @@ private:
     case ada_op_gte:
       if (auto operandType =
               mlir::dyn_cast<mlir::ada::QualType>(lhs.getType())) {
+        operandType = baseQualType(operandType);
         lhs = coerce(lhs, operandType, loc(binop));
         rhs = coerce(rhs, operandType, loc(binop));
       }
@@ -1144,6 +1139,25 @@ private:
     return mlir::ada::QualType::get(ctx, mlirType, typeRef);
   }
 
+  /// Return the base type (@rm{3-5}) of `type`, whose `ada.type` is `typeOp`.
+  mlir::ada::QualType baseQualType(mlir::ada::QualType type,
+                                   mlir::ada::TypeOp typeOp) {
+    if (!typeOp || !typeOp.getBaseAttr())
+      return type;
+    return mlir::ada::QualType::get(builder.getContext(), type.getMlirType(),
+                                    typeOp.getBaseAttr());
+  }
+
+  /// Same, looking the `ada.type` up from the current insertion block.
+  mlir::ada::QualType baseQualType(mlir::ada::QualType type) {
+    mlir::Block *block = builder.getInsertionBlock();
+    auto typeOp = mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
+        block ? mlir::ada::lookupSymbolFrom(block->getParentOp(),
+                                            type.getAdaType().getValue())
+              : nullptr);
+    return baseQualType(type, typeOp);
+  }
+
   /// Build the `ada.qual<mlirType, @adaSym>` type for a type declaration.
   /// Returns a null type if the declaration is not supported.
   mlir::ada::QualType getAdaQualType(ada_node &type_decl,
@@ -1261,10 +1275,8 @@ private:
                                      hiAttr.getValue(), typeOp.getSymName(),
                                      location))
             return coerced;
-      // The bounds have the base type (RM 3.5); it shares the subtype's
-      // machine type, so reuse `target.getMlirType()`.
-      auto baseQual = mlir::ada::QualType::get(
-          builder.getContext(), target.getMlirType(), typeOp.getBaseAttr());
+      // The bounds have the base type (RM 3.5).
+      auto baseQual = baseQualType(target, typeOp);
       range = staticRangeFor(target.getAdaType(), baseQual, loAttr.getValue(),
                              hiAttr.getValue(), location);
     }
