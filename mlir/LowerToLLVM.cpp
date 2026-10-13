@@ -125,10 +125,10 @@ static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
 }
 
 /// Whether ordering comparisons on the Ada type named by `qual` are unsigned.
-/// Signed integers order as signed; modular types (@rm{3-5-4}) and enumerations
-/// (Boolean included, ordered by non-negative position) are unsigned. The kind
-/// lives on the root type, so walk `base` links (a subtype records only its
-/// range) and inspect the root's `type_info`.
+/// Signed integers order as signed, modular types (@rm{3-5-4}) as unsigned.
+/// Enumerations order by code (@rm{13-4}): unsigned unless a code is negative.
+/// The kind lives on the root type, so walk `base` links (a subtype records
+/// only its range) and inspect the root's `type_info`.
 static bool isUnsignedOrderQualType(mlir::Operation *from, ada::QualType qual) {
   auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
       mlir::SymbolTable::lookupNearestSymbolFrom(
@@ -147,7 +147,10 @@ static bool isUnsignedOrderQualType(mlir::Operation *from, ada::QualType qual) {
   if (auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
           root.getTypeInfoAttr()))
     return static_cast<bool>(intInfo.getModulus());
-  return mlir::isa_and_nonnull<ada::EnumTypeInfoAttr>(root.getTypeInfoAttr());
+  if (auto enumInfo =
+          mlir::dyn_cast_or_null<ada::EnumTypeInfoAttr>(root.getTypeInfoAttr()))
+    return llvm::none_of(enumInfo.getValues(), [](int64_t v) { return v < 0; });
+  return false;
 }
 
 /// Address of a private, NUL-terminated constant holding `fileName`, for the
@@ -895,8 +898,8 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
         diag << "unsupported operand type: " << type;
       });
 
-    // Ordering needs the operand's signedness (equality does not): signed
-    // integers order signed, modular and enumeration types unsigned.
+    // Ordering needs the operand's signedness (equality does not), see
+    // `isUnsignedOrderQualType`.
     bool uns = false;
     if (auto qual = mlir::dyn_cast<ada::QualType>(op.getLhs().getType()))
       uns = isUnsignedOrderQualType(op, qual);

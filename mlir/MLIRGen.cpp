@@ -1906,11 +1906,8 @@ private:
   ///       `EnumTypeInfoAttr` would then store APInt-valued codes, like the
   ///       universal-int work.
   /// @todo @rm{13-4} requires the codes to be distinct and to satisfy the
-  ///       type's predefined ordering (each code exceeds its predecessor's).
-  ///       A value is its code, so ordering compares codes; once negative
-  ///       codes exist (above), that must be a signed comparison.
-  ///       `isUnsignedOrderQualType` (`LowerToLLVM`) treats enums as unsigned,
-  ///       correct only for the default non-negative positional codes.
+  ///       type's predefined ordering; not checked yet. Ordering compares
+  ///       codes (signed once one is negative, see `isUnsignedOrderQualType`).
   std::optional<int64_t> enumLiteralRep(ada_node &lit,
                                         mlir::Location location) {
     ada_big_integer bigint;
