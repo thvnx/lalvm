@@ -1215,8 +1215,11 @@ private:
           if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
                   .getConstrainedType() == sym)
             return rangeOp.getResult();
-    return emitRange(emitIntConstant(lo, baseQual, location),
-                     emitIntConstant(hi, baseQual, location), sym, location);
+    // Argument evaluation order is unspecified in C++ so eval low and high
+    // before calling emitRange so that the bounds are generated in order.
+    mlir::Value low = emitIntConstant(lo, baseQual, location);
+    mlir::Value high = emitIntConstant(hi, baseQual, location);
+    return emitRange(low, high, sym, location);
   }
 
   /// Emit a Constraint_Check (@rm{11-5}) when `coerced` flows into a
