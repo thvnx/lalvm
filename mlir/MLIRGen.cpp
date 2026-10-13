@@ -743,6 +743,9 @@ private:
     ada_node type_decl = resolveLiteralType(expr, location);
     if (ada_node_is_null(&type_decl))
       return std::nullopt;
+    // A predefined operator of a type yields that type, free of any subtype
+    // constraint (@rm{4-5}): its root type stands for it.
+    type_decl = libadalang::canonicalType(type_decl).value_or(type_decl);
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
     if (!typeOp || !mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
                        typeOp.getTypeInfoAttr()))
@@ -1667,11 +1670,18 @@ private:
       return nullptr;
     }
 
+    // `S'First` and `S'Last` are of the type of S, not of the subtype S
+    // (@rm{3-5}(12, 13)): the root type stands for it.
+    ada_node base = libadalang::canonicalType(subtype).value_or(subtype);
+    mlir::ada::QualType baseType = getAdaQualType(base, location);
+    if (!baseType)
+      return nullptr;
+
     // Static bound: read it straight from the subtype's `int_info`.
     bool wantLow = name == "first";
     if (mlir::IntegerAttr bound =
             wantLow ? info.staticLower() : info.staticUpper())
-      return emitIntConstant(bound.getValue(), type, location);
+      return emitIntConstant(bound.getValue(), baseType, location);
 
     // Dynamic bound: read from the range descriptor elaborated at the subtype
     // declaration.
@@ -1681,8 +1691,9 @@ private:
           << name << "'";
       return nullptr;
     }
-    return mlir::ada::AttrOp::create(builder, location, type,
-                                     builder.getStringAttr(name), range);
+    mlir::Value attr = mlir::ada::AttrOp::create(
+        builder, location, type, builder.getStringAttr(name), range);
+    return coerce(attr, baseType, location);
   }
 
   /// Codegen an expression node. Returns the SSA Value for the result, or

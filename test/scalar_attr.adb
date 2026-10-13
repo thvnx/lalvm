@@ -8,8 +8,9 @@
 -- an `extractvalue` of field 1).
 -- MLIR-LABEL: ada.subp @scalar_attr
 -- MLIR:         %[[R:.*]] = ada.range %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @scalar_attr.s>
--- MLIR:         ada.attr "last", %[[R]] : !ada.qual<i32, @scalar_attr.s>
--- MLIR:         ada.constant : !ada.qual<i32, @scalar_attr.s> = 1
+-- MLIR:         %[[L:.*]] = ada.attr "last", %[[R]] : !ada.qual<i32, @scalar_attr.s>
+-- MLIR:         ada.coerce %[[L]] : <i32, @scalar_attr.s> to <i32, @standard.integer>
+-- MLIR:         ada.constant : !ada.qual<i32, @standard.integer> = 1
 
 -- LLVM-LABEL: define i32 @_ada_scalar_attr(
 -- LLVM:         extractvalue { i32, i32 } %{{.*}}, 1
