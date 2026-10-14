@@ -875,6 +875,9 @@ private:
       mlir::emitError(loc(unop), "failed to resolve type of unary operation");
       return nullptr;
     }
+    // Yield the operand's base type, not its subtype (@rm{4-5-4}, @rm{4-5-6}).
+    if (std::optional<ada_node> canon = libadalang::canonicalType(type_decl))
+      type_decl = *canon;
     auto resultType = getAdaQualType(type_decl, loc(unop));
     if (!resultType)
       return nullptr;
