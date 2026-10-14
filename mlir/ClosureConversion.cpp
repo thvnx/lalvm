@@ -44,6 +44,10 @@ struct ClosureConversionPass
     : public PassWrapper<ClosureConversionPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ClosureConversionPass)
   void runOnOperation() final;
+  StringRef getArgument() const final { return "ada-closure-conversion"; }
+  StringRef getDescription() const final {
+    return "Lambda-lift up-level references and hoist nested subprograms";
+  }
 };
 } // namespace
 

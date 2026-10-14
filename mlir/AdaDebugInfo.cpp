@@ -322,6 +322,10 @@ static LLVM::DISubprogramAttr cloneSubprogram(LLVM::DISubprogramAttr sp,
 struct AdaDebugInfoPass
     : public PassWrapper<AdaDebugInfoPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AdaDebugInfoPass)
+  StringRef getArgument() const final { return "ada-debug-info"; }
+  StringRef getDescription() const final {
+    return "Emit debug intrinsics for Ada objects and parameters";
+  }
 
   void runOnOperation() final {
     MLIRContext *ctx = &getContext();
@@ -741,6 +745,10 @@ struct AdaDebugInfoPass
 struct DICompileUnitAdaPass
     : public PassWrapper<DICompileUnitAdaPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(DICompileUnitAdaPass)
+  StringRef getArgument() const final { return "ada-di-compile-unit"; }
+  StringRef getDescription() const final {
+    return "Attach an Ada DICompileUnitAttr to the module location";
+  }
 
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<LLVM::LLVMDialect>();
