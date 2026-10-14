@@ -5,7 +5,7 @@
 
 -- Print the value of static expressions in the AST dump.
 
--- CHECK:      Identifier "Green" [{{[0-9]+}}:29-{{[0-9:]+}}] ref={{[^ ]+}} value=1{{$}}
+-- CHECK:      Identifier "Green" [{{[0-9]+}}:29-{{[0-9:]+}}] ref={{[^ ]+}} static value=1{{$}}
 -- CHECK:      BinOp [{{[0-9]+}}:22-{{[0-9:]+}}] {{.*}} value=1267650600228229401496703205376{{$}}
 -- CHECK:      Identifier "Blue" [{{[0-9]+}}:28-{{[0-9:]+}}] {{.*}} value=2{{$}}
 -- CHECK:      BinOp [{{[0-9]+}}:30-{{[0-9:]+}}] {{.*}} value=9{{$}}
