@@ -27,7 +27,7 @@ import sys
 # lalvm's hand-written sources, relative to the source directory. The reports
 # are restricted to them and to the generated files, else MLIR's own headers
 # appear too.
-SOURCES = ("mlir", "frontend", "include", "lalvm.cpp")
+SOURCES = ("mlir", "frontend", "include", "lalvm", "lalvm.cpp")
 
 
 def run(cmd, stdout=None):
