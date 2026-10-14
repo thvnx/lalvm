@@ -121,9 +121,10 @@ static bool is_hidden(ada_node *node) {
 }
 
 /// Dump `node` (its tree prefix is already printed), then its children, each
-/// prefixed by `indent` and a tree glyph.
+/// prefixed by `indent` and a tree glyph. `unresolved` is set inside a complete
+/// context whose name resolution failed.
 static void dump_image(llvm::raw_ostream &os, ada_node *node,
-                       llvm::StringRef indent) {
+                       llvm::StringRef indent, bool unresolved = false) {
   // Colors follow clang's -ast-dump. WithColor only emits escape codes when
   // `os` is a terminal (or under --color).
   using llvm::raw_ostream;
@@ -149,16 +150,31 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node,
       << '[' << r.start.line << ':' << r.start.column << '-' << r.end.line
       << ':' << r.end.column << ']';
 
-  // Name resolution information (print nothing on failure).
+  // Name resolution information, or `<resolution failed>` when a property
+  // raises or when the enclosing entry point does not resolve.
+  ada_bool isEntryPoint = 0, resolved = 0;
+  if (ada_ada_node_p_xref_entry_point(node, &isEntryPoint) && isEntryPoint)
+    unresolved = !ada_ada_node_p_resolve_names(node, &resolved) || !resolved;
+  bool failed = false, printed = false;
   ada_bool isDefining = 1;
-  ada_node decl = {};
-  if (ada_name_p_is_defining(node, &isDefining) && !isDefining &&
-      ada_name_p_referenced_decl(node, /*imprecise_fallback=*/0, &decl) &&
-      !ada_node_is_null(&decl))
-    WithColor(os, raw_ostream::BLUE).get() << " ref=" << declRef(decl, node);
+  bool isReference = ada_name_p_is_defining(node, &isDefining) && !isDefining;
+  if (isReference) {
+    ada_node decl = {};
+    if (ada_name_p_referenced_decl(node, /*imprecise_fallback=*/0, &decl) &&
+        !ada_node_is_null(&decl)) {
+      WithColor(os, raw_ostream::BLUE).get() << " ref=" << declRef(decl, node);
+      printed = true;
+    }
+    failed |= ada_get_last_exception() != nullptr;
+  }
   ada_node type = {};
-  if (ada_expr_p_expression_type(node, &type) && !ada_node_is_null(&type))
+  if (ada_expr_p_expression_type(node, &type) && !ada_node_is_null(&type)) {
     WithColor(os, raw_ostream::BLUE).get() << " type=" << declRef(type, node);
+    printed = true;
+  }
+  failed |= ada_get_last_exception() != nullptr;
+  if (failed || (unresolved && isReference && !printed))
+    WithColor(os, raw_ostream::RED).get() << " <resolution failed>";
   // Value of a static expression (@rm{4-9}), the position for an enumeration.
   // @todo Print static real values too, once Libadalang can evaluate them.
   ada_big_integer value = {};
@@ -182,7 +198,8 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node,
   for (size_t i = 0; i < children.size(); ++i) {
     bool isLast = i + 1 == children.size();
     WithColor(os, raw_ostream::BLUE).get() << indent << (isLast ? "`-" : "|-");
-    dump_image(os, &children[i], (indent + (isLast ? "  " : "| ")).str());
+    dump_image(os, &children[i], (indent + (isLast ? "  " : "| ")).str(),
+               unresolved);
   }
 }
 
