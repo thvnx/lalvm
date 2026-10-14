@@ -159,6 +159,12 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node,
   ada_node type = {};
   if (ada_expr_p_expression_type(node, &type) && !ada_node_is_null(&type))
     WithColor(os, raw_ostream::BLUE).get() << " type=" << declRef(type, node);
+  // Value of a static expression (@rm{4-9}), the position for an enumeration.
+  // @todo Print static real values too, once Libadalang can evaluate them.
+  ada_big_integer value = {};
+  if (libadalang::isStaticExpr(*node) && ada_expr_p_eval_as_int(node, &value))
+    WithColor(os, raw_ostream::MAGENTA).get()
+        << " value=" << libadalang::bigIntToString(value);
   os << '\n';
 
   // Collect the shown children first, to know which one is last.
