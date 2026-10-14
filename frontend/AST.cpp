@@ -24,7 +24,7 @@ namespace libadalang = frontend::libadalang;
 
 #define DEBUG_TYPE "ada-nameres"
 
-static bool print_exception(bool or_silent) {
+static bool print_exception() {
   const ada_exception *exc = ada_get_last_exception();
   if (exc != nullptr) {
     char *exc_name = ada_exception_name(exc->kind);
@@ -33,13 +33,11 @@ static bool print_exception(bool or_silent) {
     free(exc_name);
     return true;
   }
-  if (!or_silent)
-    llvm::errs() << "Got no exception\n";
   return false;
 }
 
 static void abort_on_exception(void) {
-  if (print_exception(true))
+  if (print_exception())
     exit(1);
 }
 
@@ -224,14 +222,14 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
     ada_gpr_project_load(opts, /*ada_only=*/1, &project, &errors);
     // Read the exception now: the next libadalang call (options_free) clears
     // it.
-    bool loadFailed = print_exception(/*or_silent=*/true);
+    bool loadFailed = print_exception();
     ada_gpr_options_free(opts);
 #else
     ada_gpr_project_load(projPath.c_str(), /*scenario_vars=*/nullptr,
                          /*target=*/nullptr, /*runtime=*/nullptr,
                          /*config_file=*/nullptr, /*ada_only=*/1, &project,
                          &errors);
-    bool loadFailed = print_exception(/*or_silent=*/true);
+    bool loadFailed = print_exception();
 #endif
     if (errors) {
       for (int i = 0; i < errors->length; ++i)
