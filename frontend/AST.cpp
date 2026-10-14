@@ -18,6 +18,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstdlib>
+#include <vector>
 
 namespace libadalang = frontend::libadalang;
 
@@ -40,11 +41,6 @@ static bool print_exception(bool or_silent) {
 static void abort_on_exception(void) {
   if (print_exception(true))
     exit(1);
-}
-
-static void print_indent(llvm::raw_ostream &os, int level) {
-  for (int i = 0; i < level; ++i)
-    os << "| ";
 }
 
 static void fprint_text(llvm::raw_ostream &stream, ada_text text,
@@ -106,29 +102,32 @@ static std::string declRef(ada_node decl, ada_node *from) {
          std::to_string(r.start.column);
 }
 
-static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
+/// Whether the AST dump skips `node`.
+static bool is_hidden(ada_node *node) {
   // Absent optional children and empty lists carry no information in a dump
   // without field names: skip them.
   if (ada_node_is_null(node))
-    return;
+    return true;
 #if LALVM_LIBADALANG_VERSION_MAJOR >= 27
   // The property only succeeds on list nodes.
   ada_bool isEmptyList = 0;
-  if (ada_ada_list_is_empty_list(node, &isEmptyList) && isEmptyList)
-    return;
+  return ada_ada_list_is_empty_list(node, &isEmptyList) && isEmptyList;
 #else
   // List kinds range from `ada_ada_node_list` to `ada_variant_list`.
   ada_node_kind_enum nodeKind = ada_node_kind(node);
-  if (nodeKind >= ada_ada_node_list && nodeKind <= ada_variant_list &&
-      ada_node_children_count(node) == 0)
-    return;
+  return nodeKind >= ada_ada_node_list && nodeKind <= ada_variant_list &&
+         ada_node_children_count(node) == 0;
 #endif
+}
 
+/// Dump `node` (its tree prefix is already printed), then its children, each
+/// prefixed by `indent` and a tree glyph.
+static void dump_image(llvm::raw_ostream &os, ada_node *node,
+                       llvm::StringRef indent) {
   // Colors follow clang's -ast-dump. WithColor only emits escape codes when
   // `os` is a terminal (or under --color).
   using llvm::raw_ostream;
   using llvm::WithColor;
-  print_indent(os, level);
   // Kind, then the source text for a token node, then the range.
   ada_text kind;
   ada_kind_name(ada_node_kind(node), &kind);
@@ -162,6 +161,8 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
     WithColor(os, raw_ostream::BLUE).get() << " type=" << declRef(type, node);
   os << '\n';
 
+  // Collect the shown children first, to know which one is last.
+  std::vector<ada_node> children;
   unsigned count = ada_node_children_count(node);
   for (unsigned i = 0; i < count; ++i) {
     ada_node child = {};
@@ -169,7 +170,13 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node, int level) {
       frontend::emitWarningDiag(*node, "can't get child " + std::to_string(i));
       continue;
     }
-    dump_image(os, &child, level + 1);
+    if (!is_hidden(&child))
+      children.push_back(child);
+  }
+  for (size_t i = 0; i < children.size(); ++i) {
+    bool isLast = i + 1 == children.size();
+    WithColor(os, raw_ostream::BLUE).get() << indent << (isLast ? "`-" : "|-");
+    dump_image(os, &children[i], (indent + (isLast ? "  " : "| ")).str());
   }
 }
 
@@ -279,7 +286,8 @@ void libadalang::dump(ada_node *node, llvm::raw_ostream &os) {
     os << '\n';
     free(filename);
   }
-  dump_image(os, node, 0);
+  if (!is_hidden(node))
+    dump_image(os, node, "");
 }
 
 std::string libadalang::getName(ada_node *node, bool canonical) {
