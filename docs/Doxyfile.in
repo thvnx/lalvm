@@ -15,6 +15,7 @@ INPUT         = @PROJECT_SOURCE_DIR@/README.md \
                 @PROJECT_SOURCE_DIR@/include \
                 @PROJECT_SOURCE_DIR@/frontend \
                 @PROJECT_SOURCE_DIR@/mlir \
+                @PROJECT_SOURCE_DIR@/lalvm \
                 @PROJECT_SOURCE_DIR@/lalvm.cpp \
                 @PROJECT_BINARY_DIR@/include/ada
 RECURSIVE     = YES
