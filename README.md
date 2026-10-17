@@ -101,8 +101,8 @@ lalvm [--emit=<action>] [-P <project.gpr>] [-o <file>] <input-file>
 
 Options:
 - `--emit {ast,mlir,llvm,obj,asm}`: output format (default: `obj`).
-- `-x {Ada,mlir}`: input type (default: Ada; or inferred from the input file
-  extension).
+- `-x {Ada,mlir}`: input type (default: `mlir` for a `.mlir` input, `Ada`
+  otherwise).
 - `-o <file>`: output file (default: stdout for text dumps; the input basename
   with a `.o`/`.s` extension for `obj`/`asm`).
 - `-P <project.gpr>` (alias `--project`): load a GPR project so `with`ed units

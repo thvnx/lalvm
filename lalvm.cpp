@@ -76,7 +76,8 @@ enum InputType { Ada, MLIR };
 } // namespace
 
 static cl::opt<enum InputType> inputType(
-    "x", cl::init(Ada), cl::desc("Decides the kind of input to load"),
+    "x", cl::init(Ada),
+    cl::desc("Input type (default: mlir for a .mlir file, Ada otherwise)"),
     cl::values(clEnumValN(Ada, "Ada", "load the input file as an Ada source")),
     cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR file")),
     cl::cat(lalvmCategory));
@@ -101,12 +102,12 @@ static cl::opt<bool> bindAction(
     cl::desc("Emit the bind module of the program whose main unit is given"),
     cl::init(false), cl::cat(lalvmCategory));
 
-static cl::opt<std::string> outputFilename("o",
-                                           cl::desc("Output filename "
-                                                    "(default: stdout)"),
-                                           cl::value_desc("filename"),
-                                           cl::init("-"),
-                                           cl::cat(lalvmCategory));
+static cl::opt<std::string>
+    outputFilename("o",
+                   cl::desc("Output filename (default: stdout, or the input "
+                            "basename with .o/.s for obj/asm)"),
+                   cl::value_desc("filename"), cl::init("-"),
+                   cl::cat(lalvmCategory));
 
 // GPR project: resolve `with`ed units / separate specs via its unit provider.
 // Empty = single file from buffer.
@@ -330,7 +331,7 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
                              emitObject
                                  ? llvm::CodeGenFileType::ObjectFile
                                  : llvm::CodeGenFileType::AssemblyFile)) {
-    frontend::emitErrorDiag(llvm::Twine("target cannot emit a ") +
+    frontend::emitErrorDiag(llvm::Twine("target cannot emit an ") +
                             (emitObject ? "object" : "assembly") + " file");
     return 1;
   }
