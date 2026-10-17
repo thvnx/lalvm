@@ -166,18 +166,14 @@ def ArrayTypeInfoAttr : AttrDef<Ada_Dialect, "ArrayTypeInfo"> {
                           [](mlir::Attribute b) { return static_cast<bool>(b); });
     }
     // The static value of the lower bound of the given dimension, or null when
-    // the bound is dynamic.
+    // the bound is dynamic or the dimension is unconstrained.
     mlir::IntegerAttr staticLower(unsigned dim) const {
-      if (auto attr = llvm::dyn_cast_or_null<mlir::IntegerAttr>(getLowerBounds()[dim]))
-        return attr;
-      return {};
+      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getLowerBounds()[dim]);
     }
     // The static value of the upper bound of the given dimension, or null when
-    // the bound is dynamic.
+    // the bound is dynamic or the dimension is unconstrained.
     mlir::IntegerAttr staticUpper(unsigned dim) const {
-      if (auto attr = llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpperBounds()[dim]))
-        return attr;
-      return {};
+      return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpperBounds()[dim]);
     }
   }];
   let hasCustomAssemblyFormat = 1;
