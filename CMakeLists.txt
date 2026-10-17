@@ -65,11 +65,14 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 add_subdirectory(include)
 
 # Format all C and C++ sources in-place using clang-format.
-file(GLOB_RECURSE ALL_CXX_SOURCES
+file(GLOB_RECURSE ALL_CXX_SOURCES RELATIVE ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/*.cpp
   ${CMAKE_SOURCE_DIR}/*.h
   ${CMAKE_SOURCE_DIR}/*.c
 )
+# Except hidden entries and build trees.
+list(FILTER ALL_CXX_SOURCES EXCLUDE REGEX "^(\\.|build)")
+list(TRANSFORM ALL_CXX_SOURCES PREPEND ${CMAKE_SOURCE_DIR}/)
 find_program(CLANG_FORMAT clang-format)
 if(CLANG_FORMAT)
   add_custom_target(format
