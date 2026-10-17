@@ -122,7 +122,9 @@ static void rewriteSignatureTypes(
 }
 
 /// The DWARF scope, source file, and line of an `ada.type` op. The scope is the
-/// enclosing subprogram recorded on its location, else the compile unit.
+/// enclosing subprogram HoistNestedSymbolOperations fused onto its location,
+/// else the compile unit. All FusedLoc layers are looked through (a dynamic
+/// subtype also carries DISubrangeBounds metadata).
 struct TypeOrigin {
   llvm::DIScope *scope;
   llvm::StringRef filePath;
@@ -239,29 +241,7 @@ mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
         mlir::cast<mlir::ada::EnumTypeInfoAttr>(typeOp.getTypeInfoAttr());
     auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
 
-    // HoistNestedSymbolOperations fused the enclosing subprogram (DWARF scope)
-    // onto the type's location before lifting it to module level, away from its
-    // lexical parent. Unwrap it for both the scope and the source file/line; a
-    // type without it (predefined / library-level) is scoped to the cu.
-    mlir::Location loc = typeOp.getLoc();
-    llvm::DIScope *scope = cu;
-    if (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
-      if (auto scopeRef = mlir::dyn_cast_or_null<mlir::ada::DIScopeRefAttr>(
-              fused.getMetadata())) {
-        auto *fn = llvmModule.getFunction(scopeRef.getScope().getValue());
-        if (fn && fn->getSubprogram())
-          scope = fn->getSubprogram();
-      }
-      if (!fused.getLocations().empty())
-        loc = fused.getLocations().front();
-    }
-
-    llvm::StringRef filePath;
-    unsigned line = 0;
-    if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(loc)) {
-      filePath = flc.getFilename().getValue();
-      line = flc.getStartLine();
-    }
+    TypeOrigin origin = typeOrigin(llvmModule, cu, typeOp);
 
     llvm::SmallVector<llvm::Metadata *, 8> elems;
     for (auto [name, val] : enumInfo.literals())
@@ -270,8 +250,8 @@ mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
     // The displayed DWARF name is the bare Ada name; the lookup key below stays
     // the full sym_name so shadowed enums (same bare name) remain distinct.
     auto *enumType = db.createEnumerationType(
-        scope, mlir::ada::bareName(typeOp.getSymName()),
-        getOrCreateDIFile(db, fileCache, filePath), line,
+        origin.scope, mlir::ada::bareName(typeOp.getSymName()),
+        getOrCreateDIFile(db, fileCache, origin.filePath), origin.line,
         llvm::alignTo(intType.getWidth(), 8),
         /*AlignInBits=*/0, db.getOrCreateArray(elems),
         /*UnderlyingType=*/nullptr);
@@ -359,31 +339,7 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
         mlir::cast<mlir::ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr());
     auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
 
-    // Scope from the enclosing-subprogram metadata: a locally-declared subtype
-    // is scoped to its subprogram. findInstanceOf walks any FusedLoc layering
-    // (a dynamic subtype also carries DISubrangeBounds metadata).
-    llvm::DIScope *scope = cu;
-    if (auto fused = typeOp.getLoc()
-                         ->findInstanceOf<
-                             mlir::FusedLocWith<mlir::ada::DIScopeRefAttr>>()) {
-      auto *fn =
-          llvmModule.getFunction(fused.getMetadata().getScope().getValue());
-      if (fn && fn->getSubprogram())
-        scope = fn->getSubprogram();
-    }
-    // Unwrap the FusedLoc metadata layers down to the source location.
-    mlir::Location loc = typeOp.getLoc();
-    while (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
-      if (fused.getLocations().empty())
-        break;
-      loc = fused.getLocations().front();
-    }
-    llvm::StringRef filePath;
-    unsigned line = 0;
-    if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(loc)) {
-      filePath = flc.getFilename().getValue();
-      line = flc.getStartLine();
-    }
+    TypeOrigin origin = typeOrigin(llvmModule, cu, typeOp);
 
     auto *boundTy =
         llvm::IntegerType::get(llvmModule.getContext(), intType.getWidth());
@@ -391,7 +347,7 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
     // AdaDebugInfoPass recorded for it (the source object, or an artificial
     // bound) as DISubrangeBounds metadata, found by name within this
     // subprogram's scope.
-    auto *subprogram = llvm::dyn_cast_or_null<llvm::DISubprogram>(scope);
+    auto *subprogram = llvm::dyn_cast_or_null<llvm::DISubprogram>(origin.scope);
     auto bounds =
         typeOp.getLoc()
             ->findInstanceOf<
@@ -415,8 +371,8 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
     auto *subrange = db.createSubrangeType(
         anonymous ? llvm::StringRef()
                   : mlir::ada::bareName(typeOp.getSymName()),
-        getOrCreateDIFile(db, fileCache, filePath), line, scope,
-        intType.getWidth(), /*AlignInBits=*/0,
+        getOrCreateDIFile(db, fileCache, origin.filePath), origin.line,
+        origin.scope, intType.getWidth(), /*AlignInBits=*/0,
         anonymous ? llvm::DINode::FlagArtificial : llvm::DINode::FlagZero,
         basicTypeFor(db, typeOp), loMD, hiMD,
         /*Stride=*/nullptr, /*Bias=*/nullptr);
