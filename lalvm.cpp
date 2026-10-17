@@ -225,7 +225,6 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   // DI attribute types (DIFileAttr, DICompileUnitAttr, ...) belong to the LLVM
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-  context.getOrLoadDialect<mlir::memref::MemRefDialect>();
 
   // Lambda-lift up-level references and hoist nested subprograms to module
   // level before mem2reg, so a captured local stays an alloca able to carry
