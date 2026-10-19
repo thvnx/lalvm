@@ -2,9 +2,11 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- User-defined binary "+" (RM 6.6): the definition's GNAT mangling is `Oadd`
--- (`operator_overload.adb` covers only `Omultiply`).
+-- (`operator_overload.adb` covers only `Omultiply`). The predefined `-` in its
+-- body keeps its overflow check.
 
--- MLIR: ada.subp private @"operator_overload_add.+"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:      ada.subp private @"operator_overload_add.+"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:   ada.binop "-" %{{.*}}, %{{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define internal i32 @operator_overload_add__Oadd(
 -- LLVM:          ret i32

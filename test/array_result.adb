@@ -7,5 +7,5 @@
 
 function Array_Result return String is
 begin
-   return "Hello Wolrd!";
+   return "Hello World!";
 end Array_Result;

@@ -12,6 +12,9 @@
 -- MLIR:         ada.coerce %[[L]] : <i32, @scalar_attr.s> to <i32, @standard.integer>
 -- MLIR:         ada.constant : !ada.qual<i32, @standard.integer> = 1
 
+-- `S'Last - S'First` keeps its overflow check.
+-- MLIR:         ada.binop "-" %{{.*}}, %{{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
+
 -- LLVM-LABEL: define i32 @_ada_scalar_attr(
 -- LLVM:         extractvalue { i32, i32 } %{{.*}}, 1
 

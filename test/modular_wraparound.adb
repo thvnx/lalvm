@@ -11,6 +11,10 @@
 -- CHECK-DAG: and i8 %{{.*}}, 127
 -- CHECK-DAG: sub i8
 
+-- `*` on Pow2 is masked the same way, without widening.
+-- CHECK-DAG: [[MUL:%.*]] = mul i8
+-- CHECK-DAG: and i8 [[MUL]], 127
+
 -- Kilo (mod 1000) is non-binary. `*` reaches (m-1)**2, so it widens and divides
 -- with a `urem`.
 -- CHECK-DAG: mul i32
@@ -50,6 +54,11 @@ procedure Modular_Wraparound is
       return X - Y;
    end Sub_P;
 
+   function Mul_P (X, Y : Pow2) return Pow2 is
+   begin
+      return X * Y;
+   end Mul_P;
+
    function Add_K (X, Y : Kilo) return Kilo is
    begin
       return X + Y;
@@ -81,6 +90,7 @@ procedure Modular_Wraparound is
 begin
    P := Add_P (P, P);
    P := Sub_P (P, P);
+   P := Mul_P (P, P);
    K := Add_K (K, K);
    K := Mul_K (K, K);
    K := Div_K (K, K);
