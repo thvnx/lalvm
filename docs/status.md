@@ -8,6 +8,7 @@ implemented.
 
 - Integer and real literals; named numbers
 - Binary arithmetic: `+`, `-`, `*`, `/`
+- Unary arithmetic: `+`, `-`, `abs`
 - Relational comparisons: `=`, `/=`, `<`, `<=`, `>`, `>=`
 - Logical operators: `and`, `or`, `xor`, `not` (Boolean and modular types)
 - If expressions and parenthesized expressions
@@ -18,8 +19,9 @@ implemented.
 
 ## Checks
 
-- Overflow check on signed-integer `+`/`-`/`*` and a division check on integer
-  `/`, raising `Constraint_Error` (modular arithmetic wraps, no check).
+- Overflow check on signed-integer `+`/`-`/`*` and unary `-`/`abs`, and a
+  division check on integer `/`, raising `Constraint_Error` (modular arithmetic
+  wraps, no check).
 - `Constraint_Error` range checks where a value flows into a constrained
   subtype; statically-resolved checks are decided at compile time (out-of-range
   static expressions are diagnosed, in-range ones emit no check).
@@ -59,7 +61,7 @@ implemented.
 
 - `Integer` (i32), `Short_Integer` (i16), `Long_Integer` (i64)
 - `Float` (f32), `Long_Float` (f64)
-- `Boolean` (i1) and user-defined enum types (i1 for 2 literals, i8 for 3-256)
+- `Boolean` (i1) and user-defined enum types
 - `Character` (i8) and user-defined character types
 - Integer subtypes with static or dynamic range constraints (`subtype S is
   Integer range 1 .. N`); widths derived from the declared range

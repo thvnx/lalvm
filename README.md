@@ -96,7 +96,7 @@ Debug mode, assertions enabled).
 ## Usage
 
 ```
-lalvm [--emit=<action>] [-P <project.gpr>] [-o <file>] <input-file>
+lalvm [--emit=<action>] [-P <project.gpr>] [-o <file>] [options] <input-file>
 ```
 
 Options:
@@ -107,7 +107,8 @@ Options:
   with a `.o`/`.s` extension for `obj`/`asm`).
 - `-P <project.gpr>` (alias `--project`): load a GPR project so `with`ed units
   resolve through its unit provider (otherwise the single file is parsed alone).
-- `-O {0,1}`: optimization level (default `0`; `1` runs `mem2reg`).
+- `--bind`: emit the bind module of the given main unit.
+- `-O {0,1,2,3}`: optimization level (default `0`; `1` and above run `mem2reg`).
 - `-g`: generate DWARF debug info (off by default).
 - `--record-command-line`: record the invocation in `llvm.commandline` (off by
   default; it embeds input/output paths).
@@ -155,7 +156,7 @@ module @compute {
 
 Nested subprograms are kept in an `ada.decls` symbol container under their
 enclosing subprogram and carry a qualified `private` name. The closure
-conversion and hoisting passes flatten them to module level on the `--emit=llvm`
+conversion pass flattens them to module level on the `--emit=llvm`
 path. The output above is from `-O1`, where `mem2reg` has promoted the `Result`
 local so the call result flows straight into the `return`. At the default `-O0`
 it stays in memory as an `ada.alloca` with a store and load.

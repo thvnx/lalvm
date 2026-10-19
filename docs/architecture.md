@@ -27,12 +27,13 @@ flowchart TD
 ```
 
 - `--emit=ast` stops after Libadalang and dumps the AST.
-- `--emit=mlir` runs MLIRGen (and `mem2reg` at `-O1`) and dumps the Ada dialect.
+- `--emit=mlir` runs MLIRGen (and `mem2reg` from `-O1`) and dumps the Ada
+  dialect.
 - `--emit=llvm` runs the full lowering chain above, then translates to LLVM IR.
 - `--emit=obj` / `--emit=asm` run the LLVM backend on that IR to write an object
   file or target assembly for the host target.
 
-`mem2reg` runs only at `-O1`; the default `-O0` leaves locals in memory. The
+`mem2reg` runs from `-O1`; the default `-O0` leaves locals in memory. The
 debug-info passes (`DICompileUnitAda`, `DIScopeForLLVMFuncOp`, `AdaDebugInfo`)
 run only under `-g`. The diagram above shows the full `-O1 -g` pipeline.
 
@@ -49,7 +50,7 @@ LLVM by a sequence of MLIR passes. The dialect's operations:
 | `ada.coerce`      | Representation conversion between related subtypes (widen, narrow, or to base).                                                                   |
 | `ada.binop`       | Predefined arithmetic (`+`, `-`, `*`, `/`) or logical (`and`, `or`, `xor`) operator, with an optional `checks<overflow\|division>` group.         |
 | `ada.cmp`         | Relational comparison (`=`, `/=`, `<`, ...); Boolean result.                                                                                      |
-| `ada.unop`        | Predefined unary operator (`not` on Boolean and modular types).                                                                                   |
+| `ada.unop`        | Predefined unary operator (`not`, `+`, `-`, `abs`).                                                                                               |
 | `ada.range`       | A subtype's constraint as a first-class `(low, high)` descriptor value (static or dynamic bounds).                                                |
 | `ada.range_check` | `Constraint_Error` range check of a value against an `ada.range`.                                                                                 |
 | `ada.index_check` | `Constraint_Error` index check of an array index against an `ada.range`.                                                                          |

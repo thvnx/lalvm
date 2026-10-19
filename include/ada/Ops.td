@@ -89,10 +89,10 @@ def AdaUnaryOp : I32EnumAttr<"AdaUnaryOp",
 //===----------------------------------------------------------------------===//
 
 // Run-time checks an arithmetic operation must perform. `overflow` (@rm{4-5},
-// @rm{3-5-4}) is set on signed-integer base-type `+`/`-`/`*`; modular
-// arithmetic wraps and is never flagged. `division` (@rm{11-5}) is set on
-// integer `/` for both signed and modular types. Absent (no bits) means no
-// check is required.
+// @rm{3-5-4}) is set on signed-integer base-type `+`/`-`/`*` and unary
+// `-`/`abs`. Modular arithmetic wraps and is never flagged. `division`
+// (@rm{11-5}) is set on integer `/` for both signed and modular types. Absent
+// means no check is required.
 def AdaCheck_Overflow : I32BitEnumAttrCaseBit<"Overflow", 0, "overflow">;
 def AdaCheck_Division : I32BitEnumAttrCaseBit<"Division", 1, "division">;
 
@@ -107,8 +107,8 @@ def AdaChecks : I32BitEnumAttr<"AdaChecks", "Ada arithmetic run-time checks",
 
 // Ada type declaration: carries type metadata through the pipeline.
 // Carries the `Symbol` trait. To keep the symbol's parent a `SymbolTable` at
-// every stage, `HoistNestedSymbolOperations` lifts all `ada.type` ops to module
-// level before lowering, just like nested subprograms. This keeps them out of
+// every stage, `HoistNestedSymbolOperations` lifts nested `ada.type` ops to
+// module level before lowering. This keeps them out of
 // `llvm.func` bodies (whose parent `LLVM::LLVMFuncOp` is not a `SymbolTable`),
 // where a `Symbol` would otherwise fail the post-pass verifier.
 def TypeOp : Ada_Op<"type", [Symbol]> {
@@ -307,13 +307,13 @@ def IndexOp : Ada_Op<"index", [Pure]> {
 
 // A subtype's constraint as a first-class value: the (low, high) bound pair.
 // Static bounds are constant operands; dynamic bounds (@rm{3-2-2}) are runtime
-// SSA values evaluated once at subtype elaboration. The bounds are Ada-qualified
-// values of the subtype's base type (`ada.qual<iN, @base>`, @rm{3-5}); the
-// constrained subtype is named on the result `!ada.range` type. No folder:
-// there is no attribute form of a range to fold to (static bound metadata
-// lives on `ada.type`'s `int_info` instead); `staticBounds()` exposes the
-// constant operands for the `ada.range_check` folder and future
-// `'First`/`'Last`. `AllTypesMatch` ties the two bounds to one type.
+// SSA values evaluated once at subtype elaboration. The bounds are
+// Ada-qualified values of the subtype's base type (`ada.qual<iN, @base>`,
+// @rm{3-5}); the constrained subtype is named on the result `!ada.range` type.
+// No folder: there is no attribute form of a range to fold to (static bound
+// metadata lives on `ada.type`'s `int_info` instead); `staticBounds()` exposes
+// the constant operands for future `'First`/`'Last`. `AllTypesMatch` ties the
+// two bounds to one type.
 def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
   let summary = "Ada subtype constraint value (a low/high bound pair)";
   let description = [{
@@ -400,11 +400,10 @@ def IndexCheckOp : Ada_InRangeCheckOp<"index_check"> {
 // operand is the `!ada.range` descriptor, never the type symbol -- the symbol
 // is static representation metadata with no bounds to read, while the
 // descriptor carries them (static or dynamic, @rm{3-2-2}). The result is the
-// bound as a value of the subtype, so a dynamic bound is read at run time
-// (lowered to an `extractvalue`) and a static one folds to a constant.
-// The `TypesMatchWith` pins the range to the result subtype's `!ada.range`
-// (same machine type and subtype symbol), mirroring `RangeCheckOp`; it also
-// drives assembly inference, so only the result `!ada.qual` is printed.
+// bound as a value of the subtype, read with an `extractvalue`. The
+// `TypesMatchWith` pins the range to the result subtype's `!ada.range` (same
+// machine type and subtype symbol), mirroring `RangeCheckOp`; it also drives
+// assembly inference, so only the result `!ada.qual` is printed.
 def AttrOp : Ada_Op<"attr", [Pure,
     TypesMatchWith<"range matches the result subtype", "result", "range",
                    "::mlir::ada::RangeType::get($_self.getContext(), "
@@ -485,8 +484,7 @@ def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
 
     Both operands share one type (`SameTypeOperands`); the result is the
     predefined type `Boolean`, so the result type differs from the operand type
-    and is printed in functional form, matching `ada.binop`'s functional
-    spelling:
+    and is printed in functional form:
 
     ```mlir
     %0 = ada.cmp "=" %a, %b : (i32, i32) -> i1
@@ -517,10 +515,11 @@ def UnOp : Ada_Op<"unop", [Pure, SameOperandsAndResultType]> {
     type.
 
     An optional `checks<...>` group lists the run-time checks the operation
-    must perform. `-X` can overflow when `X` is equal to `T'First`.
+    must perform. `-X` and `abs X` can overflow when `X` is `T'Base'First`.
 
     ```mlir
     %0 = ada.unop "not" %b : !ada.qual<i1, @standard.boolean>
+    %1 = ada.unop "-" %x checks<overflow> : !ada.qual<i32, @standard.integer>
     ```
   }];
 
@@ -590,9 +589,9 @@ def DeclsOp : Ada_Op<"decls", [NoTerminator, SingleBlock, SymbolTable,
     `SymbolTable` (its body is a multi-block CFG), so its nested symbols need
     some enclosing `SymbolTable`; this op provides one inside the subprogram
     body. It carries no operands or results and is not `IsolatedFromAbove`, so
-    enclosing SSA values pass through it. `HoistNestedSymbolOperations` lifts the
-    contents to module level and erases the emptied op before lowering, so it
-    never reaches `LowerToLLVM`.
+    enclosing SSA values pass through it. `ClosureConversion` and
+    `HoistNestedSymbolOperations` lift the contents to module level and erase
+    the emptied op before lowering, so it never reaches `LowerToLLVM`.
 
     ```mlir
     ada.subp @foo() {
@@ -623,10 +622,10 @@ def CallOp : Ada_Op<"call",
     Represents an Ada subprogram call. Procedure calls carry no result;
     function calls carry exactly one.
 
-    Before lowering, `HoistNestedSymbolOperations` lifts nested subprograms to
-    module level, renames them with GNAT-style `__`-separated qualifiers, and
-    rewrites all call references accordingly. `LowerToLLVM` then converts each
-    `ada.call` to a `func.call`.
+    Before lowering, `ClosureConversion` lifts nested subprograms to module
+    level, and `HoistNestedSymbolOperations` renames them with GNAT-style
+    `__`-separated qualifiers and rewrites all call references accordingly.
+    `LowerToLLVM` then converts each `ada.call` to a `func.call`.
 
     Syntax example:
 
@@ -758,7 +757,7 @@ def ReturnOp : Ada_Op<"return", [Terminator, ReturnLike,
                                  HasParent<"::mlir::ada::SubpOp">]> {
   let summary = "return operation";
   let description = [{
-    Represents an Ada return statement (@rm{5-8}). Functions carry one return
+    Represents an Ada return statement (@rm{6-5}). Functions carry one return
     operand whose type must match the subprogram result type; procedures carry
     none.
 

@@ -26,7 +26,7 @@ namespace lalvm {
 ///
 /// @todo The binder should also handle the following aspects: elaboration,
 /// runtime initialization and finalization, storage of command line arguments,
-/// consistency of timestamps/verions, and so on.
+/// consistency of timestamps/versions, and so on.
 mlir::OwningOpRef<mlir::ModuleOp> bind(mlir::MLIRContext &context,
                                        ada_node &compilationUnit);
 

@@ -72,7 +72,7 @@ DITypeBySymName buildSubrangeDITypes(llvm::Module &llvmModule,
 /// with the bounds. For `type Vec is array (5 .. 14) of Integer`:
 ///
 ///   !DICompositeType(tag: DW_TAG_array_type, name: "p.vec",
-///       baseType: !integer, size: 320)
+///       baseType: !integer)
 ///
 /// becomes
 ///

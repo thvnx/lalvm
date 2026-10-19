@@ -35,6 +35,7 @@ void dump(ada_node *node, llvm::raw_ostream &os);
 /// canonical lowercase form; otherwise it is returned as written in the source.
 std::string getName(ada_node *node, bool canonical = true);
 
+/// Syntactic parent of `node`, or null for the root.
 ada_node parent(ada_node *node);
 
 /// Innermost subprogram body enclosing `node`, or null when there is none.
@@ -92,7 +93,7 @@ public:
   bool isValid() { return valid; }
   void dump(llvm::raw_ostream &os) { libadalang::dump(&root, os); }
 
-  /// Print any Libadalang parse/lex diagnostics for this unit to stderr,
+  /// Print the first Libadalang parse/lex diagnostic for this unit to stderr,
   /// matching the standard "file:line:col: error: msg" diagnostic format.
   /// Returns true if any diagnostics were emitted (i.e. the unit has errors).
   bool emitParserDiagnostics() const;
@@ -112,11 +113,13 @@ inline const ada_node kNullOrigin{};
 constexpr llvm::StringLiteral kUniversalIntTypeName = "universal_int_type_";
 constexpr llvm::StringLiteral kUniversalRealTypeName = "universal_real_type_";
 
+/// Whether `node` is a type or subtype declaration.
 bool isBaseTypeDecl(ada_node &node);
 bool isEnumTypeDecl(ada_node &typeDecl);
 bool isUniversalTypeDecl(ada_node &typeDecl);
 bool isNumericTypeDecl(ada_node &typeDecl);
 bool isArrayTypeDecl(ada_node &typeDecl);
+/// Number of dimensions of `arrayType`, or 0 if it is not an array.
 unsigned arrayNdims(ada_node &arrayType);
 
 /// Return the type definition of `typeDecl` if it exists and has kind `kind`,
@@ -141,12 +144,12 @@ std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
 std::optional<std::pair<ada_node, ada_node>>
 rangeConstraintBounds(ada_node &constraint);
 
-/// Return the constraint of `typeExpr` when it is a subtype indication with
-/// one (`Integer range 1 ..10`), or `std::nullopt` otherwise.
+/// Return the constraint of `typeExpr` when it is a subtype indication with one
+/// (`Integer range 1..10`), or `std::nullopt` otherwise.
 std::optional<ada_node> subtypeConstraint(ada_node &typeExpr);
 
-/// Return the specification kind of the compilation unit `root`. Either
-/// "package spec" or "subprogram spec", or `std::nullopt` for a body.
+/// Return the specification kind of the compilation unit `root` ("package
+/// spec", "subprogram spec" or "spec"), or `std::nullopt` if it is not one.
 std::optional<llvm::StringRef> specKind(ada_node &root);
 
 /// Return whether the subprogram specification `subpSpec` denotes a function.

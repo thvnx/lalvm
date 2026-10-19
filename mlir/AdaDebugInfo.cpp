@@ -335,8 +335,8 @@ struct AdaDebugInfoPass
     // set correctly from the mangled llvm.func name alone. Run first so the
     // later passes read the updated subprogram.
     //   - DW_AT_name: use the bare Ada source name (carried as a DINameAttr on
-    //     the function location by HoistNestedSymbolOperations); DW_AT_linkage
-    //     stays the mangled symbol.
+    //     the function location by HoistNestedSymbolOperations);
+    //     DW_AT_linkage_name stays the mangled symbol.
     //   - DW_AT_external: private (nested) subprograms have internal linkage,
     //     so their DISubprogram is marked local to the unit.
     module.walk([&](LLVM::LLVMFuncOp func) {
@@ -661,14 +661,14 @@ struct AdaDebugInfoPass
     // DW_AT_static_link on each nested subprogram so the debugger can walk up
     // to the enclosing frame where that variable lives. lalvm cannot mirror
     // this: ClosureConversion has already rewritten up-level references into
-    // explicit captured parameters, and HoistNestedSymbolOperations flattens
-    // every nested subprogram to module level, so there is no lexical nesting
-    // and no static link/frame chain to follow. A bound variable is thus only
-    // meaningful in the subprogram that emits it; a subtype used from a nested
-    // scope cannot reference the parent scope's bound. Fully supporting all
-    // cases would require either preserving lexical nesting and emitting
-    // DW_AT_static_link (the GNAT model), or building a per-scope subrange copy
-    // keyed off each scope's captured bound.
+    // explicit captured parameters and flattened every nested subprogram to
+    // module level, so there is no lexical nesting and no static link/frame
+    // chain to follow. A bound variable is thus only meaningful in the
+    // subprogram that emits it; a subtype used from a nested scope cannot
+    // reference the parent scope's bound. Fully supporting all cases would
+    // require either preserving lexical nesting and emitting DW_AT_static_link
+    // (the GNAT model), or building a per-scope subrange copy keyed off each
+    // scope's captured bound.
     llvm::DenseMap<Operation *, std::pair<StringAttr, StringAttr>> boundVars;
     module.walk([&](LLVM::InsertValueOp ins) {
       auto dynBound =

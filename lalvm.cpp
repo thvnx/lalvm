@@ -248,8 +248,8 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
     // Attach Ada DICompileUnitAttr so DIScopeForLLVMFuncOpPass uses Ada
     // metadata.
     pm.addPass(mlir::ada::createDICompileUnitAdaPass());
-  // Hoist nested symbol ops (subprograms and types) to module level and apply
-  // GNAT ABI name mangling to subprograms.
+  // Hoist nested ada.type ops to module level and apply GNAT ABI name mangling
+  // to subprograms.
   pm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
   // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
@@ -508,7 +508,7 @@ int main(int argc, char **argv) {
     return writeTextOutput([&](llvm::raw_ostream &os) { ast.dump(os); });
   }
 
-  // EmitMLIR and EmitLLVMIR: load a module then emit.
+  // Every other action: load a module then emit.
   mlir::MLIRContext context;
   context.getOrLoadDialect<mlir::ada::AdaDialect>();
   context.getOrLoadDialect<mlir::arith::ArithDialect>();

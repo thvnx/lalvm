@@ -77,9 +77,9 @@ static llvm::DIType *preserveConst(llvm::DIBuilder &db, llvm::DIType *current,
 
 // The builders replace placeholder DIEs (an enum stub, a subrange typedef, an
 // array stub) the same way, on local variables and in subprogram signatures.
-// `replacement`
-// maps a const-stripped placeholder type to its full type, or returns null when
-// the type is not a placeholder; the `in`-parameter const wrapper is preserved.
+// `replace` maps a const-stripped placeholder type to its full type, or returns
+// null when the type is not a placeholder; the `in`-parameter const wrapper is
+// preserved.
 
 /// Retype local variables whose type is a placeholder.
 static void rewriteVariableTypes(
