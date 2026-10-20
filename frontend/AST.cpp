@@ -171,6 +171,13 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node,
     printed = true;
   }
   failed |= ada_get_last_exception() != nullptr;
+  // Print expected type if different of type.
+  ada_node expected = {};
+  if (!ada_node_is_null(&type) &&
+      ada_expr_p_expected_expression_type(node, &expected) &&
+      !ada_node_is_null(&expected) && !ada_node_is_equivalent(&expected, &type))
+    WithColor(os, raw_ostream::BLUE).get()
+        << " expected=" << declRef(expected, node);
   if (failed || (unresolved && isReference && !printed))
     WithColor(os, raw_ostream::RED).get() << " <resolution failed>";
   // Value of a static expression (@rm{4-9}), the position for an enumeration.
