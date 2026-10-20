@@ -5,7 +5,7 @@ Usage: lalvm-make <file.adb>
 The lalvm binary defaults to `lalvm` on PATH; override with LALVM=<path>.
 
 Steps:
-  1. gnatmake <file.adb>     build with GNAT to get a .ali (and discard .o)
+  1. gnatmake -c <file.adb>  compile with GNAT to get a .ali
   2. lalvm --emit=obj        recompile to .o using lalvm
   3. gnatbind -x <file.ali>  generate the Ada elaboration binder
   4. gnatlink <file.ali>     link against the GNAT runtime
@@ -41,7 +41,7 @@ def main() -> None:
     ali = f"{base}.ali"
 
     # Step 1: compile with GNAT to produce the .ali file.
-    run("gnatmake", "-q", "-f", adb)
+    run("gnatmake", "-q", "-f", "-c", adb)
 
     # Step 2: replace the .o with one produced by lalvm.
     os.replace(obj, f"{base}.gnat.o")
