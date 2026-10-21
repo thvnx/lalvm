@@ -32,6 +32,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
@@ -203,7 +204,17 @@ static int loadMLIR(libadalang::AdaAST &ast, mlir::MLIRContext &context,
   return !module ? 1 : 0;
 }
 
-static int applyMLIRPasses(mlir::OwningOpRef<mlir::ModuleOp> &module) {
+// Run `pm` with the command line options, then enable timing as mlir-opt does.
+static int runPassManager(mlir::PassManager &pm, mlir::ModuleOp module,
+                          mlir::TimingScope &timing) {
+  if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
+    return 1;
+  pm.enableTiming(timing);
+  return mlir::failed(pm.run(module)) ? 1 : 0;
+}
+
+static int applyMLIRPasses(mlir::OwningOpRef<mlir::ModuleOp> &module,
+                           mlir::TimingScope &timing) {
   // -O0 leaves locals in memory (see optLevel); mem2reg promotion runs from
   // -O1.
   if (optLevel < 1)
@@ -211,17 +222,14 @@ static int applyMLIRPasses(mlir::OwningOpRef<mlir::ModuleOp> &module) {
   // Separate PM so --mlir-print-ir-before=mem2reg captures pre-promotion IR.
   mlir::PassManager pm(module.get()->getName());
   pm.addPass(mlir::createMem2Reg());
-  if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
-    return 1;
-  if (mlir::failed(pm.run(*module)))
-    return 1;
-  return 0;
+  return runPassManager(pm, *module, timing);
 }
 
 // Lower Ada dialect ops to LLVM dialect and attach debug info.
 // Pre-condition: context must have AdaDialect and ArithDialect loaded.
 static int applyLoweringPasses(mlir::MLIRContext &context,
-                               mlir::OwningOpRef<mlir::ModuleOp> &module) {
+                               mlir::OwningOpRef<mlir::ModuleOp> &module,
+                               mlir::TimingScope &timing) {
   // DI attribute types (DIFileAttr, DICompileUnitAttr, ...) belong to the LLVM
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
@@ -232,12 +240,10 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   // nested dialect view.
   mlir::PassManager ccPm(module.get()->getName());
   ccPm.addPass(mlir::ada::createClosureConversionPass());
-  if (mlir::failed(mlir::applyPassManagerCLOptions(ccPm)))
-    return 1;
-  if (mlir::failed(ccPm.run(*module)))
-    return 1;
+  if (int error = runPassManager(ccPm, *module, timing))
+    return error;
 
-  if (int error = applyMLIRPasses(module))
+  if (int error = applyMLIRPasses(module, timing))
     return error;
 
   mlir::PassManager pm(module.get()->getName());
@@ -261,11 +267,7 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
     pm.addPass(mlir::ada::createAdaDebugInfoPass());
   }
 
-  if (mlir::failed(mlir::applyPassManagerCLOptions(pm)))
-    return 1;
-  if (mlir::failed(pm.run(*module)))
-    return 1;
-  return 0;
+  return runPassManager(pm, *module, timing);
 }
 
 // Write textual output produced by `print` to `outputFilename` ("-" = stdout).
@@ -340,19 +342,19 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
 }
 
 static int emitLLVMIR(mlir::MLIRContext &context,
-                      mlir::OwningOpRef<mlir::ModuleOp> &module) {
+                      mlir::OwningOpRef<mlir::ModuleOp> &module,
+                      mlir::TimingScope &timing) {
   // The bind module is LLVM dialect already: nothing to lower. Under -g, it
   // only needs a compile unit and a DISubprogram for `main`.
   if (!bindAction) {
-    if (int error = applyLoweringPasses(context, module))
+    if (int error = applyLoweringPasses(context, module, timing))
       return error;
   } else if (debugInfo) {
     mlir::PassManager pm(module.get()->getName());
     pm.addPass(mlir::ada::createDICompileUnitAdaPass());
     pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
-    if (mlir::failed(mlir::applyPassManagerCLOptions(pm)) ||
-        mlir::failed(pm.run(*module)))
-      return 1;
+    if (int error = runPassManager(pm, *module, timing))
+      return error;
   }
 
   // Register the translation to LLVM IR with the MLIR context.
@@ -460,6 +462,7 @@ int main(int argc, char **argv) {
   mlir::registerMLIRContextCLOptions();
   mlir::registerTransformsPasses();
   mlir::registerPassManagerCLOptions();
+  mlir::registerDefaultTimingManagerCLOptions();
 
   cl::SetVersionPrinter(
       [](llvm::raw_ostream &os) { os << lalvm::version() << "\n"; });
@@ -556,9 +559,14 @@ int main(int argc, char **argv) {
     }
   }
 
+  // One --mlir-timing report for all pass managers.
+  mlir::DefaultTimingManager timingManager;
+  mlir::applyDefaultTimingManagerCLOptions(timingManager);
+  mlir::TimingScope timing = timingManager.getRootScope();
+
   switch (emitAction) {
   case Action::EmitMLIR: {
-    if (int error = applyMLIRPasses(module))
+    if (int error = applyMLIRPasses(module, timing))
       return error;
     // Under -g, show the debug info in the dump (source locations and local
     // scope), so the NameLocs and DI markers are visible without the explicit
@@ -573,7 +581,7 @@ int main(int argc, char **argv) {
   case Action::EmitLLVMIR:
   case Action::EmitObject:
   case Action::EmitAssembly:
-    return emitLLVMIR(context, module);
+    return emitLLVMIR(context, module, timing);
   default:
     llvm_unreachable("unhandled emit action");
   }
