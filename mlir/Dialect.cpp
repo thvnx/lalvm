@@ -488,6 +488,33 @@ llvm::LogicalResult CoerceOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// ConvertOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult ConvertOp::verify() {
+  // Only numeric values (integer or float machine types) are converted.
+  auto isNumeric = [](mlir::Type type) {
+    return mlir::isa<mlir::IntegerType, mlir::FloatType>(type);
+  };
+  mlir::Type source =
+      mlir::cast<ada::QualType>(getInput().getType()).getMlirType();
+  mlir::Type target =
+      mlir::cast<ada::QualType>(getResult().getType()).getMlirType();
+  if (!isNumeric(source))
+    return emitOpError() << "unsupported source type: " << source;
+  if (!isNumeric(target))
+    return emitOpError() << "unsupported target type: " << target;
+  // An implicit conversion stays within one numeric class (@rm{4-6}(60)). Only
+  // an explicit one can convert between integer and float (@rm{4-6}(24.1/2)).
+  if (getKind() == AdaConversionKind::Implicit &&
+      mlir::isa<mlir::IntegerType>(source) !=
+          mlir::isa<mlir::IntegerType>(target))
+    return emitOpError() << "implicit conversion between integer and float: "
+                         << source << " to " << target;
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // IndexOp
 //===----------------------------------------------------------------------===//
 

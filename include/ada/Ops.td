@@ -102,6 +102,19 @@ def AdaChecks : I32BitEnumAttr<"AdaChecks", "Ada arithmetic run-time checks",
 }
 
 //===----------------------------------------------------------------------===//
+// AdaConversionKind
+//===----------------------------------------------------------------------===//
+
+// Kinds of the `ada.convert` operation.
+def AdaConversion_Explicit : I32EnumAttrCase<"Explicit", 0, "explicit">;
+def AdaConversion_Implicit : I32EnumAttrCase<"Implicit", 1, "implicit">;
+
+def AdaConversionKind : I32EnumAttr<"AdaConversionKind", "Ada conversion kind",
+    [AdaConversion_Explicit, AdaConversion_Implicit]> {
+  let cppNamespace = "::mlir::ada";
+}
+
+//===----------------------------------------------------------------------===//
 // TypeOp
 //===----------------------------------------------------------------------===//
 
@@ -266,6 +279,45 @@ def CoerceOp : Ada_Op<"coerce", [Pure]> {
   let arguments = (ins Ada_QualType:$input);
   let results = (outs Ada_QualType:$result);
   let assemblyFormat = "$input attr-dict `:` type($input) `to` type($result)";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ConvertOp
+//===----------------------------------------------------------------------===//
+
+// Ada type conversion (@rm{4-6}) representation.
+def ConvertOp : Ada_Op<"convert", [NoMemoryEffect,
+    OptionalTypesMatchWith<"range matches the target subtype", "result",
+                   "range",
+                   "::mlir::ada::RangeType::get($_self.getContext(), "
+                   "::mlir::cast<::mlir::ada::QualType>($_self).getMlirType(), "
+                   "::mlir::cast<::mlir::ada::QualType>($_self).getAdaType())">]> {
+  let summary = "Ada conversion between types";
+  let description = [{
+    Converts a value to a target Ada type (@rm{4-6}). `kind` records whether
+    the conversion is written in the source (`explicit`) or applied by the
+    language (`implicit`). A target subtype with dynamic bounds also takes the
+    range descriptor elaborated at its declaration.
+
+    Example:
+
+    ```mlir
+    %1 = ada.convert explicit %0
+        : !ada.qual<i16, @standard.short_integer>
+       to !ada.qual<i32, @standard.integer>
+    %3 = ada.convert implicit %2, %r
+        : !ada.qual<i32, @standard.integer>
+       to !ada.qual<i32, @p.s>
+    ```
+  }];
+  let arguments = (ins AdaConversionKind:$kind, Ada_QualType:$input,
+                       Optional<Ada_RangeType>:$range);
+  let results = (outs Ada_QualType:$result);
+  let assemblyFormat = [{
+    $kind $input (`,` $range^)? attr-dict `:` qualified(type($input)) `to`
+    qualified(type($result))
+  }];
   let hasVerifier = 1;
 }
 
