@@ -1,11 +1,13 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- Reading an array element with a dynamic index: the index is loaded from a
 -- variable, so the zero-based offset is computed at run time.
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
 -- CHECK: %[[I:.*]] = memref.load %{{.*}}[] : memref<!ada.qual<i32, @standard.integer>>
--- CHECK: %[[SUB:.*]] = ada.coerce %[[I]] : {{.*}} to <i32, @array_read_dyn.__anonymous_vec_index_1>
--- CHECK: %[[CHK:.*]] = ada.index_check %[[SUB]], %{{.*}}
+-- CHECK: %[[CHK:.*]] = ada.index_check %[[I]], %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @array_read_dyn.__anonymous_vec_index_1>
 -- CHECK: %[[BASE:.*]] = ada.coerce %[[CHK]] : {{.*}} to <i32, @standard.integer>
 -- CHECK: %[[OFF:.*]] = ada.binop "-" %[[BASE]], %{{.*}}
 -- CHECK: ada.index %{{.*}}[%[[OFF]]] {{.*}}-> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
