@@ -322,6 +322,38 @@ def ConvertOp : Ada_Op<"convert", [NoMemoryEffect,
 }
 
 //===----------------------------------------------------------------------===//
+// RequalifyOp
+//===----------------------------------------------------------------------===//
+
+// Identity transition: changes only the Ada type carried by a value whose
+// validity for the target type is already established.
+def RequalifyOp : Ada_Op<"requalify", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Ada type identity change of a value";
+  let description = [{
+    Changes the Ada type identity of a value, keeping its machine value. Every
+    semantic validity condition of the target type has already been
+    established, so the op has no run-time effect and lowers to its operand.
+
+    Example:
+
+    ```mlir
+    %1 = ada.requalify %0
+        : !ada.qual<i32, @standard.integer>
+       to !ada.qual<i32, @p.count>
+    ```
+  }];
+  let arguments = (ins Ada_QualType:$value);
+  let results = (outs Ada_QualType:$result);
+  let assemblyFormat = [{
+    $value attr-dict `:` qualified(type($value)) `to` qualified(type($result))
+  }];
+  let hasVerifier = 1;
+  let hasFolder = 1;
+  let hasCanonicalizer = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // IndexOp
 //===----------------------------------------------------------------------===//
 
@@ -409,6 +441,7 @@ def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
 // value is forwarded unchanged. Not `Pure` since it can raise. Each kind of
 // check (range or index) is its own op built from this class.
 class Ada_InRangeCheckOp<string mnemonic> : Ada_Op<mnemonic, [
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
     TypesMatchWith<"range matches the checked subtype", "result", "range",
                    "::mlir::ada::RangeType::get($_self.getContext(), "
                    "::mlir::cast<::mlir::ada::QualType>($_self).getMlirType(), "
