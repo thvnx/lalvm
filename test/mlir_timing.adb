@@ -4,9 +4,9 @@
 -- RUN: %lalvm --emit=llvm -O1 --mlir-timing %s -o /dev/null 2>&1 | %FileCheck %s
 
 -- CHECK: Execution time report
--- CHECK: ClosureConversionPass
+-- CHECK: ClosureConversion
 -- CHECK: Mem2Reg
--- CHECK: AdaToLLVMLoweringPass
+-- CHECK: LowerToLLVM
 
 procedure Mlir_Timing is
 begin

@@ -32,6 +32,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -464,6 +465,13 @@ int main(int argc, char **argv) {
   mlir::registerAsmPrinterCLOptions();
   mlir::registerMLIRContextCLOptions();
   mlir::registerTransformsPasses();
+  // Register the Ada passes too, so --mlir-print-ir-before/after accept them.
+  mlir::registerPass(mlir::ada::createClosureConversionPass);
+  mlir::registerPass(mlir::ada::createLowerAdaConversionsPass);
+  mlir::registerPass(mlir::ada::createHoistNestedSymbolOperationsPass);
+  mlir::registerPass(mlir::ada::createLowerToLLVMPass);
+  mlir::registerPass(mlir::ada::createDICompileUnitAdaPass);
+  mlir::registerPass(mlir::ada::createAdaDebugInfoPass);
   mlir::registerPassManagerCLOptions();
   mlir::registerDefaultTimingManagerCLOptions();
 

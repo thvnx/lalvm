@@ -15,6 +15,7 @@ struct LowerAdaConversionsPass
     : public PassWrapper<LowerAdaConversionsPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerAdaConversionsPass)
   void runOnOperation() final;
+  StringRef getName() const final { return "LowerAdaConversions"; }
   StringRef getArgument() const final { return "ada-lower-conversions"; }
   StringRef getDescription() const final {
     return "Expand ada.convert into checks, casts and qualification";

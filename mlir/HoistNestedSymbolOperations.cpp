@@ -37,6 +37,7 @@ struct HoistNestedSymbolOperationsPass
                          OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(HoistNestedSymbolOperationsPass)
   void runOnOperation() final;
+  StringRef getName() const final { return "HoistNestedSymbolOperations"; }
   StringRef getArgument() const final { return "ada-hoist-nested-symbols"; }
   StringRef getDescription() const final {
     return "Apply GNAT ABI mangling and hoist nested types to module level";
