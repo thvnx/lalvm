@@ -11,13 +11,11 @@
 -- CHECK:         [[Y:%[0-9]+]] = memref.load %{{[0-9]+}}[] : memref<!ada.qual<i32, @unary_range_check.neg>>
 -- CHECK-NEXT:    [[YB:%[0-9]+]] = ada.coerce [[Y]] : <i32, @unary_range_check.neg> to <i32, @standard.integer>
 -- CHECK-NEXT:    [[ABS:%[0-9]+]] = ada.unop "abs" [[YB]] checks<overflow> : !ada.qual<i32, @standard.integer>
--- CHECK-NEXT:    [[C:%[0-9]+]] = ada.coerce [[ABS]] : <i32, @standard.integer> to <i32, @unary_range_check.neg>
--- CHECK:         ada.range_check [[C]]
+-- CHECK:         ada.range_check [[ABS]], %{{[0-9]+}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @unary_range_check.neg>
 -- CHECK:         [[Y2:%[0-9]+]] = memref.load %{{[0-9]+}}[] : memref<!ada.qual<i32, @unary_range_check.neg>>
 -- CHECK-NEXT:    [[YB2:%[0-9]+]] = ada.coerce [[Y2]] : <i32, @unary_range_check.neg> to <i32, @standard.integer>
 -- CHECK-NEXT:    [[NEG:%[0-9]+]] = ada.unop "-" [[YB2]] checks<overflow> : !ada.qual<i32, @standard.integer>
--- CHECK-NEXT:    [[C2:%[0-9]+]] = ada.coerce [[NEG]] : <i32, @standard.integer> to <i32, @unary_range_check.neg>
--- CHECK:         ada.range_check [[C2]]
+-- CHECK:         ada.range_check [[NEG]], %{{[0-9]+}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @unary_range_check.neg>
 
 procedure Unary_Range_Check is
    subtype Neg is Integer range -46 .. -8;

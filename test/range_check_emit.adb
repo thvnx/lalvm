@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -8,11 +11,10 @@
 -- checked.
 
 -- MLIR-LABEL: ada.subp @range_check_emit
--- MLIR:      ada.coerce %arg0 : <i32, @standard.integer> to <i32, @range_check_emit.small>
 -- MLIR:      %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
 -- MLIR:      %[[HI:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 10
 -- MLIR:      ada.range %[[LO]], %[[HI]] : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_emit.small>
--- MLIR:      ada.range_check %{{.*}}, %{{.*}} : !ada.qual<i32, @range_check_emit.small>
+-- MLIR:      ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
 
 -- LLVM-LABEL: define i32 @_ada_range_check_emit(
 -- LLVM:      icmp slt i32 %0, 1

@@ -54,6 +54,12 @@ std::string libraryLevelSymbol(llvm::StringRef name);
 /// `ada.subp` is not a SymbolTable and `ada.decls` is a sibling of statements).
 /// Returns the symbol op, or null.
 mlir::Operation *lookupSymbolFrom(mlir::Operation *from, llvm::StringRef name);
+
+/// Return the base type of the Ada type `sym` visible from `from` (resolved
+/// with `lookupSymbolFrom`), or `sym` itself when it is a base type. Returns
+/// null when `sym` does not resolve to an `ada.type`.
+mlir::FlatSymbolRefAttr baseOfAdaType(mlir::Operation *from,
+                                      mlir::FlatSymbolRefAttr sym);
 } // namespace ada
 } // namespace mlir
 

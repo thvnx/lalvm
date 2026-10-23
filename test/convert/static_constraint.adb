@@ -5,8 +5,7 @@
 
 -- Static subtype constraint, on an object initializer.
 
--- CHECK: %[[C:.*]] = ada.coerce %arg0 : <i32, @standard.integer> to <i32, @static_constraint.small>
--- CHECK: ada.range_check %[[C]]
+-- CHECK: ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @static_constraint.small>
 
 procedure Static_Constraint (X : Integer) is
    subtype Small is Integer range 1 .. 10;

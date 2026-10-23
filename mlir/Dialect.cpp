@@ -581,6 +581,31 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
 }
 
 //===----------------------------------------------------------------------===//
+// RangeCheckOp
+//===----------------------------------------------------------------------===//
+
+// The check forwards the machine value unchanged, so only the qualification
+// may differ between value and result. Both must belong to one type (share a
+// base, @rm{3-2-2}), this is checked when both `ada.type` symbols resolve.
+llvm::LogicalResult RangeCheckOp::verify() {
+  auto source = mlir::cast<ada::QualType>(getValue().getType());
+  auto target = mlir::cast<ada::QualType>(getResult().getType());
+  if (source.getMlirType() != target.getMlirType())
+    return emitOpError() << "value machine type " << source.getMlirType()
+                         << " does not match result machine type "
+                         << target.getMlirType();
+  mlir::FlatSymbolRefAttr sourceBase =
+      baseOfAdaType(*this, source.getAdaType());
+  mlir::FlatSymbolRefAttr targetBase =
+      baseOfAdaType(*this, target.getAdaType());
+  if (sourceBase && targetBase && sourceBase != targetBase)
+    return emitOpError() << "value type " << source.getAdaType()
+                         << " and result type " << target.getAdaType()
+                         << " do not share a base type";
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // AttrOp
 //===----------------------------------------------------------------------===//
 
@@ -905,6 +930,15 @@ mlir::Operation *mlir::ada::lookupSymbolFrom(mlir::Operation *from,
               return sym;
   }
   return nullptr;
+}
+
+mlir::FlatSymbolRefAttr mlir::ada::baseOfAdaType(mlir::Operation *from,
+                                                 mlir::FlatSymbolRefAttr sym) {
+  auto typeOp =
+      mlir::dyn_cast_or_null<TypeOp>(lookupSymbolFrom(from, sym.getValue()));
+  if (!typeOp)
+    return {};
+  return typeOp.getBaseAttr() ? typeOp.getBaseAttr() : sym;
 }
 
 /// Callee resolution for `verifySymbolUses`'s best-effort

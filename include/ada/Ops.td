@@ -403,35 +403,46 @@ def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
 //===----------------------------------------------------------------------===//
 
 // Checks that a value lies within a range, raising Constraint_Error otherwise
-// (@rm{11-5}). The result is the checked value with the same `!ada.qual` type.
-// Not `Pure` since it can raise. Each kind of check (range or index) is its
-// own op built from this class.
-class Ada_InRangeCheckOp<string mnemonic> : Ada_Op<mnemonic, [
-    TypesMatchWith<"checked value type is the result type", "result", "value",
-                   "$_self">,
+// (@rm{11-5}). The result is the checked value, with the machine value
+// unchanged. Not `Pure` since it can raise. Each kind of check (range or index)
+// is its own op built from this class.
+class Ada_InRangeCheckOp<string mnemonic, list<Trait> traits = []>
+    : Ada_Op<mnemonic, !listconcat([
     TypesMatchWith<"range matches the checked subtype", "result", "range",
                    "::mlir::ada::RangeType::get($_self.getContext(), "
                    "::mlir::cast<::mlir::ada::QualType>($_self).getMlirType(), "
-                   "::mlir::cast<::mlir::ada::QualType>($_self).getAdaType())">]> {
+                   "::mlir::cast<::mlir::ada::QualType>($_self).getAdaType())">],
+    traits)> {
   let arguments = (ins Ada_QualType:$value, Ada_RangeType:$range);
   let results = (outs Ada_QualType:$result);
-  let assemblyFormat =
-      "$value `,` $range attr-dict `:` qualified(type($result))";
 }
 
+// The check establishes the constraint: the result is qualified by the
+// constrained subtype, the value by any type of the same machine
+// representation and family (typically the subtype's base).
 def RangeCheckOp : Ada_InRangeCheckOp<"range_check"> {
   let summary = "Ada Range_Check against a subtype range";
   let description = [{
     Range_Check (@rm{11-5}): a value converted or assigned to a constrained
-    subtype.
+    subtype. The result carries the subtype and the machine value is forwarded
+    unchanged.
 
     ```mlir
-    %c = ada.range_check %v, %r : !ada.qual<i32, @standard.positive>
+    %c = ada.range_check %v, %r
+        : !ada.qual<i32, @standard.integer>
+       to !ada.qual<i32, @standard.positive>
     ```
   }];
+  let assemblyFormat = [{
+    $value `,` $range attr-dict `:` qualified(type($value)) `to`
+    qualified(type($result))
+  }];
+  let hasVerifier = 1;
 }
 
-def IndexCheckOp : Ada_InRangeCheckOp<"index_check"> {
+def IndexCheckOp : Ada_InRangeCheckOp<"index_check", [
+    TypesMatchWith<"checked value type is the result type", "result", "value",
+                   "$_self">]> {
   let summary = "Ada Index_Check against an array index range";
   let description = [{
     Index_Check (@rm{4-1-1}, @rm{11-5}): an index of an indexed component
@@ -441,6 +452,8 @@ def IndexCheckOp : Ada_InRangeCheckOp<"index_check"> {
     %c = ada.index_check %i, %r : !ada.qual<i32, @p.vec_index>
     ```
   }];
+  let assemblyFormat =
+      "$value `,` $range attr-dict `:` qualified(type($result))";
 }
 
 //===----------------------------------------------------------------------===//

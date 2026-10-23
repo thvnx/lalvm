@@ -358,8 +358,9 @@ static llvm::StringRef raiseEntry(ada::IndexCheckOp) {
 
 // OpConversionPattern: lowers the Constraint_Check (@rm{11-5}) to a compare
 // against the bound pair and a conditional branch to a raise block that calls
-// the GNAT runtime and is unreachable. Type-preserving: the checked value
-// flows through unchanged into the continuation.
+// the GNAT runtime and is unreachable. Representation-preserving: the machine
+// value flows through unchanged into the continuation, whatever subtype the
+// result is qualified by.
 template <typename OpTy>
 struct InRangeCheckOpLowering : public OpConversionPattern<OpTy> {
   using OpConversionPattern<OpTy>::OpConversionPattern;
