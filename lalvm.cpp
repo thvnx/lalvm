@@ -237,11 +237,13 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
 
   // Lambda-lift up-level references and hoist nested subprograms to module
   // level before mem2reg, so a captured local stays an alloca able to carry
-  // up-level writes. Run only on the lowering path, leaving --emit=mlir as the
+  // up-level writes. Then expand ada.convert, still before mem2reg and the
+  // generic lowering. Run only on the lowering path, leaving --emit=mlir as the
   // nested dialect view.
-  mlir::PassManager ccPm(module.get()->getName());
-  ccPm.addPass(mlir::ada::createClosureConversionPass());
-  if (int error = runPassManager(ccPm, *module, timing))
+  mlir::PassManager adaLoweringPm(module.get()->getName());
+  adaLoweringPm.addPass(mlir::ada::createClosureConversionPass());
+  adaLoweringPm.addPass(mlir::ada::createLowerAdaConversionsPass());
+  if (int error = runPassManager(adaLoweringPm, *module, timing))
     return error;
 
   if (int error = applyMLIRPasses(module, timing))
