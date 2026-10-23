@@ -56,6 +56,7 @@ struct AdaToLLVMLoweringPass
                     cf::ControlFlowDialect>();
   }
   void runOnOperation() final;
+  StringRef getName() const final { return "LowerToLLVM"; }
   StringRef getArgument() const final { return "ada-to-llvm"; }
   StringRef getDescription() const final {
     return "Lower the Ada dialect to the LLVM dialect";
