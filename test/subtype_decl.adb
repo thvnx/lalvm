@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -5,8 +8,7 @@
 -- local ada.decls, at its declaration point. type_info records only the
 -- subtype's own constraint: unconstrained subtypes are pure renamings.
 -- MLIR-LABEL: ada.subp @subtype_decl
--- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i32, @subtype_decl.small> = 42
--- MLIR-NEXT:    ada.decls {
+-- MLIR:         ada.decls {
 -- MLIR-NEXT:      ada.type @subtype_decl.small base @standard.integer : i32 = #ada.int_info<range 1 to 100>
 -- MLIR-NEXT:      ada.type @subtype_decl.flag base @standard.boolean : i1
 -- MLIR-NEXT:      ada.type @subtype_decl.int base @standard.integer : i32

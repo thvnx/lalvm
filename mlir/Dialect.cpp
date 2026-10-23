@@ -19,6 +19,7 @@
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
+#include "mlir/Interfaces/FoldInterfaces.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "mlir/Support/LLVM.h"
@@ -46,6 +47,19 @@ using namespace mlir::ada;
 
 #include "ada/Dialect.cpp.inc"
 
+namespace {
+// `ada.subp` is not `IsolatedFromAbove` (until ClosureConversion), so the
+// folder would hoist constants out of it, up to the module body. Keep them in
+// the subprogram they belong to.
+struct AdaFoldInterface : public mlir::DialectFoldInterface {
+  using DialectFoldInterface::DialectFoldInterface;
+
+  bool shouldMaterializeInto(mlir::Region *region) const final {
+    return mlir::isa<SubpOp>(region->getParentOp());
+  }
+};
+} // namespace
+
 //===----------------------------------------------------------------------===//
 // AdaDialect
 //===----------------------------------------------------------------------===//
@@ -65,6 +79,7 @@ void AdaDialect::initialize() {
 #define GET_TYPEDEF_LIST
 #include "ada/Types.cpp.inc"
       >();
+  addInterfaces<AdaFoldInterface>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -467,6 +482,8 @@ llvm::LogicalResult ConstantOp::verify() {
                          << typedResult.getMlirType() << ")";
   return mlir::success();
 }
+
+mlir::OpFoldResult ConstantOp::fold(FoldAdaptor) { return getValue(); }
 
 //===----------------------------------------------------------------------===//
 // CoerceOp

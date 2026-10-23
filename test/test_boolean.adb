@@ -1,4 +1,7 @@
--- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
+-- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- Boolean has 2 literals (False=0, True=1) so it maps to i1.
@@ -6,7 +9,8 @@
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @test_boolean
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i1, @standard.boolean> = true
--- MLIR-NEXT:    ada.null
+-- MLIR:         memref.store %[[C]], %{{.*}}[] : memref<!ada.qual<i1, @standard.boolean>>
+-- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 
 -- LLVM-LABEL: define void @_ada_test_boolean(

@@ -215,13 +215,14 @@ static int runPassManager(mlir::PassManager &pm, mlir::ModuleOp module,
 
 static int applyMLIRPasses(mlir::OwningOpRef<mlir::ModuleOp> &module,
                            mlir::TimingScope &timing) {
-  // -O0 leaves locals in memory (see optLevel); mem2reg promotion runs from
-  // -O1.
+  // -O0 leaves locals in memory and the IR as MLIRGen emits it (see optLevel);
+  // the MLIR optimization passes run from -O1.
   if (optLevel < 1)
     return 0;
-  // Separate PM so --mlir-print-ir-before=mem2reg captures pre-promotion IR.
+  // Separate PM so --mlir-print-ir-before/after isolate these passes.
   mlir::PassManager pm(module.get()->getName());
   pm.addPass(mlir::createMem2Reg());
+  pm.addPass(mlir::createCanonicalizerPass());
   return runPassManager(pm, *module, timing);
 }
 

@@ -1,4 +1,7 @@
--- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
+-- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- named loop + `exit Name when` from an inner (unnamed) loop (RM 5.7). The
@@ -9,14 +12,14 @@
 -- MLIR-LABEL: ada.subp @exit_named
 -- MLIR:         cf.br ^[[OUTER:bb[0-9]+]]
 -- MLIR:       ^[[OUTER]]:
--- MLIR:         cf.br ^[[INNER:bb[0-9]+]](
--- MLIR:       ^[[INNER]](
+-- MLIR:         cf.br ^[[INNER:bb[0-9]+]]
+-- MLIR:       ^[[INNER]]:
 -- MLIR:         ada.binop "+"
 -- MLIR:         %[[C:.*]] = ada.cmp ">=" %{{.*}}, %arg0
 -- MLIR:         %[[I1:.*]] = ada.unwrap %[[C]]
 -- MLIR:         cf.cond_br %[[I1]], ^[[OMERGE:bb[0-9]+]], ^[[ICONT:bb[0-9]+]]
 -- MLIR:       ^[[ICONT]]:
--- MLIR:         cf.br ^[[INNER]](
+-- MLIR:         cf.br ^[[INNER]]
 -- MLIR:       ^[[OMERGE]]:
 -- MLIR:         ada.return
 
