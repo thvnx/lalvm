@@ -1088,6 +1088,19 @@ struct UnwrapOpLowering : public OpConversionPattern<ada::UnwrapOp> {
   }
 };
 
+// ada.requalify only changes the Ada type identity, which the type converter
+// erases: forward the converted operand.
+struct RequalifyOpLowering : public OpConversionPattern<ada::RequalifyOp> {
+  using OpConversionPattern<ada::RequalifyOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::RequalifyOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getValue());
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: MemRef operations on ada.qual element types
 //===----------------------------------------------------------------------===//
@@ -1320,7 +1333,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
                ConstantOpLowering, CoerceOpLowering, RangeOpLowering,
                InRangeCheckOpLowering<ada::RangeCheckOp>,
                InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
-               IndexOpLowering>(typeConverter, &getContext());
+               IndexOpLowering, RequalifyOpLowering>(typeConverter,
+                                                     &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));

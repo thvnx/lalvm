@@ -17,6 +17,7 @@
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Interfaces/MemorySlotInterfaces.h"
@@ -581,20 +582,28 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
 }
 
 //===----------------------------------------------------------------------===//
-// RangeCheckOp and IndexCheckOp
+// RangeCheckOp, IndexCheckOp and RequalifyOp
 //===----------------------------------------------------------------------===//
 
-// A check forwards the machine value unchanged, so only the qualification may
-// differ between value and result. Both must belong to one type (share a base,
-// @rm{3-2-2}), this is checked when both `ada.type` symbols resolve.
+// These ops forward the machine value unchanged, so only the qualification may
+// differ between `value` and `result`.
 template <typename OpTy>
-static llvm::LogicalResult verifyInRangeCheck(OpTy op) {
+static llvm::LogicalResult verifySameRepresentation(OpTy op) {
   auto source = mlir::cast<ada::QualType>(op.getValue().getType());
   auto target = mlir::cast<ada::QualType>(op.getResult().getType());
   if (source.getMlirType() != target.getMlirType())
     return op.emitOpError()
            << "value machine type " << source.getMlirType()
            << " does not match result machine type " << target.getMlirType();
+  return mlir::success();
+}
+
+// Both must belong to one type (share a base, @rm{3-2-2}), this is checked when
+// both `ada.type` symbols resolve.
+template <typename OpTy>
+static llvm::LogicalResult verifySameBase(OpTy op) {
+  auto source = mlir::cast<ada::QualType>(op.getValue().getType());
+  auto target = mlir::cast<ada::QualType>(op.getResult().getType());
   mlir::FlatSymbolRefAttr sourceBase = baseOfAdaType(op, source.getAdaType());
   mlir::FlatSymbolRefAttr targetBase = baseOfAdaType(op, target.getAdaType());
   if (sourceBase && targetBase && sourceBase != targetBase)
@@ -604,9 +613,63 @@ static llvm::LogicalResult verifyInRangeCheck(OpTy op) {
   return mlir::success();
 }
 
-llvm::LogicalResult RangeCheckOp::verify() { return verifyInRangeCheck(*this); }
+llvm::LogicalResult RangeCheckOp::verify() {
+  return verifySameRepresentation(*this);
+}
 
-llvm::LogicalResult IndexCheckOp::verify() { return verifyInRangeCheck(*this); }
+llvm::LogicalResult
+RangeCheckOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  return verifySameBase(*this);
+}
+
+llvm::LogicalResult IndexCheckOp::verify() {
+  return verifySameRepresentation(*this);
+}
+
+llvm::LogicalResult
+IndexCheckOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  return verifySameBase(*this);
+}
+
+llvm::LogicalResult RequalifyOp::verify() {
+  return verifySameRepresentation(*this);
+}
+
+llvm::LogicalResult
+RequalifyOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  return verifySameBase(*this);
+}
+
+// A requalification has no semantic effect: `A -> A` folds to its value.
+mlir::OpFoldResult RequalifyOp::fold(FoldAdaptor) {
+  if (getValue().getType() == getType())
+    return getValue();
+  return {};
+}
+
+namespace {
+// Collapse `A -> B -> C` to `A -> C`: the intermediate requalification has no
+// semantic effect. When `C` is `A`, the new op then folds away.
+struct CollapseRequalifyChain : public mlir::OpRewritePattern<RequalifyOp> {
+  using OpRewritePattern<RequalifyOp>::OpRewritePattern;
+
+  llvm::LogicalResult
+  matchAndRewrite(RequalifyOp op,
+                  mlir::PatternRewriter &rewriter) const override {
+    auto previous = op.getValue().getDefiningOp<RequalifyOp>();
+    if (!previous)
+      return mlir::failure();
+    rewriter.replaceOpWithNewOp<RequalifyOp>(op, op.getResult().getType(),
+                                             previous.getValue());
+    return mlir::success();
+  }
+};
+} // namespace
+
+void RequalifyOp::getCanonicalizationPatterns(mlir::RewritePatternSet &results,
+                                              mlir::MLIRContext *context) {
+  results.add<CollapseRequalifyChain>(context);
+}
 
 //===----------------------------------------------------------------------===//
 // AttrOp
