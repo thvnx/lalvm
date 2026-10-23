@@ -1599,14 +1599,12 @@ private:
     llvm::APInt hi = info.staticUpper(0).getValue();
     if (!staticIndex || warnOutOfSubtypeRange(staticIndex.value(), lo, hi,
                                               indexSym.getValue(), location)) {
-      // Convert to the index (anonymous) subtype, check, and convert back to
-      // the base type to compute the offset. Using plain `ada.coerce` ops since
+      // The check yields the index (anonymous) subtype and convert back to the
+      // base type to compute the offset. Using a plain `ada.coerce` op since
       // `coerce` would add a range check.
       mlir::Value range = staticRangeFor(indexSym, indexQual, lo, hi, location);
-      mlir::Value sub =
-          mlir::ada::CoerceOp::create(builder, location, subQual, rawIndex);
       mlir::Value checked = mlir::ada::IndexCheckOp::create(
-          builder, location, subQual, sub, range);
+          builder, location, subQual, rawIndex, range);
       rawIndex =
           mlir::ada::CoerceOp::create(builder, location, indexQual, checked);
     }

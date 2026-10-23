@@ -581,29 +581,32 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
 }
 
 //===----------------------------------------------------------------------===//
-// RangeCheckOp
+// RangeCheckOp and IndexCheckOp
 //===----------------------------------------------------------------------===//
 
-// The check forwards the machine value unchanged, so only the qualification
-// may differ between value and result. Both must belong to one type (share a
-// base, @rm{3-2-2}), this is checked when both `ada.type` symbols resolve.
-llvm::LogicalResult RangeCheckOp::verify() {
-  auto source = mlir::cast<ada::QualType>(getValue().getType());
-  auto target = mlir::cast<ada::QualType>(getResult().getType());
+// A check forwards the machine value unchanged, so only the qualification may
+// differ between value and result. Both must belong to one type (share a base,
+// @rm{3-2-2}), this is checked when both `ada.type` symbols resolve.
+template <typename OpTy>
+static llvm::LogicalResult verifyInRangeCheck(OpTy op) {
+  auto source = mlir::cast<ada::QualType>(op.getValue().getType());
+  auto target = mlir::cast<ada::QualType>(op.getResult().getType());
   if (source.getMlirType() != target.getMlirType())
-    return emitOpError() << "value machine type " << source.getMlirType()
-                         << " does not match result machine type "
-                         << target.getMlirType();
-  mlir::FlatSymbolRefAttr sourceBase =
-      baseOfAdaType(*this, source.getAdaType());
-  mlir::FlatSymbolRefAttr targetBase =
-      baseOfAdaType(*this, target.getAdaType());
+    return op.emitOpError()
+           << "value machine type " << source.getMlirType()
+           << " does not match result machine type " << target.getMlirType();
+  mlir::FlatSymbolRefAttr sourceBase = baseOfAdaType(op, source.getAdaType());
+  mlir::FlatSymbolRefAttr targetBase = baseOfAdaType(op, target.getAdaType());
   if (sourceBase && targetBase && sourceBase != targetBase)
-    return emitOpError() << "value type " << source.getAdaType()
-                         << " and result type " << target.getAdaType()
-                         << " do not share a base type";
+    return op.emitOpError()
+           << "value type " << source.getAdaType() << " and result type "
+           << target.getAdaType() << " do not share a base type";
   return mlir::success();
 }
+
+llvm::LogicalResult RangeCheckOp::verify() { return verifyInRangeCheck(*this); }
+
+llvm::LogicalResult IndexCheckOp::verify() { return verifyInRangeCheck(*this); }
 
 //===----------------------------------------------------------------------===//
 // AttrOp
