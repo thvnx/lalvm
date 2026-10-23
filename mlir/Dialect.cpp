@@ -773,6 +773,14 @@ static void printChecks(mlir::OpAsmPrinter &p, mlir::Operation *,
     p << "checks<" << ada::stringifyAdaChecks(checks.getValue()) << ">";
 }
 
+/// An op with a run-time check can raise Constraint_Error (@rm{11-5}), so it
+/// must not be evaluated where the program would not evaluate it.
+static mlir::Speculation::Speculatability
+speculatabilityOf(std::optional<AdaChecks> checks) {
+  return checks && *checks != AdaChecks{} ? mlir::Speculation::NotSpeculatable
+                                          : mlir::Speculation::Speculatable;
+}
+
 //===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
@@ -786,6 +794,10 @@ llvm::LogicalResult BinOp::verify() {
     return emitOpError() << "unsupported operand type " << type
                          << "; expected integer or float";
   return mlir::success();
+}
+
+mlir::Speculation::Speculatability BinOp::getSpeculatability() {
+  return speculatabilityOf(getChecks());
 }
 
 //===----------------------------------------------------------------------===//
@@ -833,6 +845,10 @@ llvm::LogicalResult UnOp::verify() {
                          << "; expected integer or float";
 
   return mlir::success();
+}
+
+mlir::Speculation::Speculatability UnOp::getSpeculatability() {
+  return speculatabilityOf(getChecks());
 }
 
 //===----------------------------------------------------------------------===//
