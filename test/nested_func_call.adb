@@ -1,14 +1,17 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @nested_func_call
--- MLIR:         %[[C1:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
--- MLIR:         %[[V1:.*]] = ada.call @nested_func_call.inner(%[[C1]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
+-- MLIR-NOT:     ada.constant
+-- MLIR:         ada.call @nested_func_call.inner(%[[C]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.decls {
 -- MLIR:           ada.subp private @nested_func_call.inner(
 -- MLIR:             ada.return %{{.*}} : !ada.qual<i32, @standard.integer>
--- MLIR:         %[[C2:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
--- MLIR:         %[[V2:.*]] = ada.call @nested_func_call.inner(%[[C2]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.call @nested_func_call.inner(%[[C]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define void @_ada_nested_func_call(

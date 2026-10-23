@@ -244,6 +244,9 @@ def ConstantOp : Ada_Op<"constant", [Pure, ConstantLike]> {
   let results = (outs Ada_QualType:$result);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+  // `ConstantLike` requires folding to the value (the folder identifies and
+  // deduplicates constants through it).
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//
