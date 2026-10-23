@@ -528,9 +528,13 @@ def AttrOp : Ada_Op<"attr", [Pure,
 //===----------------------------------------------------------------------===//
 
 // SameOperandsAndResultType constrains the op so that all operands and the
-// result share one type. It also auto-generates build(AdaBinaryOp, Value, Value)
-// that infers the result type from the operands, so no custom builder is needed.
-def BinOp : Ada_Op<"binop", [Pure, SameOperandsAndResultType]> {
+// result share one type. It also auto-generates build(AdaBinaryOp, Value,
+// Value) that infers the result type from the operands, so no custom builder is
+// needed. No side-effect but a run-time check can raise, so it is only
+// speculatable when no checks.
+def BinOp : Ada_Op<"binop", [NoMemoryEffect,
+    DeclareOpInterfaceMethods<ConditionallySpeculatable>,
+    SameOperandsAndResultType]> {
   let summary = "Ada predefined binary arithmetic operation";
   let description = [{
     Represents an Ada predefined binary arithmetic operation (@rm{4-5-3} to
@@ -600,7 +604,10 @@ def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
 // UnOp
 //===----------------------------------------------------------------------===//
 
-def UnOp : Ada_Op<"unop", [Pure, SameOperandsAndResultType]> {
+// Same as `ada.binop`: only speculatable without checks.
+def UnOp : Ada_Op<"unop", [NoMemoryEffect,
+    DeclareOpInterfaceMethods<ConditionallySpeculatable>,
+    SameOperandsAndResultType]> {
   let summary = "Ada predefined unary operation";
   let description = [{
     Represents an Ada predefined unary operation (@rm{4-5-6}). The operator is
