@@ -5,8 +5,7 @@
 
 -- Static value outside a static subtype.
 
--- CHECK: %[[C:.*]] = ada.coerce %{{.*}} : <i32, @standard.integer> to <i32, @static_constraint_out_of_range.small>
--- CHECK: ada.range_check %[[C]]
+-- CHECK: ada.range_check %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @static_constraint_out_of_range.small>
 
 procedure Static_Constraint_Out_Of_Range is
    subtype Small is Integer range 1 .. 10;

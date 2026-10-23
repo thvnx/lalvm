@@ -5,8 +5,7 @@
 
 -- Scalar `out` is passed by reference: only the callee converts.
 
--- CHECK: %[[C:.*]] = ada.coerce %{{.*}} : <i32, @standard.integer> to <i32, @param_out.small>
--- CHECK: ada.range_check %[[C]]
+-- CHECK: ada.range_check %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_out.small>
 -- CHECK-NOT: ada.coerce
 -- CHECK: ada.call @param_out.set(
 

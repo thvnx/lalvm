@@ -5,8 +5,7 @@
 
 -- Dynamic subtype: initializer, bound of T, and S'Last.
 
--- CHECK: %[[C:.*]] = ada.coerce %arg1 : <i32, @standard.integer> to <i32, @dynamic_constraint.s>
--- CHECK: ada.range_check %[[C]]
+-- CHECK: ada.range_check %arg1, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @dynamic_constraint.s>
 -- CHECK: ada.coerce %{{.*}} : <i32, @dynamic_constraint.s> to <i32, @standard.integer>
 -- CHECK: ada.range %{{.*}} -> !ada.range<i32, @dynamic_constraint.t>
 -- CHECK: ada.attr "last"

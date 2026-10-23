@@ -5,8 +5,7 @@
 
 -- Scalar `in` actual, converted at the call site.
 
--- CHECK: %[[C:.*]] = ada.coerce %arg0 : <i32, @standard.integer> to <i32, @param_in.small>
--- CHECK: ada.range_check %[[C]]
+-- CHECK: ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>
 -- CHECK: ada.call @param_in.f(
 
 function Param_In (I : Integer) return Integer is
