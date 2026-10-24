@@ -443,12 +443,13 @@ def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
 //===----------------------------------------------------------------------===//
 
 // Checks that a value lies within a range, raising Constraint_Error otherwise
-// (@rm{11-5}). The check establishes the constraint: the result is qualified
-// by the constrained subtype, the value by any type of the same machine
-// representation and base (typically the subtype's base), and the machine
-// value is forwarded unchanged. Not `Pure` since it can raise. Each kind of
-// check (range or index) is its own op built from this class.
+// (@rm{11-5}). The check establishes the constraint: the result is qualified by
+// the constrained subtype, the value by any type of the same machine
+// representation and base (typically the subtype's base), and the machine value
+// is forwarded unchanged. NoMemoryEffect, so identical checks can be merged.
+// Each kind of check (range or index) is its own op built from this class.
 class Ada_InRangeCheckOp<string mnemonic> : Ada_Op<mnemonic, [
+    NoMemoryEffect,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
     TypesMatchWith<"range matches the checked subtype", "result", "range",
                    "::mlir::ada::RangeType::get($_self.getContext(), "
