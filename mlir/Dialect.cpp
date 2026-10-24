@@ -1216,6 +1216,17 @@ mlir::Location mlir::ada::unnamedLoc(mlir::Location loc) {
   return loc;
 }
 
+mlir::Location mlir::ada::attachAdaTypeRef(mlir::Location loc,
+                                           mlir::FlatSymbolRefAttr adaType) {
+  auto nameLoc = mlir::dyn_cast<mlir::NameLoc>(loc);
+  if (!nameLoc)
+    return loc;
+  mlir::MLIRContext *ctx = loc.getContext();
+  return mlir::NameLoc::get(
+      nameLoc.getName(), mlir::FusedLoc::get(ctx, {nameLoc.getChildLoc()},
+                                             DITypeRefAttr::get(ctx, adaType)));
+}
+
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
