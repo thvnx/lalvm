@@ -143,9 +143,9 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
     // base type (@rm{3-5}). The check yields the target subtype.
     auto baseQual =
         ada::QualType::get(getContext(), target.getMlirType(), base);
-    Value range =
-        ada::getOrCreateStaticRange(rewriter, op.getLoc(), target.getAdaType(),
-                                    baseQual, lo.getValue(), hi.getValue());
+    Value range = ada::getOrCreateStaticRange(
+        rewriter, ada::unnamedLoc(op.getLoc()), target.getAdaType(), baseQual,
+        lo.getValue(), hi.getValue());
     rewriter.replaceOpWithNewOp<ada::RangeCheckOp>(op, target, op.getInput(),
                                                    range);
     return success();
@@ -231,10 +231,11 @@ struct RepresentationChangeConversion
                   cast<IntegerType>(sourceType), sourceUnsigned);
       // The descriptor is named after the source base but holds the restricted
       // bounds: a check only reads the bounds.
+      Location unnamed = ada::unnamedLoc(loc);
       Value range = ada::getOrCreateStaticRange(
-          rewriter, loc, sourceBase, sourceBaseQual, clampedLo, clampedHi);
-      value = ada::RangeCheckOp::create(rewriter, loc, sourceBaseQual, value,
-                                        range);
+          rewriter, unnamed, sourceBase, sourceBaseQual, clampedLo, clampedHi);
+      value = ada::RangeCheckOp::create(rewriter, unnamed, sourceBaseQual,
+                                        value, range);
       check = false;
     }
 
@@ -249,8 +250,8 @@ struct RepresentationChangeConversion
           ada::RangeCheckOp::create(rewriter, loc, target, value, dynamicRange);
     } else if (check) {
       Value range = ada::getOrCreateStaticRange(
-          rewriter, loc, target.getAdaType(), targetBaseQual, lo.getValue(),
-          hi.getValue());
+          rewriter, ada::unnamedLoc(loc), target.getAdaType(), targetBaseQual,
+          lo.getValue(), hi.getValue());
       value = ada::RangeCheckOp::create(rewriter, loc, target, value, range);
     } else if (value.getType() != target) {
       value = ada::RequalifyOp::create(rewriter, loc, target, value);

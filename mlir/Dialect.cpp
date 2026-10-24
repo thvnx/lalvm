@@ -1210,6 +1210,12 @@ mlir::Value mlir::ada::getOrCreateStaticRange(
   return createRange(builder, loc, loValue, hiValue, sym);
 }
 
+mlir::Location mlir::ada::unnamedLoc(mlir::Location loc) {
+  if (auto nameLoc = mlir::dyn_cast<mlir::NameLoc>(loc))
+    return nameLoc.getChildLoc();
+  return loc;
+}
+
 //===----------------------------------------------------------------------===//
 // CallOp
 //===----------------------------------------------------------------------===//
