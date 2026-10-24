@@ -104,6 +104,9 @@ mlir::Value getOrCreateStaticRange(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::FlatSymbolRefAttr sym,
                                    QualType baseQual, const llvm::APInt &lo,
                                    const llvm::APInt &hi);
+
+/// `loc` without the object name MLIRGen may attach to a value.
+mlir::Location unnamedLoc(mlir::Location loc);
 } // namespace ada
 } // namespace mlir
 
