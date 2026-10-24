@@ -1476,6 +1476,65 @@ private:
     return callOp->getResult(0);
   }
 
+  /// Emit an explicit type conversion `T (X)` (@rm{4-6}).
+  mlir::Value mlirGenTypeConversion(ada_node &conversion) {
+    mlir::Location location = loc(conversion);
+    ada_node name = {}, suffix = {}, assoc = {}, operand = {};
+    ada_call_expr_f_name(&conversion, &name);
+    ada_call_expr_f_suffix(&conversion, &suffix);
+    std::optional<ada_node> typeDecl = libadalang::referencedDecl(name);
+    if (!typeDecl || ada_node_children_count(&suffix) != 1) {
+      mlir::emitError(location, "unsupported type conversion");
+      return nullptr;
+    }
+    mlir::ada::QualType target = getAdaQualType(*typeDecl, location);
+    if (!target)
+      return nullptr;
+    ada_node_child(&suffix, 0, &assoc);
+    ada_param_assoc_f_r_expr(&assoc, &operand);
+    // A universal integer operand has no expected type: it is a static value
+    // emitted in the target subtype, so a value outside the base range is an
+    // error (@rm{4-9}(35)).
+    ada_node operandType;
+    if (mlir::isa<mlir::IntegerType>(target.getMlirType()) &&
+        ada_expr_p_expression_type(&operand, &operandType) &&
+        !ada_node_is_null(&operandType) &&
+        libadalang::isUniversalTypeDecl(operandType)) {
+      std::optional<llvm::APSInt> staticValue =
+          libadalang::evalExprAsInt(operand);
+      if (!staticValue) {
+        mlir::emitError(location,
+                        "failed to evaluate static integer expression");
+        return nullptr;
+      }
+      return emitCheckedIntConstant(*staticValue, *typeDecl, location);
+    }
+    mlir::Value value = visit_expr(operand);
+    if (!value)
+      return nullptr;
+    auto source = mlir::dyn_cast<mlir::ada::QualType>(value.getType());
+    auto isEnum = [&](mlir::ada::QualType type) {
+      mlir::ada::TypeOp root = mlir::ada::rootOfAdaType(
+          builder.getInsertionBlock()->getParentOp(), type.getAdaType());
+      return root && mlir::isa_and_nonnull<mlir::ada::EnumTypeInfoAttr>(
+                         root.getTypeInfoAttr());
+    };
+    mlir::Type from = source ? source.getMlirType() : mlir::Type();
+    mlir::Type to = target.getMlirType();
+    // @todo Conversions between integer and float types, of enumeration types
+    // (by position, @rm{4-6}), of universal real operands, and the static
+    // evaluation of a static conversion of a typed operand (@rm{4-9}(35)).
+    if (!mlir::isa_and_nonnull<mlir::IntegerType, mlir::FloatType>(from) ||
+        !mlir::isa<mlir::IntegerType, mlir::FloatType>(to) ||
+        mlir::isa<mlir::FloatType>(from) != mlir::isa<mlir::FloatType>(to) ||
+        isEnum(source) || isEnum(target)) {
+      mlir::emitError(location, "unsupported type conversion");
+      return nullptr;
+    }
+    return emitConversion(value, target, mlir::ada::AdaConversionKind::Explicit,
+                          location);
+  }
+
   /// Helper returning the indexed element memref for an indexing operation
   /// (load and store). It normalizes the index and emits an ada.index
   /// operation.
@@ -1743,6 +1802,8 @@ private:
       switch (kind) {
       case ADA_CALL_EXPR_KIND_ARRAY_INDEX:
         return mlirGenIndexValue(expr);
+      case ADA_CALL_EXPR_KIND_TYPE_CONVERSION:
+        return mlirGenTypeConversion(expr);
       default:
         return mlirGenCallExprValue(expr);
       }
