@@ -13,7 +13,8 @@ flowchart TD
 
     ada --> |--emit=mlir|m2r["mem2reg"]
     ada --> |--emit=llvm|cc["ClosureConversion"]
-    cc --> m2r
+    cc --> conv["LowerAdaConversions"]
+    conv --> m2r
     m2r -->|--emit=mlir| dmlir(["MLIR dump"])
 
     m2r --> |--emit=llvm|cu["DICompileUnitAda"]
@@ -27,15 +28,16 @@ flowchart TD
 ```
 
 - `--emit=ast` stops after Libadalang and dumps the AST.
-- `--emit=mlir` runs MLIRGen (and `mem2reg` from `-O1`) and dumps the Ada
-  dialect.
+- `--emit=mlir` runs MLIRGen (and `mem2reg` and the canonicalizer from `-O1`)
+  and dumps the Ada dialect.
 - `--emit=llvm` runs the full lowering chain above, then translates to LLVM IR.
 - `--emit=obj` / `--emit=asm` run the LLVM backend on that IR to write an object
   file or target assembly for the host target.
 
-`mem2reg` runs from `-O1`; the default `-O0` leaves locals in memory. The
-debug-info passes (`DICompileUnitAda`, `DIScopeForLLVMFuncOp`, `AdaDebugInfo`)
-run only under `-g`. The diagram above shows the full `-O1 -g` pipeline.
+`mem2reg` and the canonicalizer run from `-O1`. The default `-O0` leaves locals
+in memory. The debug-info passes (`DICompileUnitAda`, `DIScopeForLLVMFuncOp`,
+`AdaDebugInfo`) run only under `-g`. The diagram above shows the full `-O1 -g`
+pipeline.
 
 ## Architecture
 
@@ -56,6 +58,9 @@ LLVM by a sequence of MLIR passes. The dialect's operations:
 | `ada.attr`        | Scalar attribute (`'First`/`'Last`) read from a range descriptor.                                                                                 |
 | `ada.index`       | Location of an array element: a `memref` of the component, from the array's `memref` and a zero-based offset.                                     |
 | `ada.unwrap`      | Exposes the machine value under an `!ada.qual`, dropping the Ada identity.                                                                        |
+| `ada.convert`     | Ada type conversion (`explicit` or `implicit`), expanded by LowerAdaConversions.                                                                  |
+| `ada.requalify`   | Changes only the Ada type identity of a value already valid for the target.                                                                       |
+| `ada.wrap`        | Gives a machine value an Ada type identity (inverse of `ada.unwrap`).                                                                             |
 | `ada.null`        | The null statement.                                                                                                                               |
 | `ada.decls`       | Symbol container for nested subprograms and local types.                                                                                          |
 | `ada.call`        | Subprogram call (procedure or function).                                                                                                          |
@@ -77,6 +82,9 @@ The generator and passes, in pipeline order:
   references (a nested subprogram reading or writing an enclosing variable) into
   explicit parameters, then hoists the now self-contained nested subprograms to
   module level. Runs before `mem2reg`.
+- **LowerAdaConversions** (`mlir/LowerAdaConversions.cpp`): expands each
+  `ada.convert` into its checks, representation change (`ada.unwrap`, `arith`
+  cast, `ada.wrap`) and `ada.requalify`.
 - **HoistNestedSymbolOperations** (`mlir/HoistNestedSymbolOperations.cpp`):
   applies GNAT ABI name mangling to every subprogram (`_ada_` prefix for
   library-level ones, `parent__child` for nested ones, GNAT O-names for
