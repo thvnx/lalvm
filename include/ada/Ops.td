@@ -291,6 +291,7 @@ def CoerceOp : Ada_Op<"coerce", [Pure]> {
 
 // Ada type conversion (@rm{4-6}) representation.
 def ConvertOp : Ada_Op<"convert", [NoMemoryEffect,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>,
     OptionalTypesMatchWith<"range matches the target subtype", "result",
                    "range",
                    "::mlir::ada::RangeType::get($_self.getContext(), "
