@@ -7,7 +7,6 @@
 -- Scalar `out` is passed by reference: only the callee converts.
 
 -- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_out.small>
--- CHECK-NOT: ada.coerce
 -- CHECK-NOT: ada.convert
 -- CHECK: ada.call @param_out.set(
 

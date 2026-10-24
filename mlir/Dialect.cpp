@@ -497,26 +497,6 @@ std::optional<llvm::APSInt> ConstantOp::getIntValue() {
 }
 
 //===----------------------------------------------------------------------===//
-// CoerceOp
-//===----------------------------------------------------------------------===//
-
-llvm::LogicalResult CoerceOp::verify() {
-  auto inTyped = mlir::cast<ada::QualType>(getInput().getType());
-  auto outTyped = mlir::cast<ada::QualType>(getResult().getType());
-  if (inTyped == outTyped)
-    return emitOpError() << "input and result types are identical; "
-                            "use the value directly";
-  bool intToInt = mlir::isa<mlir::IntegerType>(inTyped.getMlirType()) &&
-                  mlir::isa<mlir::IntegerType>(outTyped.getMlirType());
-  bool floatToFloat = mlir::isa<mlir::FloatType>(inTyped.getMlirType()) &&
-                      mlir::isa<mlir::FloatType>(outTyped.getMlirType());
-  if (!intToInt && !floatToFloat)
-    return emitOpError() << "unsupported conversion: " << inTyped.getMlirType()
-                         << " to " << outTyped.getMlirType();
-  return mlir::success();
-}
-
-//===----------------------------------------------------------------------===//
 // ConvertOp
 //===----------------------------------------------------------------------===//
 

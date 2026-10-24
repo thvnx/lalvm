@@ -8,7 +8,6 @@
 
 -- CHECK: ada.binop "+" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @param_in_out.small>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in_out.small>
--- CHECK-NOT: ada.coerce
 -- CHECK-NOT: ada.convert
 -- CHECK: ada.call @param_in_out.inc(
 

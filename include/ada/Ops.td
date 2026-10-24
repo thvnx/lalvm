@@ -254,42 +254,6 @@ def ConstantOp : Ada_Op<"constant", [Pure, ConstantLike]> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoerceOp
-//===----------------------------------------------------------------------===//
-
-// Emitted by MLIRGen at every point where a value flows into a typed location:
-// parameter passing, assignment, return, object initialization, and explicit
-// type conversions (@rm{4-6}). Lowered to an arith cast when the underlying MLIR
-// types differ; a no-op otherwise. Future: will also emit a range check against
-// the target type's bounds before the cast, raising Constraint_Error on
-// violation.
-def CoerceOp : Ada_Op<"coerce", [Pure]> {
-  let summary = "Ada value coercion between types";
-  let description = [{
-    Represents the coercion of a value to a target Ada type (@rm{4-6}). Emitted
-    at every point where a value flows into a typed location: explicit type
-    conversions, assignments, parameter passing, and return statements.
-
-    When the underlying MLIR types differ, lowers to the appropriate arith
-    cast (`arith.trunci`, `arith.extsi`, `arith.extui`, `arith.truncf`,
-    `arith.extf`). When the types match (same machine representation, different
-    Ada type), lowers to a value forward.
-
-    Example:
-
-    ```mlir
-    %1 = ada.coerce %0
-        : !ada.qual<f64, @standard.universal_real_type_>
-          to !ada.qual<f32, @standard.float>
-    ```
-  }];
-  let arguments = (ins Ada_QualType:$input);
-  let results = (outs Ada_QualType:$result);
-  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($result)";
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // ConvertOp
 //===----------------------------------------------------------------------===//
 

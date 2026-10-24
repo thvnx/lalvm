@@ -1118,28 +1118,6 @@ private:
     return mlir::ada::QualType::get(ctx, mlirType, typeRef);
   }
 
-  /// Return the base type (@rm{3-5}) of `type`, whose `ada.type` is `typeOp`.
-  mlir::ada::QualType baseQualType(mlir::ada::QualType type,
-                                   mlir::ada::TypeOp typeOp) {
-    if (!typeOp || !typeOp.getBaseAttr())
-      return type;
-    return mlir::ada::QualType::get(builder.getContext(), type.getMlirType(),
-                                    typeOp.getBaseAttr());
-  }
-
-  /// Same, looking the `ada.type` up from the current insertion block.
-  mlir::ada::QualType baseQualType(mlir::ada::QualType type) {
-    mlir::Block *block = builder.getInsertionBlock();
-    mlir::FlatSymbolRefAttr base =
-        block
-            ? mlir::ada::baseOfAdaType(block->getParentOp(), type.getAdaType())
-            : nullptr;
-    if (!base || base == type.getAdaType())
-      return type;
-    return mlir::ada::QualType::get(builder.getContext(), type.getMlirType(),
-                                    base);
-  }
-
   /// Build the `ada.qual<mlirType, @adaSym>` type for a type declaration.
   /// Returns a null type if the declaration is not supported.
   mlir::ada::QualType getAdaQualType(ada_node &type_decl,
@@ -1164,17 +1142,6 @@ private:
       return {};
     }
     return getAdaQualType(type_decl.value(), loc(type_expr));
-  }
-
-  /// Convert `val` to type `expected`: a Constraint_Check (@rm{11-5}) when
-  /// `expected` is a constrained subtype, otherwise an `ada.coerce` if `val`
-  /// does not already have type `expected`.
-  mlir::Value coerce(mlir::Value val, mlir::ada::QualType expected,
-                     mlir::Location location) {
-    // A value already of `expected` satisfies its constraint.
-    if (val.getType() == expected)
-      return val;
-    return constrainToSubtype(val, expected, location);
   }
 
   /// Convert the value `val` to `target` (@rm{4-6}) with an `ada.convert`,
@@ -1212,66 +1179,6 @@ private:
     }
     return mlir::ada::ConvertOp::create(builder, location, target, kind, val,
                                         range);
-  }
-
-  /// Convert `src` to `target`, emitting a Constraint_Check (@rm{11-5}) when
-  /// `target` is a constrained scalar subtype. A static source value (`src` an
-  /// `ada.constant`) is resolved at emission like a literal site: in range ->
-  /// no check, out of range -> diagnostics. A dynamic source is checked at run
-  /// time against a descriptor: constant bounds for a static-bound subtype, or
-  /// the one elaborated at the subtype declaration for a dynamic-bound one.
-  /// The check itself yields the `target` value: a source outside the
-  /// subtype's base type is first coerced to that base. Without a check (base
-  /// types, unconstrained subtypes, floats, in range static values), `src` is
-  /// coerced to `target` when their types differ.
-  mlir::Value constrainToSubtype(mlir::Value src, mlir::ada::QualType target,
-                                 mlir::Location location) {
-    auto retype = [&]() -> mlir::Value {
-      if (src.getType() == target)
-        return src;
-      return mlir::ada::CoerceOp::create(builder, location, target, src);
-    };
-    mlir::ada::TypeOp typeOp = mlir::ada::lookupAdaType(
-        builder.getInsertionBlock()->getParentOp(), target.getAdaType());
-    if (!typeOp || !typeOp.getBaseAttr())
-      return retype(); // base types are unconstrained at this layer
-    auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
-        typeOp.getTypeInfoAttr());
-    if (!info)
-      return retype(); // unconstrained subtype (pure renaming)
-
-    // The bounds, and the checked value, have the base type (RM 3.5).
-    auto baseQual = baseQualType(target, typeOp);
-    mlir::Value range;
-    mlir::IntegerAttr loAttr = info.staticLower(), hiAttr = info.staticUpper();
-    if (!loAttr || !hiAttr) {
-      // Dynamic bounds: the descriptor elaborated once at the subtype decl.
-      range = findDynamicRange(target.getAdaType());
-      if (!range)
-        return retype();
-    } else {
-      // Static bounds: a static source value in range needs no check, and one
-      // out of range warns and keeps the check, which raises at run time. A
-      // dynamic value checks against constant bounds, reusing one descriptor
-      // per block rather than re-emitting per check.
-      if (auto cst = src.getDefiningOp<mlir::ada::ConstantOp>())
-        if (std::optional<llvm::APSInt> value = cst.getIntValue())
-          if (!warnOutOfSubtypeRange(*value, loAttr.getAPSInt(),
-                                     hiAttr.getAPSInt(), typeOp.getSymName(),
-                                     location))
-            return retype();
-      range = mlir::ada::getOrCreateStaticRange(
-          builder, location, target.getAdaType(), baseQual, loAttr.getValue(),
-          hiAttr.getValue());
-    }
-    // A source of the base type, or of another subtype of it, is checked as
-    // is. Any other is coerced to the base type first.
-    mlir::Value checked = src;
-    auto srcType = mlir::dyn_cast<mlir::ada::QualType>(src.getType());
-    if (!srcType || baseQualType(srcType) != baseQual)
-      checked = mlir::ada::CoerceOp::create(builder, location, baseQual, src);
-    return mlir::ada::RangeCheckOp::create(builder, location, target, checked,
-                                           range);
   }
 
   /// Return the `ada.type` op for a type declaration, emitting it lazily at

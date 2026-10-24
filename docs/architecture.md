@@ -47,7 +47,6 @@ LLVM by a sequence of MLIR passes. The dialect's operations:
 | `ada.type`        | Declares a type or subtype: machine type plus a kind-specific metadata attribute (`int_info`/`enum_info`/`float_info`) and an optional base link. |
 | `ada.alloca`      | Stack slot for a local object (a `memref` of an `!ada.qual`).                                                                                     |
 | `ada.constant`    | A typed scalar constant.                                                                                                                          |
-| `ada.coerce`      | Representation conversion between related subtypes (widen, narrow, or to base).                                                                   |
 | `ada.binop`       | Predefined arithmetic (`+`, `-`, `*`, `/`) or logical (`and`, `or`, `xor`) operator, with an optional `checks<overflow\|division>` group.         |
 | `ada.cmp`         | Relational comparison (`=`, `/=`, `<`, ...); Boolean result.                                                                                      |
 | `ada.unop`        | Predefined unary operator (`not`, `+`, `-`, `abs`).                                                                                               |

@@ -202,60 +202,6 @@ struct ConstantOpLowering : public OpConversionPattern<ada::ConstantOp> {
   }
 };
 
-// OpConversionPattern: needs getTypeConverter()->convertType() for the result
-// type and adaptor operands that have already been type-converted by upstream
-// patterns.
-struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
-  using OpConversionPattern<ada::CoerceOp>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ada::CoerceOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    mlir::Value input = adaptor.getInput();
-    mlir::Type resultType =
-        getTypeConverter()->convertType(op.getResult().getType());
-    if (input.getType() == resultType) {
-      rewriter.replaceOp(op, input);
-      return success();
-    }
-
-    auto resultTyped = mlir::cast<ada::QualType>(op.getResult().getType());
-    mlir::Location loc =
-        ada::attachAdaTypeRef(op.getLoc(), resultTyped.getAdaType());
-
-    if (auto srcInt = mlir::dyn_cast<mlir::IntegerType>(input.getType())) {
-      if (auto dstInt = mlir::dyn_cast<mlir::IntegerType>(resultType)) {
-        mlir::Operation *newOp;
-        if (dstInt.getWidth() < srcInt.getWidth()) {
-          newOp = arith::TruncIOp::create(rewriter, loc, resultType, input);
-        } else {
-          // Modular (unsigned) source types need zero-extension; signed types
-          // need sign-extension.
-          auto inTyped = mlir::cast<ada::QualType>(op.getInput().getType());
-          newOp =
-              isModularQualType(op, inTyped)
-                  ? arith::ExtUIOp::create(rewriter, loc, resultType, input)
-                  : arith::ExtSIOp::create(rewriter, loc, resultType, input);
-        }
-        rewriter.replaceOp(op, newOp);
-        return success();
-      }
-    }
-    if (auto srcFloat = mlir::dyn_cast<mlir::FloatType>(input.getType())) {
-      if (auto dstFloat = mlir::dyn_cast<mlir::FloatType>(resultType)) {
-        mlir::Operation *newOp =
-            dstFloat.getWidth() < srcFloat.getWidth()
-                ? arith::TruncFOp::create(rewriter, loc, resultType, input)
-                : arith::ExtFOp::create(rewriter, loc, resultType, input);
-        rewriter.replaceOp(op, newOp);
-        return success();
-      }
-    }
-    return rewriter.notifyMatchFailure(
-        op, "cross-kind conversion not yet supported");
-  }
-};
-
 // OpConversionPattern: the `!ada.range` result lowers to an LLVM struct, built
 // `undef` + one `insertvalue` per bound. The adaptor gives the bounds already
 // converted to bare machine types.
@@ -1292,7 +1238,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
                UnOpLowering, UnwrapOpLowering, WrapOpLowering, SubpOpLowering,
-               ConstantOpLowering, CoerceOpLowering, RangeOpLowering,
+               ConstantOpLowering, RangeOpLowering,
                InRangeCheckOpLowering<ada::RangeCheckOp>,
                InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
                IndexOpLowering, RequalifyOpLowering>(typeConverter,
