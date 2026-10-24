@@ -99,7 +99,7 @@ mlir::Value createRange(mlir::OpBuilder &builder, mlir::Location loc,
                         mlir::FlatSymbolRefAttr sym);
 
 /// A constant-bounds `ada.range` descriptor of subtype `sym`: one earlier in
-/// the current block, or a new one with `baseQual` bounds.
+/// the current block with the same bounds, or a new one with `baseQual` bounds.
 mlir::Value getOrCreateStaticRange(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::FlatSymbolRefAttr sym,
                                    QualType baseQual, const llvm::APInt &lo,

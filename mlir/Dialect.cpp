@@ -1178,18 +1178,29 @@ mlir::Value mlir::ada::createRange(mlir::OpBuilder &builder, mlir::Location loc,
 mlir::Value mlir::ada::getOrCreateStaticRange(
     mlir::OpBuilder &builder, mlir::Location loc, mlir::FlatSymbolRefAttr sym,
     QualType baseQual, const llvm::APInt &lo, const llvm::APInt &hi) {
-  // A descriptor before the insertion point in the same block dominates it.
+  auto intType = mlir::cast<mlir::IntegerType>(baseQual.getMlirType());
+  llvm::APInt low = lo.sextOrTrunc(intType.getWidth());
+  llvm::APInt high = hi.sextOrTrunc(intType.getWidth());
+  // A descriptor of `sym` with the same bounds, before the insertion point in
+  // the same block, dominates it.
+  auto sameBound = [](mlir::TypedAttr attr, const llvm::APInt &value) {
+    auto intAttr = mlir::dyn_cast_or_null<mlir::IntegerAttr>(attr);
+    return intAttr && intAttr.getValue() == value;
+  };
   if (mlir::Block *block = builder.getInsertionBlock())
     for (mlir::Operation &op :
          llvm::make_range(block->begin(), builder.getInsertionPoint()))
       if (auto rangeOp = mlir::dyn_cast<RangeOp>(&op))
         if (mlir::cast<RangeType>(rangeOp.getType()).getConstrainedType() ==
-            sym)
-          return rangeOp.getResult();
+            sym) {
+          auto [loAttr, hiAttr] = rangeOp.staticBounds();
+          if (sameBound(loAttr, low) && sameBound(hiAttr, high))
+            return rangeOp.getResult();
+        }
   // Separate statements: the bounds are emitted in order.
-  mlir::Value low = createIntConstant(builder, loc, baseQual, lo);
-  mlir::Value high = createIntConstant(builder, loc, baseQual, hi);
-  return createRange(builder, loc, low, high, sym);
+  mlir::Value loValue = createIntConstant(builder, loc, baseQual, low);
+  mlir::Value hiValue = createIntConstant(builder, loc, baseQual, high);
+  return createRange(builder, loc, loValue, hiValue, sym);
 }
 
 //===----------------------------------------------------------------------===//
