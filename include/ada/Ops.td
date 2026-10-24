@@ -665,6 +665,28 @@ def UnwrapOp : Ada_Op<"unwrap", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// WrapOp
+//===----------------------------------------------------------------------===//
+
+// Inverse of `ada.unwrap`: gives a builtin MLIR value an Ada type identity.
+def WrapOp : Ada_Op<"wrap", [Pure]> {
+  let summary = "Give an MLIR value an Ada type identity";
+  let description = [{
+    Converts a value of MLIR type `T` to `ada.qual<T, @sym>`. The lowered
+    `ada.qual<T>` is just `T`, so this op folds away during lowering.
+
+    ```mlir
+    %1 = ada.wrap %0 : i32 to !ada.qual<i32, @standard.integer>
+    ```
+  }];
+  let arguments = (ins AnyType:$value);
+  let results = (outs Ada_QualType:$result);
+  let assemblyFormat =
+      "$value attr-dict `:` type($value) `to` qualified(type($result))";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // NullOp
 //===----------------------------------------------------------------------===//
 

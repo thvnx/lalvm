@@ -1054,6 +1054,18 @@ struct UnwrapOpLowering : public OpConversionPattern<ada::UnwrapOp> {
   }
 };
 
+// ada.wrap, the inverse of ada.unwrap (it is a no-op too).
+struct WrapOpLowering : public OpConversionPattern<ada::WrapOp> {
+  using OpConversionPattern<ada::WrapOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::WrapOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getValue());
+    return success();
+  }
+};
+
 // ada.requalify only changes the Ada type identity, which the type converter
 // erases: forward the converted operand.
 struct RequalifyOpLowering : public OpConversionPattern<ada::RequalifyOp> {
@@ -1295,7 +1307,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
-               UnOpLowering, UnwrapOpLowering, SubpOpLowering,
+               UnOpLowering, UnwrapOpLowering, WrapOpLowering, SubpOpLowering,
                ConstantOpLowering, CoerceOpLowering, RangeOpLowering,
                InRangeCheckOpLowering<ada::RangeCheckOp>,
                InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
