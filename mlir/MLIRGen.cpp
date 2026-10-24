@@ -790,10 +790,8 @@ private:
         !ada_node_is_null(&type_decl))
       resultType = getAdaQualType(type_decl, loc(binop));
 
-    // Relational operators (@rm{4-5-2}) yield Boolean, so the result type is
-    // not the coercion target. Coerce both operands to the base type of the
-    // left one
-    // (@rm{3-5}): no subtype constraint applies.
+    // Relational operators (@rm{4-5-2}) yield Boolean. Their operands are
+    // values of one type, whatever their subtypes: no conversion.
     switch (ada_node_kind(&op)) {
     case ada_op_eq:
     case ada_op_neq:
@@ -801,12 +799,6 @@ private:
     case ada_op_lte:
     case ada_op_gt:
     case ada_op_gte:
-      if (auto operandType =
-              mlir::dyn_cast<mlir::ada::QualType>(lhs.getType())) {
-        operandType = baseQualType(operandType);
-        lhs = coerce(lhs, operandType, loc(binop));
-        rhs = coerce(rhs, operandType, loc(binop));
-      }
       return emitCmpOp(op, lhs, rhs, resultType);
     default:
       break;

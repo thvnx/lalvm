@@ -580,21 +580,21 @@ def BinOp : Ada_Op<"binop", [NoMemoryEffect,
 // CmpOp
 //===----------------------------------------------------------------------===//
 
-// SameTypeOperands constrains both operands to share one type; the result is
-// always Boolean and therefore declared separately. The result type is passed
-// explicitly to the builder rather than inferred.
-def CmpOp : Ada_Op<"cmp", [Pure, SameTypeOperands]> {
+def CmpOp : Ada_Op<"cmp", [Pure,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Ada predefined relational operation";
   let description = [{
     Represents an Ada predefined relational operation (@rm{4-5-2}). The operator
     is encoded as an `AdaRelationalOp` enum attribute.
 
-    Both operands share one type (`SameTypeOperands`); the result is the
-    predefined type `Boolean`, so the result type differs from the operand type
-    and is printed in functional form:
+    Both operands are values of one type, of any of its subtypes: they share a
+    machine type and a base type. The result is the predefined type `Boolean`:
 
     ```mlir
-    %0 = ada.cmp "=" %a, %b : (i32, i32) -> i1
+    %0 = ada.cmp "<" %a, %b
+        : (!ada.qual<i32, @standard.positive>,
+           !ada.qual<i32, @standard.integer>)
+       -> !ada.qual<i1, @standard.boolean>
     ```
   }];
 
