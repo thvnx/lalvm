@@ -7,7 +7,7 @@
 
 -- CHECK-LABEL: ada.subp @number_decl_paren()
 -- CHECK:         %[[UPI:.*]] = ada.constant : !ada.qual<f128, @standard.universal_real_type_> = {{.*}}
--- CHECK-NEXT:    %[[PI:.*]] = ada.coerce %[[UPI]] : <f128, @standard.universal_real_type_> to <f32, @standard.float>
+-- CHECK-NEXT:    %[[PI:.*]] = ada.convert implicit %[[UPI]] : !ada.qual<f128, @standard.universal_real_type_> to !ada.qual<f32, @standard.float>
 -- CHECK-NEXT:    ada.return %[[PI]] : !ada.qual<f32, @standard.float>
 
 function Number_Decl_Paren return Float is

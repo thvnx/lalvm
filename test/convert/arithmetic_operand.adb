@@ -7,7 +7,7 @@
 
 -- CHECK: %[[Y:.*]] = memref.load
 -- CHECK-NEXT: ada.binop "+" %[[Y]], %arg0 checks<overflow> : (!ada.qual<i32, @arithmetic_operand.small>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- CHECK: %[[TWO:.*]] = ada.coerce %{{.*}} : <i512, @standard.universal_int_type_> to <i32, @standard.integer>
+-- CHECK: %[[TWO:.*]] = ada.convert implicit %{{.*}} : !ada.qual<i512, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
 -- CHECK: ada.binop "/" %{{.*}}, %[[TWO]] : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 function Arithmetic_Operand (I : Integer) return Integer is

@@ -8,7 +8,7 @@
 -- MLIR-LABEL: ada.subp @named_number
 -- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 200 loc("max"(
--- MLIR:         %[[MAX:.*]] = ada.coerce {{.*}} : <i512, @standard.universal_int_type_> to <i32, @standard.integer>
+-- MLIR:         %[[MAX:.*]] = ada.convert implicit {{.*}} : !ada.qual<i512, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.return %[[MAX]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_named_number(

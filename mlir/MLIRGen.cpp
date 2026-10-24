@@ -641,10 +641,10 @@ private:
         // Resolve the Division_Check against a static divisor at compile time
         // (@rm{11-5}), GNAT-style: a constant nonzero divisor needs no run-time
         // check, while a constant zero divisor fails statically. The divisor
-        // may sit behind a representation `ada.coerce`.
+        // may sit behind an `ada.convert` (a literal or a named number).
         mlir::Value divisor = rhs;
-        if (auto co = divisor.getDefiningOp<mlir::ada::CoerceOp>())
-          divisor = co.getInput();
+        if (auto convert = divisor.getDefiningOp<mlir::ada::ConvertOp>())
+          divisor = convert.getInput();
         if (auto cst = divisor.getDefiningOp<mlir::ada::ConstantOp>())
           if (auto iv = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
             if (iv.getValue().isZero()) {
@@ -1045,7 +1045,11 @@ private:
     mlir::ada::QualType baseType = getAdaQualType(base, location);
     if (!type || !baseType)
       return nullptr;
-    return coerce(emitIntConstant(value, baseType, location), type, location);
+    mlir::Value constant = emitIntConstant(value, baseType, location);
+    if (type == baseType)
+      return constant;
+    return emitConversion(constant, type,
+                          mlir::ada::AdaConversionKind::Implicit, location);
   }
 
   mlir::Value mlirGenIntLiteral(ada_node &node) {
@@ -1738,7 +1742,11 @@ private:
             mlir::ada::QualType tgtType = resolveLiteralQualType(expr, exprLoc);
             if (!tgtType)
               return nullptr;
-            return coerce(value, tgtType, exprLoc);
+            if (value.getType() == tgtType)
+              return value;
+            return emitConversion(value, tgtType,
+                                  mlir::ada::AdaConversionKind::Implicit,
+                                  exprLoc);
           }
           mlir::emitError(loc(expr), "failed to evaluate named number");
           return nullptr;
@@ -1839,7 +1847,7 @@ private:
   /// **Implementation Details**: Each `DefiningName` is entered in
   /// `numberDecls` with an `ada.constant` SSA value at universal type (null
   /// only when Libadalang fails to evaluate the expression, diagnosed at the
-  /// use site). Use-site resolution emits `ada.coerce` from the universal
+  /// use site). Use-site resolution emits an `ada.convert` from the universal
   /// constant to the concrete type required by context.
   mlir::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
@@ -1868,7 +1876,7 @@ private:
       }
     }
 
-    // Evaluate to a universal-typed constant; each use site coerces it to the
+    // Evaluate to a universal-typed constant; each use site converts it to the
     // concrete type its context requires.
     mlir::TypedAttr constAttr;
     mlir::ada::TypeOp typeOp;
@@ -3636,8 +3644,8 @@ private:
 
   /// Emit an if expression (@rm{4-5-7}) as a (possibly nested) `scf.if` that
   /// yields the expression's value. The expected type T is applied to every
-  /// dependent_expression (@rm{4-5-7}(8/3)), so each branch value is coerced to
-  /// T before being yielded. `elsif` parts nest as an `scf.if` in the else
+  /// dependent_expression (@rm{4-5-7}(8/3)), so each branch value is converted
+  /// to T before being yielded. `elsif` parts nest as an `scf.if` in the else
   /// region; conditions are thus tested in order, the first True winning
   /// (@rm{4-5-7}(20/3)). When the `else` part is absent the if expression is of
   /// a boolean type and the missing else yields `True` (@rm{4-5-7}(18/3,
