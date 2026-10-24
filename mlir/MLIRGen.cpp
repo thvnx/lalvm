@@ -1189,7 +1189,8 @@ private:
   /// which LowerAdaConversions expands into its checks and casts. `kind`
   /// records whether the conversion is written in the source or applied by
   /// the language. A target with a dynamic bound takes the descriptor
-  /// elaborated at its declaration. Returns null after a diagnostic.
+  /// elaborated at its declaration. A constant outside a static subtype warns
+  /// that its check raises (@rm{11-5}). Returns null after a diagnostic.
   ///
   /// @todo View conversions of tagged objects (@rm{4-6}(5/2)).
   mlir::Value emitConversion(mlir::Value val, mlir::ada::QualType target,
@@ -1201,13 +1202,21 @@ private:
     auto info = typeOp ? mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
                              typeOp.getTypeInfoAttr())
                        : mlir::ada::IntegerTypeInfoAttr();
-    if (info && (!info.staticLower() || !info.staticUpper())) {
+    mlir::IntegerAttr lo = info ? info.staticLower() : mlir::IntegerAttr();
+    mlir::IntegerAttr hi = info ? info.staticUpper() : mlir::IntegerAttr();
+    if (info && (!lo || !hi)) {
       range = findDynamicRange(target.getAdaType());
       if (!range) {
         mlir::emitError(location, "no range descriptor in scope for '")
             << typeOp.getSymName() << "'";
         return nullptr;
       }
+    } else if (info && typeOp.getBaseAttr()) {
+      if (auto cst = val.getDefiningOp<mlir::ada::ConstantOp>())
+        if (std::optional<llvm::APSInt> value = cst.getIntValue())
+          warnOutOfSubtypeRange(*value, mlir::ada::boundValue(lo),
+                                mlir::ada::boundValue(hi), typeOp.getSymName(),
+                                location);
     }
     return mlir::ada::ConvertOp::create(builder, location, target, kind, val,
                                         range);
@@ -3787,12 +3796,17 @@ private:
       return mlir::failure();
     }
 
-    // Coerce to the declared type of the variable (handles subtypes and
-    // implicit conversions).
+    // Convert to the subtype of the target (@rm{5-2}(11)).
     auto memrefTy = mlir::cast<mlir::MemRefType>(ptr.getType());
     if (auto elemType =
             mlir::dyn_cast<mlir::ada::QualType>(memrefTy.getElementType()))
-      rhs = coerce(rhs, elemType, loc(assign_stmt));
+      if (rhs.getType() != elemType) {
+        rhs = emitConversion(rhs, elemType,
+                             mlir::ada::AdaConversionKind::Implicit,
+                             loc(assign_stmt));
+        if (!rhs)
+          return mlir::failure();
+      }
 
     mlir::memref::StoreOp::create(
         builder, propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
