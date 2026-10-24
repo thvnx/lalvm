@@ -5,6 +5,7 @@
 #define ADA_DIALECT_H
 
 #include "mlir/Bytecode/BytecodeOpInterface.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
@@ -12,6 +13,7 @@
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "llvm/ADT/APInt.h"
 
 /// Include the auto-generated header file containing the declaration of the Ada
 /// dialect.
@@ -55,11 +57,49 @@ std::string libraryLevelSymbol(llvm::StringRef name);
 /// Returns the symbol op, or null.
 mlir::Operation *lookupSymbolFrom(mlir::Operation *from, llvm::StringRef name);
 
-/// Return the base type of the Ada type `sym` visible from `from` (resolved
-/// with `lookupSymbolFrom`), or `sym` itself when it is a base type. Returns
-/// null when `sym` does not resolve to an `ada.type`.
+/// The `ada.type` named by `sym`, looked up from `from` (or anywhere in the
+/// module, for a subprogram hoisted out of its scope), or null.
+TypeOp lookupAdaType(mlir::Operation *from, mlir::FlatSymbolRefAttr sym);
+
+/// The base type of the Ada type `sym`, or `sym` itself when it is a base
+/// type. Null when `sym` does not resolve to an `ada.type`.
 mlir::FlatSymbolRefAttr baseOfAdaType(mlir::Operation *from,
                                       mlir::FlatSymbolRefAttr sym);
+
+/// The root of an Ada type, following `base` links, or null.
+TypeOp rootOfAdaType(TypeOp typeOp);
+TypeOp rootOfAdaType(mlir::Operation *from, mlir::FlatSymbolRefAttr sym);
+
+/// The modulus of an Ada type if it is modular (@rm{3-5-4}), or null.
+mlir::IntegerAttr modulusOfAdaType(TypeOp typeOp);
+mlir::IntegerAttr modulusOfAdaType(mlir::Operation *from,
+                                   mlir::FlatSymbolRefAttr sym);
+
+/// The integer metadata of the Ada type `sym`, or of its base for a pure
+/// renaming, or null.
+IntegerTypeInfoAttr intTypeInfoOfAdaType(mlir::Operation *from,
+                                         mlir::FlatSymbolRefAttr sym);
+
+/// Whether `value` lies in `lo..hi`, compared as signed unless `isUnsigned`.
+/// The three values may have different bit widths.
+bool inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
+                   const llvm::APInt &hi, bool isUnsigned);
+
+/// Build an integer `ada.constant` of `type`, `value` fit to its width.
+mlir::Value createIntConstant(mlir::OpBuilder &builder, mlir::Location loc,
+                              QualType type, const llvm::APInt &value);
+
+/// Build an `ada.range` descriptor of subtype `sym` from base type bounds.
+mlir::Value createRange(mlir::OpBuilder &builder, mlir::Location loc,
+                        mlir::Value lo, mlir::Value hi,
+                        mlir::FlatSymbolRefAttr sym);
+
+/// A constant-bounds `ada.range` descriptor of subtype `sym`: one earlier in
+/// the current block, or a new one with `baseQual` bounds.
+mlir::Value getOrCreateStaticRange(mlir::OpBuilder &builder, mlir::Location loc,
+                                   mlir::FlatSymbolRefAttr sym,
+                                   QualType baseQual, const llvm::APInt &lo,
+                                   const llvm::APInt &hi);
 } // namespace ada
 } // namespace mlir
 
