@@ -8,8 +8,9 @@
 // CHECK: error: failed to legalize operation 'ada.convert'
 
 module {
-  ada.subp @convert(%v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer> {
-    %r = ada.convert explicit %v : !ada.qual<i32, @integer> to !ada.qual<i32, @integer>
-    ada.return %r : !ada.qual<i32, @integer>
+  ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
+  ada.subp @unresolved(%v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @undeclared> {
+    %r = ada.convert explicit %v : !ada.qual<i32, @integer> to !ada.qual<i32, @undeclared>
+    ada.return %r : !ada.qual<i32, @undeclared>
   }
 }
