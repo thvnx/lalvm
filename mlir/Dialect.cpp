@@ -532,6 +532,23 @@ llvm::LogicalResult ConvertOp::verify() {
   return mlir::success();
 }
 
+llvm::LogicalResult ConvertOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  // A target subtype with a dynamic bound takes the descriptor elaborated at
+  // its declaration (@rm{3-2-2}). Unresolved types are not checked.
+  auto target = mlir::cast<QualType>(getType());
+  if (getRange() || getInput().getType() == target)
+    return mlir::success();
+  TypeOp typeOp = lookupAdaType(*this, target.getAdaType());
+  if (!typeOp || !typeOp.getBaseAttr())
+    return mlir::success();
+  auto info =
+      mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr());
+  if (info && (!info.staticLower() || !info.staticUpper()))
+    return emitOpError() << "target subtype " << target.getAdaType()
+                         << " has a dynamic bound but no range operand";
+  return mlir::success();
+}
+
 //===----------------------------------------------------------------------===//
 // IndexOp
 //===----------------------------------------------------------------------===//
@@ -617,8 +634,7 @@ static llvm::LogicalResult verifySameRepresentation(OpTy op) {
 
 // Both must belong to one type (share a base, @rm{3-2-2}), this is checked when
 // both `ada.type` symbols resolve.
-template <typename OpTy>
-static llvm::LogicalResult verifySameBase(OpTy op) {
+template <typename OpTy> static llvm::LogicalResult verifySameBase(OpTy op) {
   auto source = mlir::cast<ada::QualType>(op.getValue().getType());
   auto target = mlir::cast<ada::QualType>(op.getResult().getType());
   mlir::FlatSymbolRefAttr sourceBase = baseOfAdaType(op, source.getAdaType());
