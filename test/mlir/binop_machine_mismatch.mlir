@@ -5,7 +5,7 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.binop' op operand and result types '!ada.qual<i16, @short>' and '!ada.qual<i32, @integer>' do not share a machine type
+// CHECK: error: 'ada.binop' op requires operands and result to share a machine type, got '!ada.qual<i16, @short>' and '!ada.qual<i32, @integer>'
 
 module {
   ada.subp @bad(%a: !ada.qual<i16, @short>, %b: !ada.qual<i16, @short>) -> !ada.qual<i32, @integer> {
