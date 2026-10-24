@@ -9,7 +9,7 @@
 
 module {
   ada.subp @bad(%a: i1) -> i1 {
-    %0 = ada.unop "_" %a : i1
+    %0 = ada.unop "_" %a : (i1) -> i1
     ada.return %0 : i1
   }
 }

@@ -9,7 +9,7 @@
 
 module {
   ada.subp @bad(%a: !ada.qual<f32, @s>) -> !ada.qual<f32, @s> {
-    %0 = ada.unop "not" %a : !ada.qual<f32, @s>
+    %0 = ada.unop "not" %a : (!ada.qual<f32, @s>) -> !ada.qual<f32, @s>
     ada.return %0 : !ada.qual<f32, @s>
   }
 }

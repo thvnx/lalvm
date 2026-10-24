@@ -10,12 +10,10 @@
 
 -- CHECK-LABEL: ada.subp @unary_range_check(
 -- CHECK:         [[Y:%[0-9]+]] = memref.load %{{[0-9]+}}[] : memref<!ada.qual<i32, @unary_range_check.neg>>
--- CHECK-NEXT:    [[YB:%[0-9]+]] = ada.coerce [[Y]] : <i32, @unary_range_check.neg> to <i32, @standard.integer>
--- CHECK-NEXT:    [[ABS:%[0-9]+]] = ada.unop "abs" [[YB]] checks<overflow> : !ada.qual<i32, @standard.integer>
+-- CHECK-NEXT:    [[ABS:%[0-9]+]] = ada.unop "abs" [[Y]] checks<overflow> : (!ada.qual<i32, @unary_range_check.neg>) -> !ada.qual<i32, @standard.integer>
 -- CHECK-NEXT:    ada.convert implicit [[ABS]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @unary_range_check.neg>
 -- CHECK:         [[Y2:%[0-9]+]] = memref.load %{{[0-9]+}}[] : memref<!ada.qual<i32, @unary_range_check.neg>>
--- CHECK-NEXT:    [[YB2:%[0-9]+]] = ada.coerce [[Y2]] : <i32, @unary_range_check.neg> to <i32, @standard.integer>
--- CHECK-NEXT:    [[NEG:%[0-9]+]] = ada.unop "-" [[YB2]] checks<overflow> : !ada.qual<i32, @standard.integer>
+-- CHECK-NEXT:    [[NEG:%[0-9]+]] = ada.unop "-" [[Y2]] checks<overflow> : (!ada.qual<i32, @unary_range_check.neg>) -> !ada.qual<i32, @standard.integer>
 -- CHECK-NEXT:    ada.convert implicit [[NEG]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @unary_range_check.neg>
 
 -- LOWERED:       ada.unop "abs"

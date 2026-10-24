@@ -9,7 +9,7 @@
 
 module {
   ada.subp @bad(%a: index) -> index {
-    %0 = ada.unop "-" %a : index
+    %0 = ada.unop "-" %a : (index) -> index
     ada.return %0 : index
   }
 }

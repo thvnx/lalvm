@@ -817,6 +817,42 @@ static void printChecks(mlir::OpAsmPrinter &p, mlir::Operation *,
     p << "checks<" << ada::stringifyAdaChecks(checks.getValue()) << ">";
 }
 
+/// The machine type of `type`: its underlying type for an `ada.qual`.
+static mlir::Type machineTypeOf(mlir::Type type) {
+  auto typed = mlir::dyn_cast<ada::QualType>(type);
+  return typed ? typed.getMlirType() : type;
+}
+
+/// Operator values may have different subtypes of one type (@rm{4-5}): `a`
+/// and `b` must both be `ada.qual` or not, with one machine type. `what` names
+/// them in the diagnostic.
+static llvm::LogicalResult verifySameMachineType(mlir::Operation *op,
+                                                 mlir::Type a, mlir::Type b,
+                                                 llvm::StringRef what) {
+  if (mlir::isa<ada::QualType>(a) != mlir::isa<ada::QualType>(b) ||
+      machineTypeOf(a) != machineTypeOf(b))
+    return op->emitOpError() << what << " " << a << " and " << b
+                             << " do not share a machine type";
+  return mlir::success();
+}
+
+/// Same, for the base type, checked when both `ada.type` symbols resolve.
+static llvm::LogicalResult verifySameBaseType(mlir::Operation *op, mlir::Type a,
+                                              mlir::Type b,
+                                              llvm::StringRef what) {
+  auto aQual = mlir::dyn_cast<ada::QualType>(a);
+  auto bQual = mlir::dyn_cast<ada::QualType>(b);
+  if (!aQual || !bQual)
+    return mlir::success();
+  mlir::FlatSymbolRefAttr aBase = baseOfAdaType(op, aQual.getAdaType());
+  mlir::FlatSymbolRefAttr bBase = baseOfAdaType(op, bQual.getAdaType());
+  if (aBase && bBase && aBase != bBase)
+    return op->emitOpError()
+           << what << " " << aQual.getAdaType() << " and " << bQual.getAdaType()
+           << " do not share a base type";
+  return mlir::success();
+}
+
 /// An op with a run-time check can raise Constraint_Error (@rm{11-5}), so it
 /// must not be evaluated where the program would not evaluate it.
 static mlir::Speculation::Speculatability
@@ -849,17 +885,10 @@ mlir::Speculation::Speculatability BinOp::getSpeculatability() {
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult CmpOp::verify() {
-  // The operands may have different subtypes, but share a machine type.
-  auto machineType = [](mlir::Type type) {
-    auto typed = mlir::dyn_cast<ada::QualType>(type);
-    return typed ? typed.getMlirType() : type;
-  };
-  mlir::Type lhsType = getLhs().getType(), rhsType = getRhs().getType();
-  mlir::Type operandType = machineType(lhsType);
-  if (mlir::isa<ada::QualType>(lhsType) != mlir::isa<ada::QualType>(rhsType) ||
-      operandType != machineType(rhsType))
-    return emitOpError() << "operand types " << lhsType << " and " << rhsType
-                         << " do not share a machine type";
+  if (failed(verifySameMachineType(*this, getLhs().getType(),
+                                   getRhs().getType(), "operand types")))
+    return mlir::failure();
+  mlir::Type operandType = machineTypeOf(getLhs().getType());
   if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(operandType))
     return emitOpError() << "unsupported operand type " << operandType
                          << "; expected integer or float";
@@ -874,18 +903,8 @@ llvm::LogicalResult CmpOp::verify() {
 }
 
 llvm::LogicalResult CmpOp::verifySymbolUses(mlir::SymbolTableCollection &) {
-  // Both operands belong to one type (share a base, @rm{4-5-2}), checked when
-  // both `ada.type` symbols resolve.
-  auto lhs = mlir::dyn_cast<ada::QualType>(getLhs().getType());
-  auto rhs = mlir::dyn_cast<ada::QualType>(getRhs().getType());
-  if (!lhs || !rhs)
-    return mlir::success();
-  mlir::FlatSymbolRefAttr lhsBase = baseOfAdaType(*this, lhs.getAdaType());
-  mlir::FlatSymbolRefAttr rhsBase = baseOfAdaType(*this, rhs.getAdaType());
-  if (lhsBase && rhsBase && lhsBase != rhsBase)
-    return emitOpError() << "operand types " << lhs.getAdaType() << " and "
-                         << rhs.getAdaType() << " do not share a base type";
-  return mlir::success();
+  return verifySameBaseType(*this, getLhs().getType(), getRhs().getType(),
+                            "operand types");
 }
 
 //===----------------------------------------------------------------------===//
@@ -893,10 +912,10 @@ llvm::LogicalResult CmpOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult UnOp::verify() {
-  // SameOperandsAndResultType guarantees the operand shares the result type.
-  mlir::Type type = getOperand().getType();
-  if (auto typedType = mlir::dyn_cast<ada::QualType>(type))
-    type = typedType.getMlirType();
+  if (failed(verifySameMachineType(*this, getOperand().getType(), getType(),
+                                   "operand and result types")))
+    return mlir::failure();
+  mlir::Type type = machineTypeOf(getOperand().getType());
 
   if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
     return emitOpError() << "unsupported operand type " << type
@@ -911,6 +930,11 @@ llvm::LogicalResult UnOp::verify() {
                          << "; expected integer or float";
 
   return mlir::success();
+}
+
+llvm::LogicalResult UnOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  return verifySameBaseType(*this, getOperand().getType(), getType(),
+                            "operand and result types");
 }
 
 mlir::Speculation::Speculatability UnOp::getSpeculatability() {

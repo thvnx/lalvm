@@ -10,7 +10,7 @@
 
 module {
   ada.subp @bad(%a: !ada.qual<i1, @s>) -> !ada.qual<i1, @s> {
-    %0 = ada.unop "-" %a : !ada.qual<i1, @s>
+    %0 = ada.unop "-" %a : (!ada.qual<i1, @s>) -> !ada.qual<i1, @s>
     ada.return %0 : !ada.qual<i1, @s>
   }
 }

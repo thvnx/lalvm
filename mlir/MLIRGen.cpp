@@ -825,9 +825,8 @@ private:
     return emitBinOp(op, lhs, rhs, isInteger, modular);
   }
 
-  /// Codegen a unary operation (@rm{4-5-6}) as `ada.unop`. Operand and result
-  /// share the operator's type, so the operand is coerced to the resolved
-  /// result type (which also takes a subtype operand to its base).
+  /// Codegen a unary operation (@rm{4-5-6}) as `ada.unop`. The result has the
+  /// operator's type; the operand keeps its subtype.
   mlir::Value mlirGenUnOp(ada_node &unop) {
     if (auto folded = tryEmitStaticIntExpr(unop))
       return *folded;
@@ -899,10 +898,8 @@ private:
       checks = mlir::ada::AdaChecksAttr::get(builder.getContext(),
                                              mlir::ada::AdaChecks::Overflow);
 
-    operand = coerce(operand, resultType, loc(unop));
-    if (!operand)
-      return nullptr;
-    return mlir::ada::UnOp::create(builder, loc(unop), operand.getType(), kind,
+    // The operand is a value of the type, whatever its subtype: no conversion.
+    return mlir::ada::UnOp::create(builder, loc(unop), resultType, kind,
                                    operand, checks);
   }
 
