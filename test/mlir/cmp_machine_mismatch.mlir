@@ -5,7 +5,7 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.cmp' op operand types '!ada.qual<i32, @integer>' and '!ada.qual<i16, @short>' do not share a machine type
+// CHECK: error: 'ada.cmp' op requires operands to share a machine type, got '!ada.qual<i32, @integer>' and '!ada.qual<i16, @short>'
 
 module {
   ada.subp @bad(%a: !ada.qual<i32, @integer>, %b: !ada.qual<i16, @short>) -> !ada.qual<i1, @boolean> {

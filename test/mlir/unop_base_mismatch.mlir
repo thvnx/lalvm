@@ -5,7 +5,7 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.unop' op operand and result types @count and @integer do not share a base type
+// CHECK: error: 'ada.unop' op requires operand and result to share a base type, got @count and @integer
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>

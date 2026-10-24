@@ -5,7 +5,7 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.cmp' op operand types @integer and @count do not share a base type
+// CHECK: error: 'ada.cmp' op requires operands to share a base type, got @integer and @count
 
 module {
   ada.type @boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
