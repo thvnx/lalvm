@@ -3706,7 +3706,15 @@ private:
     mlir::Value thenVal = visit_expr(thenNode);
     if (!thenVal)
       return nullptr;
-    thenVal = coerce(thenVal, resultType, loc(thenNode));
+    // Each dependent expression is converted to the expression's type
+    // (@rm{4-5-7}).
+    if (thenVal.getType() != resultType) {
+      thenVal =
+          emitConversion(thenVal, resultType,
+                         mlir::ada::AdaConversionKind::Implicit, loc(thenNode));
+      if (!thenVal)
+        return nullptr;
+    }
     mlir::scf::YieldOp::create(builder, loc(thenNode), thenVal);
 
     // Else region: the next guard, the explicit else, or a synthesized True.
@@ -3717,14 +3725,18 @@ private:
                                 location);
     } else if (hasElse) {
       elseVal = visit_expr(elseExpr);
-      if (elseVal)
-        elseVal = coerce(elseVal, resultType, loc(elseExpr));
+      if (elseVal && elseVal.getType() != resultType)
+        elseVal = emitConversion(elseVal, resultType,
+                                 mlir::ada::AdaConversionKind::Implicit,
+                                 loc(elseExpr));
     } else {
       // No else: the if expression is of a boolean type and the absent else
       // yields True (@rm{4-5-7}(18/3, 20/3)).
       elseVal = synthesizeBooleanTrue(condNode, location);
-      if (elseVal)
-        elseVal = coerce(elseVal, resultType, location);
+      if (elseVal && elseVal.getType() != resultType)
+        elseVal =
+            emitConversion(elseVal, resultType,
+                           mlir::ada::AdaConversionKind::Implicit, location);
     }
     if (!elseVal)
       return nullptr;
