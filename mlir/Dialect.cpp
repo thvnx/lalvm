@@ -901,6 +901,19 @@ llvm::LogicalResult UnwrapOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// WrapOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult WrapOp::verify() {
+  auto qual = mlir::cast<ada::QualType>(getResult().getType());
+  if (getValue().getType() != qual.getMlirType())
+    return emitOpError() << "operand type " << getValue().getType()
+                         << " must be the result's underlying type "
+                         << qual.getMlirType();
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // bareName
 //===----------------------------------------------------------------------===//
 
