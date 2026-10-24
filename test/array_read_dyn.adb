@@ -8,8 +8,7 @@
 
 -- CHECK: %[[I:.*]] = memref.load %{{.*}}[] : memref<!ada.qual<i32, @standard.integer>>
 -- CHECK: %[[CHK:.*]] = ada.index_check %[[I]], %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @array_read_dyn.__anonymous_vec_index_1>
--- CHECK: %[[BASE:.*]] = ada.coerce %[[CHK]] : {{.*}} to <i32, @standard.integer>
--- CHECK: %[[OFF:.*]] = ada.binop "-" %[[BASE]], %{{.*}}
+-- CHECK: %[[OFF:.*]] = ada.binop "-" %[[CHK]], %{{.*}} : (!ada.qual<i32, @array_read_dyn.__anonymous_vec_index_1>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK: ada.index %{{.*}}[%[[OFF]]] {{.*}}-> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
 
 procedure Array_Read_Dyn is

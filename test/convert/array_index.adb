@@ -3,10 +3,11 @@
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
--- Array index, checked into the index subtype and coerced back.
+-- Array index, checked into the index subtype.
 
--- CHECK: ada.index_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @array_index.__anonymous_vec_index_1>
--- CHECK: ada.coerce %{{.*}} : <i32, @array_index.__anonymous_vec_index_1> to <i32, @standard.integer>
+-- CHECK: %[[CHK:.*]] = ada.index_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @array_index.__anonymous_vec_index_1>
+-- CHECK-NOT: ada.coerce
+-- CHECK: ada.binop "-" %[[CHK]], %{{.*}} : (!ada.qual<i32, @array_index.__anonymous_vec_index_1>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 function Array_Index (I : Integer) return Integer is
    type Vec is array (1 .. 10) of Integer;
