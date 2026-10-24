@@ -32,7 +32,6 @@ namespace libadalang = frontend::libadalang;
 #define DEBUG_TYPE "ada-mlirgen"
 
 #include "llvm/ADT/APInt.h"
-#include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -952,10 +951,7 @@ private:
   mlir::Value emitIntConstant(const llvm::APInt &value,
                               mlir::ada::QualType type,
                               mlir::Location location) {
-    auto intType = mlir::cast<mlir::IntegerType>(type.getMlirType());
-    return mlir::ada::ConstantOp::create(
-        builder, location, type,
-        mlir::IntegerAttr::get(intType, value.sextOrTrunc(intType.getWidth())));
+    return mlir::ada::createIntConstant(builder, location, type, value);
   }
 
   /// Emit an ada.constant for a floating-point value. Checks for f32 overflow;
@@ -1009,22 +1005,12 @@ private:
     return std::make_pair(lo.getValue(), hi.getValue());
   }
 
-  /// Whether `value` lies in `[lo, hi]`. `APSInt` spans the operands' differing
-  /// widths and signedness, so `value` is compared exactly, never
-  /// width-truncated first.
-  static bool inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
-                            const llvm::APInt &hi) {
-    llvm::APSInt v(value, /*isUnsigned=*/false);
-    return llvm::APSInt::compareValues(v, llvm::APSInt(lo, false)) >= 0 &&
-           llvm::APSInt::compareValues(v, llvm::APSInt(hi, false)) <= 0;
-  }
-
   /// A static value outside the base range of its type is illegal
   /// (@rm{4-9}(35)): emit the two errors and return true.
   bool diagnoseOutOfBaseRange(const llvm::APInt &value, const llvm::APInt &lo,
                               const llvm::APInt &hi, llvm::StringRef typeName,
                               mlir::Location location) {
-    if (inStaticRange(value, lo, hi))
+    if (mlir::ada::inStaticRange(value, lo, hi, /*isUnsigned=*/false))
       return false;
     mlir::emitError(location, "value not in range of type \"")
         << typeName << "\"";
@@ -1038,7 +1024,7 @@ private:
   bool warnOutOfSubtypeRange(const llvm::APInt &value, const llvm::APInt &lo,
                              const llvm::APInt &hi, llvm::StringRef typeName,
                              mlir::Location location) {
-    if (inStaticRange(value, lo, hi))
+    if (mlir::ada::inStaticRange(value, lo, hi, /*isUnsigned=*/false))
       return false;
     mlir::emitWarning(location, "value not in range of type \"")
         << typeName << "\"";
@@ -1069,7 +1055,8 @@ private:
     if (!type)
       return nullptr;
     if (auto b = ownStaticBounds(type_decl, location))
-      if (!inStaticRange(value, b->first, b->second)) {
+      if (!mlir::ada::inStaticRange(value, b->first, b->second,
+                                    /*isUnsigned=*/false)) {
         mlir::ada::QualType baseType = getAdaQualType(base, location);
         if (!baseType)
           return nullptr;
@@ -1208,40 +1195,6 @@ private:
     return constrainToSubtype(val, expected, location);
   }
 
-  /// Build an `ada.range` descriptor of subtype `sym` from its bounds (`lo` and
-  /// `hi` are `ada.qual` values of the base type and share their type). The
-  /// range's machine `boundType` is the bounds' underlying type.
-  mlir::Value emitRange(mlir::Value lo, mlir::Value hi,
-                        mlir::FlatSymbolRefAttr sym, mlir::Location location) {
-    auto boundType =
-        mlir::cast<mlir::ada::QualType>(lo.getType()).getMlirType();
-    auto rangeType =
-        mlir::ada::RangeType::get(builder.getContext(), boundType, sym);
-    return mlir::ada::RangeOp::create(builder, location, rangeType, lo, hi);
-  }
-
-  /// Return a constant-bounds `ada.range` descriptor for the static-bound
-  /// subtype `sym`, emitted lazily: reuse one already present in the current
-  /// block, otherwise emit one here, at the first check that needs it. MLIRGen
-  /// builds forward, so any descriptor already in the block precedes this check
-  /// and dominates it; later checks in the same block then reuse it. The bounds
-  /// are `ada.constant`s of `baseQual` (the subtype's base type, RM 3.5).
-  mlir::Value staticRangeFor(mlir::FlatSymbolRefAttr sym,
-                             mlir::ada::QualType baseQual, llvm::APInt lo,
-                             llvm::APInt hi, mlir::Location location) {
-    if (mlir::Block *block = builder.getInsertionBlock())
-      for (mlir::Operation &op : *block)
-        if (auto rangeOp = mlir::dyn_cast<mlir::ada::RangeOp>(&op))
-          if (mlir::cast<mlir::ada::RangeType>(rangeOp.getType())
-                  .getConstrainedType() == sym)
-            return rangeOp.getResult();
-    // Argument evaluation order is unspecified in C++ so eval low and high
-    // before calling emitRange so that the bounds are generated in order.
-    mlir::Value low = emitIntConstant(lo, baseQual, location);
-    mlir::Value high = emitIntConstant(hi, baseQual, location);
-    return emitRange(low, high, sym, location);
-  }
-
   /// Convert `src` to `target`, emitting a Constraint_Check (@rm{11-5}) when
   /// `target` is a constrained scalar subtype. A static source value (`src` an
   /// `ada.constant`) is resolved at emission like a literal site: in range ->
@@ -1259,9 +1212,8 @@ private:
         return src;
       return mlir::ada::CoerceOp::create(builder, location, target, src);
     };
-    auto typeOp = mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
-        mlir::ada::lookupSymbolFrom(builder.getInsertionBlock()->getParentOp(),
-                                    target.getAdaType().getValue()));
+    mlir::ada::TypeOp typeOp = mlir::ada::lookupAdaType(
+        builder.getInsertionBlock()->getParentOp(), target.getAdaType());
     if (!typeOp || !typeOp.getBaseAttr())
       return retype(); // base types are unconstrained at this layer
     auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
@@ -1289,8 +1241,9 @@ private:
                                      hiAttr.getValue(), typeOp.getSymName(),
                                      location))
             return retype();
-      range = staticRangeFor(target.getAdaType(), baseQual, loAttr.getValue(),
-                             hiAttr.getValue(), location);
+      range = mlir::ada::getOrCreateStaticRange(
+          builder, location, target.getAdaType(), baseQual, loAttr.getValue(),
+          hiAttr.getValue());
     }
     // A source of the base type, or of another subtype of it, is checked as
     // is. Any other is coerced to the base type first.
@@ -1331,23 +1284,9 @@ private:
     return it->second;
   }
 
-  /// Whether `typeOp` is a modular type or a subtype of one (@rm{3-5-4}). The
-  /// modulus lives on the base (a subtype's `int_info` has only its range), so
-  /// walk `base` links until one carries a modulus, like `getModularModulus`
-  /// in `LowerToLLVM`.
+  /// Whether `typeOp` is a modular type or a subtype of one (@rm{3-5-4}).
   bool isModularTypeOp(mlir::ada::TypeOp typeOp) {
-    while (typeOp) {
-      if (auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
-              typeOp.getTypeInfoAttr()))
-        if (info.getModulus())
-          return true;
-      auto base = typeOp.getBaseAttr();
-      if (!base)
-        break;
-      typeOp = mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
-          mlir::ada::lookupSymbolFrom(typeOp, base.getValue()));
-    }
-    return false;
+    return typeOp && mlir::ada::modulusOfAdaType(typeOp);
   }
 
   /// Emit an enum literal as its integer representation (Ada @rm{13-4}).
@@ -1602,7 +1541,8 @@ private:
       // The check yields the index (anonymous) subtype and convert back to the
       // base type to compute the offset. Using a plain `ada.coerce` op since
       // `coerce` would add a range check.
-      mlir::Value range = staticRangeFor(indexSym, indexQual, lo, hi, location);
+      mlir::Value range = mlir::ada::getOrCreateStaticRange(
+          builder, location, indexSym, indexQual, lo, hi);
       mlir::Value checked = mlir::ada::IndexCheckOp::create(
           builder, location, subQual, rawIndex, range);
       rawIndex =
@@ -2080,9 +2020,9 @@ private:
     mlir::Value loValue = boundValue(lo, intInfo.staticLower());
     mlir::Value hiValue = boundValue(hi, intInfo.staticUpper());
     if (loValue && hiValue)
-      dynamicRanges[typeOp.getSymNameAttr()] = emitRange(
-          loValue, hiValue,
-          mlir::FlatSymbolRefAttr::get(typeOp.getSymNameAttr()), location);
+      dynamicRanges[typeOp.getSymNameAttr()] = mlir::ada::createRange(
+          builder, location, loValue, hiValue,
+          mlir::FlatSymbolRefAttr::get(typeOp.getSymNameAttr()));
   }
 
   /// Emit the anonymous nominal subtype of object `id`, a subtype of

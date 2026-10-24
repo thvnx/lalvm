@@ -100,53 +100,18 @@ static mlir::Value extractField(mlir::ConversionPatternRewriter &rewriter,
                                       llvm::ArrayRef<int64_t>{index});
 }
 
-/// The modulus of the Ada type named by `qual`, or null when it is not modular.
-/// The modulus is a base-type property (a subtype's `int_info` records only its
-/// range), so walk `base` links from `from` until a nonzero modulus or the
-/// chain ends.
-static mlir::IntegerAttr getModularModulus(mlir::Operation *from,
-                                           ada::QualType qual) {
-  auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
-      mlir::SymbolTable::lookupNearestSymbolFrom(
-          from, qual.getAdaType().getRootReference()));
-  while (typeOp) {
-    auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
-        typeOp.getTypeInfoAttr());
-    if (intInfo && intInfo.getModulus())
-      return intInfo.getModulus();
-    auto baseAttr = typeOp.getBaseAttr();
-    if (!baseAttr)
-      break;
-    typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
-        mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
-  }
-  return {};
-}
-
 /// Whether the Ada type named by `qual` is modular (its arithmetic wraps,
 /// @rm{3-5-4}), so values are unsigned.
 static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
-  return static_cast<bool>(getModularModulus(from, qual));
+  return static_cast<bool>(ada::modulusOfAdaType(from, qual.getAdaType()));
 }
 
 /// Whether ordering comparisons on the Ada type named by `qual` are unsigned.
 /// Signed integers order as signed, modular types (@rm{3-5-4}) as unsigned.
 /// Enumerations order by code (@rm{13-4}): unsigned unless a code is negative.
-/// The kind lives on the root type, so walk `base` links (a subtype records
-/// only its range) and inspect the root's `type_info`.
+/// The kind lives on the root type (a subtype records only its range).
 static bool isUnsignedOrderQualType(mlir::Operation *from, ada::QualType qual) {
-  auto typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
-      mlir::SymbolTable::lookupNearestSymbolFrom(
-          from, qual.getAdaType().getRootReference()));
-  ada::TypeOp root;
-  while (typeOp) {
-    root = typeOp;
-    auto baseAttr = typeOp.getBaseAttr();
-    if (!baseAttr)
-      break;
-    typeOp = mlir::dyn_cast_or_null<ada::TypeOp>(
-        mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
-  }
+  ada::TypeOp root = ada::rootOfAdaType(from, qual.getAdaType());
   if (!root)
     return false;
   if (auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
@@ -667,8 +632,8 @@ private:
     if (kind == ada::AdaBinaryOp::Div) {
       mlir::Location loc = op.getLoc();
       mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
-      bool modular = static_cast<bool>(getModularModulus(
-          op, mlir::cast<ada::QualType>(op.getResult().getType())));
+      bool modular = isModularQualType(
+          op, mlir::cast<ada::QualType>(op.getResult().getType()));
 
       if (hasAnyChecks(op, ada::AdaChecks::Division)) {
         auto module = op->getParentOfType<mlir::ModuleOp>();
@@ -725,8 +690,8 @@ private:
     Type type = adaptor.getLhs().getType();
     if (!mlir::isa<mlir::IntegerType>(type))
       return std::nullopt;
-    mlir::IntegerAttr modAttr = getModularModulus(
-        op, mlir::cast<ada::QualType>(op.getResult().getType()));
+    mlir::IntegerAttr modAttr = ada::modulusOfAdaType(
+        op, mlir::cast<ada::QualType>(op.getResult().getType()).getAdaType());
     if (!modAttr)
       return std::nullopt;
     ada::AdaBinaryOp kind = op.getKind();
@@ -970,7 +935,7 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
 
     mlir::IntegerAttr modulus;
     if (auto qual = mlir::dyn_cast<ada::QualType>(op.getOperand().getType()))
-      modulus = getModularModulus(op, qual);
+      modulus = ada::modulusOfAdaType(op, qual.getAdaType());
 
     switch (op.getKind()) {
     case ada::AdaUnaryOp::Not: {

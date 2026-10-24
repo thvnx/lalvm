@@ -159,8 +159,7 @@ static TypeOrigin typeOrigin(llvm::Module &llvmModule, llvm::DICompileUnit *cu,
 static llvm::DIType *basicTypeFor(llvm::DIBuilder &db,
                                   mlir::ada::TypeOp typeOp) {
   while (auto baseAttr = typeOp.getBaseAttr()) {
-    auto baseOp = mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
-        mlir::SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
+    auto baseOp = mlir::ada::lookupAdaType(typeOp, baseAttr);
     if (!baseOp)
       return nullptr;
     typeOp = baseOp;
@@ -423,11 +422,6 @@ void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
 
-  auto typeOpFor = [&](mlir::ada::TypeOp from,
-                       mlir::FlatSymbolRefAttr sym) -> mlir::ada::TypeOp {
-    return mlir::dyn_cast_or_null<mlir::ada::TypeOp>(
-        mlir::SymbolTable::lookupNearestSymbolFrom(from, sym));
-  };
   // A bound as a constant of the index type's width.
   auto boundMD = [&](mlir::IntegerAttr bound,
                      llvm::IntegerType *ty) -> llvm::Metadata * {
@@ -442,7 +436,8 @@ void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
     auto arrayType = mlir::cast<mlir::ada::ArrayType>(typeOp.getMlirType());
 
     // Component: an enum or subrange node built earlier, else its basic type.
-    mlir::ada::TypeOp componentOp = typeOpFor(typeOp, info.getComponent());
+    mlir::ada::TypeOp componentOp =
+        mlir::ada::lookupAdaType(typeOp, info.getComponent());
     if (!componentOp)
       continue;
     llvm::DIType *component = types.lookup(componentOp.getSymNameAttr());
@@ -458,7 +453,8 @@ void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
     // bounds, as GNAT does.
     llvm::SmallVector<llvm::Metadata *, 2> dims;
     for (unsigned dim = 0; dim < info.rank(); ++dim) {
-      mlir::ada::TypeOp indexOp = typeOpFor(typeOp, info.getIndexTypes()[dim]);
+      mlir::ada::TypeOp indexOp =
+          mlir::ada::lookupAdaType(typeOp, info.getIndexTypes()[dim]);
       llvm::DIType *indexType = indexOp ? basicTypeFor(db, indexOp) : nullptr;
       if (!indexType)
         break;

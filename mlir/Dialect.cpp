@@ -1005,7 +1005,7 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 }
 
 //===----------------------------------------------------------------------===//
-// CallOp
+// Common helpers
 //===----------------------------------------------------------------------===//
 
 /// Resolve the nested symbol `name` visible from `from`, walking enclosing
@@ -1013,8 +1013,7 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 /// `SubpOp` is not itself a SymbolTable: its nested symbols (`ada.subp`,
 /// `ada.type`) live in an interior `ada.decls`, a sibling of the statements
 /// rather than an ancestor, so at each enclosing `SubpOp` the walk searches
-/// that subprogram's `ada.decls` children too. Used for both call and target
-/// type resolution during MLIRGen.
+/// that subprogram's `ada.decls` children too.
 mlir::Operation *mlir::ada::lookupSymbolFrom(mlir::Operation *from,
                                              llvm::StringRef name) {
   for (mlir::Operation *scope = from; scope; scope = scope->getParentOp()) {
@@ -1031,14 +1030,133 @@ mlir::Operation *mlir::ada::lookupSymbolFrom(mlir::Operation *from,
   return nullptr;
 }
 
+TypeOp mlir::ada::lookupAdaType(mlir::Operation *from,
+                                mlir::FlatSymbolRefAttr sym) {
+  mlir::Operation *symbol = lookupSymbolFrom(from, sym.getValue());
+  if (auto typeOp = mlir::dyn_cast_or_null<TypeOp>(symbol))
+    return typeOp;
+  // A subprogram hoisted out of its scope by ClosureConversion still names the
+  // types of that scope, which stay in its `ada.decls` until
+  // HoistNestedSymbolOperations. Type symbols are fully qualified, hence unique
+  // in the module: search every `ada.decls`.
+  auto module = mlir::dyn_cast<mlir::ModuleOp>(from);
+  if (!module)
+    module = from->getParentOfType<mlir::ModuleOp>();
+  if (!module)
+    return {};
+  TypeOp found;
+  module.walk([&](DeclsOp decls) {
+    found = mlir::dyn_cast_or_null<TypeOp>(
+        mlir::SymbolTable::lookupSymbolIn(decls, sym.getValue()));
+    return found ? mlir::WalkResult::interrupt() : mlir::WalkResult::advance();
+  });
+  return found;
+}
+
 mlir::FlatSymbolRefAttr mlir::ada::baseOfAdaType(mlir::Operation *from,
                                                  mlir::FlatSymbolRefAttr sym) {
-  auto typeOp =
-      mlir::dyn_cast_or_null<TypeOp>(lookupSymbolFrom(from, sym.getValue()));
+  TypeOp typeOp = lookupAdaType(from, sym);
   if (!typeOp)
     return {};
   return typeOp.getBaseAttr() ? typeOp.getBaseAttr() : sym;
 }
+
+TypeOp mlir::ada::rootOfAdaType(TypeOp typeOp) {
+  while (typeOp && typeOp.getBaseAttr()) {
+    TypeOp baseOp = lookupAdaType(typeOp, typeOp.getBaseAttr());
+    if (!baseOp)
+      break;
+    typeOp = baseOp;
+  }
+  return typeOp;
+}
+
+TypeOp mlir::ada::rootOfAdaType(mlir::Operation *from,
+                                mlir::FlatSymbolRefAttr sym) {
+  return rootOfAdaType(lookupAdaType(from, sym));
+}
+
+mlir::IntegerAttr mlir::ada::modulusOfAdaType(TypeOp typeOp) {
+  // A subtype records only its range: the modulus lives on the root.
+  TypeOp root = rootOfAdaType(typeOp);
+  if (!root)
+    return {};
+  auto info =
+      mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(root.getTypeInfoAttr());
+  return info ? info.getModulus() : mlir::IntegerAttr();
+}
+
+mlir::IntegerAttr mlir::ada::modulusOfAdaType(mlir::Operation *from,
+                                              mlir::FlatSymbolRefAttr sym) {
+  return modulusOfAdaType(lookupAdaType(from, sym));
+}
+
+IntegerTypeInfoAttr
+mlir::ada::intTypeInfoOfAdaType(mlir::Operation *from,
+                                mlir::FlatSymbolRefAttr sym) {
+  TypeOp typeOp = lookupAdaType(from, sym);
+  if (!typeOp)
+    return {};
+  if (auto info =
+          mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
+    return info;
+  if (!typeOp.getBaseAttr())
+    return {};
+  TypeOp baseOp = lookupAdaType(typeOp, typeOp.getBaseAttr());
+  return baseOp ? mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(
+                      baseOp.getTypeInfoAttr())
+                : IntegerTypeInfoAttr();
+}
+
+bool mlir::ada::inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
+                              const llvm::APInt &hi, bool isUnsigned) {
+  // Compare at a common width, one bit wider so no value changes sign.
+  unsigned width =
+      std::max({value.getBitWidth(), lo.getBitWidth(), hi.getBitWidth()}) + 1;
+  auto ext = [&](const llvm::APInt &v) {
+    return isUnsigned ? v.zext(width) : v.sext(width);
+  };
+  llvm::APInt v = ext(value), l = ext(lo), h = ext(hi);
+  return isUnsigned ? l.ule(v) && v.ule(h) : l.sle(v) && v.sle(h);
+}
+
+mlir::Value mlir::ada::createIntConstant(mlir::OpBuilder &builder,
+                                         mlir::Location loc, QualType type,
+                                         const llvm::APInt &value) {
+  auto intType = mlir::cast<mlir::IntegerType>(type.getMlirType());
+  return ConstantOp::create(
+      builder, loc, type,
+      mlir::IntegerAttr::get(intType, value.sextOrTrunc(intType.getWidth())));
+}
+
+mlir::Value mlir::ada::createRange(mlir::OpBuilder &builder, mlir::Location loc,
+                                   mlir::Value lo, mlir::Value hi,
+                                   mlir::FlatSymbolRefAttr sym) {
+  auto boundType = mlir::cast<QualType>(lo.getType()).getMlirType();
+  auto rangeType = RangeType::get(builder.getContext(), boundType, sym);
+  return RangeOp::create(builder, loc, rangeType, lo, hi);
+}
+
+mlir::Value mlir::ada::getOrCreateStaticRange(
+    mlir::OpBuilder &builder, mlir::Location loc, mlir::FlatSymbolRefAttr sym,
+    QualType baseQual, const llvm::APInt &lo, const llvm::APInt &hi) {
+  // A descriptor before the insertion point in the same block dominates it.
+  if (mlir::Block *block = builder.getInsertionBlock())
+    for (mlir::Operation &op :
+         llvm::make_range(block->begin(), builder.getInsertionPoint()))
+      if (auto rangeOp = mlir::dyn_cast<RangeOp>(&op))
+        if (mlir::cast<RangeType>(rangeOp.getType()).getConstrainedType() ==
+            sym)
+          return rangeOp.getResult();
+  // Separate statements: the bounds are emitted in order.
+  mlir::Value low = createIntConstant(builder, loc, baseQual, lo);
+  mlir::Value high = createIntConstant(builder, loc, baseQual, hi);
+  return createRange(builder, loc, low, high, sym);
+}
+
+//===----------------------------------------------------------------------===//
+// CallOp
+//===----------------------------------------------------------------------===//
 
 /// Callee resolution for `verifySymbolUses`'s best-effort
 /// procedure-vs-function check; MLIRGen resolves calls by node identity, not

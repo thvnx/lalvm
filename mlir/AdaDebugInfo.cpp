@@ -194,16 +194,14 @@ static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
     auto baseAttr = typeOp.getBaseAttr();
     if (!baseAttr)
       return {};
-    auto baseOp = dyn_cast_or_null<ada::TypeOp>(
-        SymbolTable::lookupNearestSymbolFrom(typeOp, baseAttr));
+    auto baseOp = ada::lookupAdaType(typeOp, baseAttr);
     return baseOp ? makeDITypeAttr(ctx, baseOp) : LLVM::DITypeAttr();
   }
   if (enumInfo)
     return makeDIEnumStub(ctx, typeOp);
   if (auto arrayInfo =
           dyn_cast<ada::ArrayTypeInfoAttr>(typeOp.getTypeInfoAttr())) {
-    auto componentOp = dyn_cast_or_null<ada::TypeOp>(
-        SymbolTable::lookupNearestSymbolFrom(typeOp, arrayInfo.getComponent()));
+    auto componentOp = ada::lookupAdaType(typeOp, arrayInfo.getComponent());
     return makeDIArrayStub(ctx, typeOp, arrayInfo,
                            componentOp ? makeDITypeAttr(ctx, componentOp)
                                        : LLVM::DITypeAttr());
@@ -217,8 +215,7 @@ static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   if (auto intInfo =
           dyn_cast<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
     if (typeOp.getBaseAttr() && intInfo.hasRange()) {
-      auto baseOp = dyn_cast_or_null<ada::TypeOp>(
-          SymbolTable::lookupNearestSymbolFrom(typeOp, typeOp.getBaseAttr()));
+      auto baseOp = ada::lookupAdaType(typeOp, typeOp.getBaseAttr());
       return makeDISubrangeStub(ctx, typeOp,
                                 baseOp ? makeDITypeAttr(ctx, baseOp)
                                        : LLVM::DITypeAttr());
@@ -711,8 +708,7 @@ struct AdaDebugInfoPass
         // integer_N.
         LLVM::DITypeAttr boundType;
         if (auto baseAttr = subtypeOp.getBaseAttr())
-          if (auto baseOp = dyn_cast_or_null<ada::TypeOp>(
-                  SymbolTable::lookupNearestSymbolFrom(subtypeOp, baseAttr)))
+          if (auto baseOp = ada::lookupAdaType(subtypeOp, baseAttr))
             boundType = makeDITypeAttr(ctx, baseOp);
         if (!boundType)
           boundType = makeDIIntType(ctx, intType);
