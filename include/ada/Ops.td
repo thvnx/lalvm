@@ -666,6 +666,7 @@ def UnwrapOp : Ada_Op<"unwrap", [Pure]> {
   let results = (outs AnyType:$result);
   let assemblyFormat = "$value attr-dict `:` type($value) `to` type($result)";
   let hasVerifier = 1;
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

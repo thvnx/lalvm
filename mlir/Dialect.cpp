@@ -911,6 +911,13 @@ llvm::LogicalResult UnwrapOp::verify() {
   return mlir::success();
 }
 
+// Unwrapping a wrapped value gives the value back.
+mlir::OpFoldResult UnwrapOp::fold(FoldAdaptor) {
+  if (auto wrap = getValue().getDefiningOp<WrapOp>())
+    return wrap.getValue();
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // WrapOp
 //===----------------------------------------------------------------------===//
