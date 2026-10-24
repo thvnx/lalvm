@@ -483,6 +483,17 @@ int main(int argc, char **argv) {
   cl::HideUnrelatedOptions(lalvmCategory);
   cl::ParseCommandLineOptions(argc, argv, "Ada to LLVM Compiler\n");
 
+  // Under -g, the IR dumps (--mlir-print-ir-before/after) show the debug info
+  // like --emit=mlir does.
+  if (debugInfo)
+    for (llvm::StringRef name :
+         {"mlir-print-debuginfo", "mlir-print-local-scope"}) {
+      auto *opt =
+          static_cast<cl::opt<bool> *>(cl::getRegisteredOptions().lookup(name));
+      if (opt && !opt->getNumOccurrences())
+        opt->setValue(true);
+    }
+
   // Join the raw invocation for `--record-command-line` emitted into
   // `llvm.commandline` in `emitLLVMIR`.
   if (recordCommandLine) {
