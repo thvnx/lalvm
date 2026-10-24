@@ -32,6 +32,7 @@ namespace libadalang = frontend::libadalang;
 #define DEBUG_TYPE "ada-mlirgen"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -1005,12 +1006,20 @@ private:
     return std::make_pair(lo.getValue(), hi.getValue());
   }
 
+  /// Whether `value` lies in `lo..hi`, all signed as Libadalang evaluates them.
+  static bool inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
+                            const llvm::APInt &hi) {
+    return mlir::ada::inStaticRange(llvm::APSInt(value, /*isUnsigned=*/false),
+                                    llvm::APSInt(lo, /*isUnsigned=*/false),
+                                    llvm::APSInt(hi, /*isUnsigned=*/false));
+  }
+
   /// A static value outside the base range of its type is illegal
   /// (@rm{4-9}(35)): emit the two errors and return true.
   bool diagnoseOutOfBaseRange(const llvm::APInt &value, const llvm::APInt &lo,
                               const llvm::APInt &hi, llvm::StringRef typeName,
                               mlir::Location location) {
-    if (mlir::ada::inStaticRange(value, lo, hi, /*isUnsigned=*/false))
+    if (inStaticRange(value, lo, hi))
       return false;
     mlir::emitError(location, "value not in range of type \"")
         << typeName << "\"";
@@ -1024,7 +1033,7 @@ private:
   bool warnOutOfSubtypeRange(const llvm::APInt &value, const llvm::APInt &lo,
                              const llvm::APInt &hi, llvm::StringRef typeName,
                              mlir::Location location) {
-    if (mlir::ada::inStaticRange(value, lo, hi, /*isUnsigned=*/false))
+    if (inStaticRange(value, lo, hi))
       return false;
     mlir::emitWarning(location, "value not in range of type \"")
         << typeName << "\"";
@@ -1055,8 +1064,7 @@ private:
     if (!type)
       return nullptr;
     if (auto b = ownStaticBounds(type_decl, location))
-      if (!mlir::ada::inStaticRange(value, b->first, b->second,
-                                    /*isUnsigned=*/false)) {
+      if (!inStaticRange(value, b->first, b->second)) {
         mlir::ada::QualType baseType = getAdaQualType(base, location);
         if (!baseType)
           return nullptr;
