@@ -1185,6 +1185,34 @@ private:
     return constrainToSubtype(val, expected, location);
   }
 
+  /// Convert the value `val` to `target` (@rm{4-6}) with an `ada.convert`,
+  /// which LowerAdaConversions expands into its checks and casts. `kind`
+  /// records whether the conversion is written in the source or applied by
+  /// the language. A target with a dynamic bound takes the descriptor
+  /// elaborated at its declaration. Returns null after a diagnostic.
+  ///
+  /// @todo View conversions of tagged objects (@rm{4-6}(5/2)).
+  mlir::Value emitConversion(mlir::Value val, mlir::ada::QualType target,
+                             mlir::ada::AdaConversionKind kind,
+                             mlir::Location location) {
+    mlir::Value range;
+    mlir::ada::TypeOp typeOp = mlir::ada::lookupAdaType(
+        builder.getInsertionBlock()->getParentOp(), target.getAdaType());
+    auto info = typeOp ? mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+                             typeOp.getTypeInfoAttr())
+                       : mlir::ada::IntegerTypeInfoAttr();
+    if (info && (!info.staticLower() || !info.staticUpper())) {
+      range = findDynamicRange(target.getAdaType());
+      if (!range) {
+        mlir::emitError(location, "no range descriptor in scope for '")
+            << typeOp.getSymName() << "'";
+        return nullptr;
+      }
+    }
+    return mlir::ada::ConvertOp::create(builder, location, target, kind, val,
+                                        range);
+  }
+
   /// Convert `src` to `target`, emitting a Constraint_Check (@rm{11-5}) when
   /// `target` is a constrained scalar subtype. A static source value (`src` an
   /// `ada.constant`) is resolved at emission like a literal site: in range ->
