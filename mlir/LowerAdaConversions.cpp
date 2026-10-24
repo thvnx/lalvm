@@ -167,6 +167,7 @@ struct RepresentationChangeConversion
     auto source = cast<ada::QualType>(op.getInput().getType());
     auto target = cast<ada::QualType>(op.getType());
     Type sourceType = source.getMlirType(), targetType = target.getMlirType();
+    // @todo Lower conversions between integer and float types (@rm{4-6}(33)).
     if (isa<FloatType>(sourceType) != isa<FloatType>(targetType))
       return rewriter.notifyMatchFailure(op, "integer and float conversion");
 
