@@ -1033,11 +1033,12 @@ private:
     return true;
   }
 
-  /// Emit an `ada.constant` for integer `value` of type `type_decl`. A value
-  /// outside the base range is an error. A value outside the subtype's own
-  /// static range is emitted in the base type and coerced to the subtype,
-  /// which warns and emits the range check that raises at run time. Returns
-  /// null on error (a diagnostic is emitted).
+  /// Emit integer `value` of type `type_decl`. A value outside the base range
+  /// is an error. Otherwise the value is a constant of the base type (a literal
+  /// has a type, not a subtype, @rm{8-6}(22)), converted to the subtype: in
+  /// range, or checked at run time for a dynamic subtype, or with a warning and
+  /// a check that raises when out of a static range (@rm{5-2}). Returns null on
+  /// error (a diagnostic is emitted).
   mlir::Value emitCheckedIntConstant(const llvm::APSInt &value,
                                      ada_node type_decl,
                                      mlir::Location location) {
@@ -1053,17 +1054,10 @@ private:
           return nullptr;
       }
     mlir::ada::QualType type = getAdaQualType(type_decl, location);
-    if (!type)
+    mlir::ada::QualType baseType = getAdaQualType(base, location);
+    if (!type || !baseType)
       return nullptr;
-    if (auto b = ownStaticBounds(type_decl, location))
-      if (!mlir::ada::inStaticRange(value, b->first, b->second)) {
-        mlir::ada::QualType baseType = getAdaQualType(base, location);
-        if (!baseType)
-          return nullptr;
-        return coerce(emitIntConstant(value, baseType, location), type,
-                      location);
-      }
-    return emitIntConstant(value, type, location);
+    return coerce(emitIntConstant(value, baseType, location), type, location);
   }
 
   mlir::Value mlirGenIntLiteral(ada_node &node) {
@@ -1185,12 +1179,8 @@ private:
   /// does not already have type `expected`.
   mlir::Value coerce(mlir::Value val, mlir::ada::QualType expected,
                      mlir::Location location) {
-    // A value already of `expected` is trusted to satisfy the constraint,
-    // except a constant that acquired the subtype from context without a
-    // check: re-run the Constraint_Check so a dynamic-bound subtype is still
-    // verified at run time (a static one is already resolved at emission).
-    if (val.getType() == expected &&
-        !val.getDefiningOp<mlir::ada::ConstantOp>())
+    // A value already of `expected` satisfies its constraint.
+    if (val.getType() == expected)
       return val;
     return constrainToSubtype(val, expected, location);
   }
