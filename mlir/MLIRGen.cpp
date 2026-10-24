@@ -1431,11 +1431,16 @@ private:
           mlir::Value val = visit_expr(r_expr);
           if (!val)
             return nullptr;
-          // Coerce to the formal Ada type when they differ (implicit
-          // conversion).
+          // Convert to the subtype of the formal (@rm{6-4-1}), at the actual.
           if (auto formalTyped =
                   mlir::dyn_cast<mlir::ada::QualType>(formalTypes[i]))
-            val = coerce(val, formalTyped, location);
+            if (val.getType() != formalTyped) {
+              val = emitConversion(val, formalTyped,
+                                   mlir::ada::AdaConversionKind::Implicit,
+                                   loc(r_expr));
+              if (!val)
+                return nullptr;
+            }
           args.push_back(val);
         }
       }
