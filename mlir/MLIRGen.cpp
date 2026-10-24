@@ -2080,7 +2080,7 @@ private:
         (intInfo.staticLower() && intInfo.staticUpper()))
       return;
     // Bounds have the subtype's base type (@rm{3-5}). A static bound is an
-    // `ada.constant` and a dynamic one is its evaluated expression coerced to
+    // `ada.constant` and a dynamic one is its evaluated expression converted to
     // that base type (so both bounds share the base `!ada.qual`).
     auto baseQual = mlir::ada::QualType::get(
         builder.getContext(), baseOp.getMlirType(),
@@ -2090,7 +2090,10 @@ private:
       if (stat)
         return emitIntConstant(stat.getValue(), baseQual, location);
       mlir::Value v = visit_expr(expr);
-      return v ? coerce(v, baseQual, loc(expr)) : mlir::Value();
+      if (!v || v.getType() == baseQual)
+        return v;
+      return emitConversion(v, baseQual, mlir::ada::AdaConversionKind::Implicit,
+                            loc(expr));
     };
     mlir::Value loValue = boundValue(lo, intInfo.staticLower());
     mlir::Value hiValue = boundValue(hi, intInfo.staticUpper());
