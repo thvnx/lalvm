@@ -7,7 +7,7 @@
 -- Dynamic subtype: initializer, bound of T, and S'Last.
 
 -- CHECK: ada.convert implicit %arg1, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @dynamic_constraint.s>
--- CHECK: ada.coerce %{{.*}} : <i32, @dynamic_constraint.s> to <i32, @standard.integer>
+-- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @dynamic_constraint.s> to !ada.qual<i32, @standard.integer>
 -- CHECK: ada.range %{{.*}} -> !ada.range<i32, @dynamic_constraint.t>
 -- CHECK: ada.attr "last"
 -- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @dynamic_constraint.s> to !ada.qual<i32, @standard.integer>
