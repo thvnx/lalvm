@@ -56,6 +56,16 @@ module {
     ada.return %r : !ada.qual<i32, @natural>
   }
 
+  // Nor from a constant within the target's range.
+  // CHECK-LABEL: ada.subp @constant_in_range
+  // CHECK-NOT:     ada.range_check
+  // CHECK:         ada.requalify %{{.*}} : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
+  ada.subp @constant_in_range() -> !ada.qual<i32, @positive> {
+    %c = ada.constant : !ada.qual<i32, @integer> = 5
+    %r = ada.convert implicit %c : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
+    ada.return %r : !ada.qual<i32, @positive>
+  }
+
   // A conversion to the identical type is removed.
   // CHECK-LABEL: ada.subp @identity
   // CHECK-NEXT:    ada.return %arg0

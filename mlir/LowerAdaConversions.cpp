@@ -19,6 +19,22 @@ static bool rangeWithin(const APSInt &knownLo, const APSInt &knownHi,
          ada::inStaticRange(knownHi, lo, hi);
 }
 
+/// Whether `value` is known to lie in `lo..hi`: a constant within it, or a
+/// value whose type's static range is within it.
+static bool knownWithin(Operation *from, Value value, const APSInt &lo,
+                        const APSInt &hi) {
+  if (auto constant = value.getDefiningOp<ada::ConstantOp>())
+    if (std::optional<APSInt> known = constant.getIntValue())
+      return ada::inStaticRange(*known, lo, hi);
+  ada::IntegerTypeInfoAttr info = ada::intTypeInfoOfAdaType(
+      from, cast<ada::QualType>(value.getType()).getAdaType());
+  IntegerAttr knownLo = info ? info.staticLower() : IntegerAttr();
+  IntegerAttr knownHi = info ? info.staticUpper() : IntegerAttr();
+  return knownLo && knownHi &&
+         rangeWithin(ada::boundValue(knownLo), ada::boundValue(knownHi), lo,
+                     hi);
+}
+
 namespace {
 
 /// Lower a value conversion that keeps the machine representation: a range
@@ -68,17 +84,11 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
       return success();
     }
 
-    // Neither does a source whose static range lies within the target's.
-    if (ada::IntegerTypeInfoAttr known =
-            ada::intTypeInfoOfAdaType(op, source.getAdaType())) {
-      IntegerAttr knownLo = known.staticLower(), knownHi = known.staticUpper();
-      if (knownLo && knownHi &&
-          rangeWithin(knownLo.getAPSInt(), knownHi.getAPSInt(), lo.getAPSInt(),
-                      hi.getAPSInt())) {
-        rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target,
-                                                      op.getInput());
-        return success();
-      }
+    // Neither does a value known to lie within the target's range.
+    if (knownWithin(op, op.getInput(), ada::boundValue(lo),
+                    ada::boundValue(hi))) {
+      rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target, op.getInput());
+      return success();
     }
 
     // Otherwise check the value against the target's bounds, which have the
