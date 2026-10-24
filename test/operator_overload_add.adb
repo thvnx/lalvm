@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -6,7 +9,7 @@
 -- body keeps its overflow check.
 
 -- MLIR:      ada.subp private @"operator_overload_add.+"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR-NEXT:   ada.binop "-" %{{.*}}, %{{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:   ada.binop "-" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define internal i32 @operator_overload_add__Oadd(
 -- LLVM:          ret i32

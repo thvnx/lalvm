@@ -1,11 +1,14 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
 -- Signed-integer `+`/`-`/`*` carry `checks<overflow>` (RM 4.5, 3.5.4); modular
 -- arithmetic wraps and floats are deferred, so neither is flagged. The nested
 -- modular and float ops are emitted before the outer signed one.
--- CHECK:      ada.binop "+" %{{.*}}, %{{.*}} : !ada.qual<i8, @binop_overflow.byte>
--- CHECK:      ada.binop "*" %{{.*}}, %{{.*}} : !ada.qual<f32, @standard.float>
--- CHECK:      ada.binop "+" %{{.*}}, %{{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
+-- CHECK:      ada.binop "+" %{{.*}}, %{{.*}} : (!ada.qual<i8, @binop_overflow.byte>, !ada.qual<i8, @binop_overflow.byte>) -> !ada.qual<i8, @binop_overflow.byte>
+-- CHECK:      ada.binop "*" %{{.*}}, %{{.*}} : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- CHECK:      ada.binop "+" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 function Binop_Overflow (A, B : Integer) return Integer is
    type Byte is mod 256;

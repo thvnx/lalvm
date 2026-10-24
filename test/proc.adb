@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -8,7 +11,7 @@
 -- MLIR-SAME:    %arg0: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}, %arg1: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}, %arg2: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}
 -- MLIR:         %[[J:.*]] = memref.load %arg1[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         %[[K:.*]] = memref.load %arg2[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         %[[R:.*]] = ada.binop "+" %[[J]], %[[K]] checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %[[J]], %[[K]] checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         memref.store %[[R]], %arg0[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         ada.return
 

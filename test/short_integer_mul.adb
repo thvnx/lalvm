@@ -1,9 +1,12 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @short_integer_mul
 -- MLIR-SAME:    (%arg0: !ada.qual<i16, @standard.short_integer>, %arg1: !ada.qual<i16, @standard.short_integer>) -> !ada.qual<i16, @standard.short_integer>
--- MLIR:         %[[R:.*]] = ada.binop "*" %arg0, %arg1 checks<overflow> : !ada.qual<i16, @standard.short_integer>
+-- MLIR:         %[[R:.*]] = ada.binop "*" %arg0, %arg1 checks<overflow> : (!ada.qual<i16, @standard.short_integer>, !ada.qual<i16, @standard.short_integer>) -> !ada.qual<i16, @standard.short_integer>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i16, @standard.short_integer>
 
 -- LLVM-LABEL: define i16 @_ada_short_integer_mul(

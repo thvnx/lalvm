@@ -866,14 +866,24 @@ speculatabilityOf(std::optional<AdaChecks> checks) {
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult BinOp::verify() {
-  // SameOperandsAndResultType guarantees all operands share this type.
-  mlir::Type type = getLhs().getType();
-  if (auto typedType = mlir::dyn_cast<ada::QualType>(type))
-    type = typedType.getMlirType();
+  if (failed(verifySameMachineType(*this, getLhs().getType(),
+                                   getRhs().getType(), "operand types")) ||
+      failed(verifySameMachineType(*this, getLhs().getType(), getType(),
+                                   "operand and result types")))
+    return mlir::failure();
+  mlir::Type type = machineTypeOf(getType());
   if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
     return emitOpError() << "unsupported operand type " << type
                          << "; expected integer or float";
   return mlir::success();
+}
+
+llvm::LogicalResult BinOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  if (failed(verifySameBaseType(*this, getLhs().getType(), getRhs().getType(),
+                                "operand types")))
+    return mlir::failure();
+  return verifySameBaseType(*this, getLhs().getType(), getType(),
+                            "operand and result types");
 }
 
 mlir::Speculation::Speculatability BinOp::getSpeculatability() {

@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -13,7 +16,7 @@
 -- MLIR:         ada.constant : !ada.qual<i32, @standard.integer> = 1
 
 -- `S'Last - S'First` keeps its overflow check.
--- MLIR:         ada.binop "-" %{{.*}}, %{{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.binop "-" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_scalar_attr(
 -- LLVM:         extractvalue { i32, i32 } %{{.*}}, 1

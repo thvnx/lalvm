@@ -5,7 +5,7 @@
 
 -- Modular subtype operand, to its base.
 
--- CHECK: ada.coerce %{{.*}} : <i8, @modular_operand.low> to <i8, @modular_operand.byte>
+-- CHECK: ada.binop "+" %arg0, %arg1 : (!ada.qual<i8, @modular_operand.low>, !ada.qual<i8, @modular_operand.byte>) -> !ada.qual<i8, @modular_operand.byte>
 
 function Modular_Operand return Boolean is
    type Byte is mod 256;

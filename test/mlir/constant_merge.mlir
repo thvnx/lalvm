@@ -17,8 +17,8 @@ module {
     %b = ada.constant : !ada.qual<i32, @integer> = 42
     %p = ada.constant : !ada.qual<i32, @positive> = 42
     %q = ada.requalify %p : !ada.qual<i32, @positive> to !ada.qual<i32, @integer>
-    %s = ada.binop "+" %a, %b : !ada.qual<i32, @integer>
-    %t = ada.binop "+" %s, %q : !ada.qual<i32, @integer>
+    %s = ada.binop "+" %a, %b : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
+    %t = ada.binop "+" %s, %q : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
     ada.return %t : !ada.qual<i32, @integer>
   }
 }

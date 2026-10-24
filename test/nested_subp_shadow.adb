@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -12,7 +15,7 @@
 -- MLIR:         ada.decls {
 -- MLIR:           ada.subp private @nested_subp_shadow.nested_subp_shadow(
 -- MLIR:             %[[ONE:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
--- MLIR:             %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR:             %[[R:.*]] = ada.binop "+" %{{.*}}, %[[ONE]] checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:             ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[RES:.*]] = ada.call @nested_subp_shadow.nested_subp_shadow(%[[I]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[RES]] : !ada.qual<i32, @standard.integer>

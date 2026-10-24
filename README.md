@@ -145,7 +145,7 @@ module @compute {
     %0 = ada.call @compute.double(%arg0) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
     ada.decls {
       ada.subp private @compute.double(%arg1: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> {
-        %1 = ada.binop "+" %arg1, %arg1 checks<overflow> : !ada.qual<i32, @standard.integer>
+        %1 = ada.binop "+" %arg1, %arg1 checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
         ada.return %1 : !ada.qual<i32, @standard.integer>
       }
     }

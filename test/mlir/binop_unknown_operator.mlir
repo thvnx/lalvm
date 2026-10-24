@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
+
 // `ada.binop` only accepts the predefined arithmetic operators (+, -, *, /).
 // A relational operator such as "=" belongs to `ada.cmp`, so `BinOp::parse`
 // rejects it via `symbolizeAdaBinaryOp`.
@@ -8,7 +11,7 @@
 
 module {
   ada.subp @bad(%a: i32, %b: i32) -> i32 {
-    %0 = ada.binop "=" %a, %b : i32
+    %0 = ada.binop "=" %a, %b : (i32, i32) -> i32
     ada.return %0 : i32
   }
 }

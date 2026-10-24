@@ -599,9 +599,11 @@ private:
   }
 
   /// Emit the arithmetic or Boolean logical operation for two precomputed
-  /// operands. `op` is the ada_op node (ada_op_plus, ada_op_and, etc.).
+  /// operands, of type `resultType`. `op` is the ada_op node (ada_op_plus,
+  /// ada_op_and, etc.).
   mlir::Value emitBinOp(ada_node &op, mlir::Value lhs, mlir::Value rhs,
-                        bool isInteger = false, bool modular = false) {
+                        mlir::Type resultType, bool isInteger = false,
+                        bool modular = false) {
     auto callerLoc = loc(op);
     bool signedInt = isInteger && !modular;
     mlir::ada::AdaBinaryOp kind;
@@ -677,8 +679,8 @@ private:
         checks != mlir::ada::AdaChecks{}
             ? mlir::ada::AdaChecksAttr::get(builder.getContext(), checks)
             : mlir::ada::AdaChecksAttr{};
-    return mlir::ada::BinOp::create(builder, callerLoc, kind, lhs, rhs,
-                                    checksAttr);
+    return mlir::ada::BinOp::create(builder, callerLoc, resultType, kind, lhs,
+                                    rhs, checksAttr);
   }
 
   /// Emit the relational operation for two precomputed operands.
@@ -805,13 +807,8 @@ private:
     }
 
     // Arithmetic (@rm{4-5-3}..@rm{4-5-5}) and Boolean logical (@rm{4-5-1})
-    // operators: operands and result share one type. Coerce both operands to
-    // the result type so SameOperandsAndResultType is satisfied when the sides
-    // differ.
-    if (resultType) {
-      lhs = coerce(lhs, resultType, loc(binop));
-      rhs = coerce(rhs, resultType, loc(binop));
-    }
+    // operators yield the operator's type. Their operands are values of that
+    // type, whatever their subtypes: no conversion.
     // Integer iff the result type has an `int_info`; modular iff a `base` link
     // carries a modulus (a subtype's own `int_info` has only its range). Floats
     // and enums have no `int_info`, so they are flagged neither.
@@ -822,7 +819,9 @@ private:
         isInteger = true;
         modular = isModularTypeOp(typeOp);
       }
-    return emitBinOp(op, lhs, rhs, isInteger, modular);
+    return emitBinOp(op, lhs, rhs,
+                     resultType ? mlir::Type(resultType) : lhs.getType(),
+                     isInteger, modular);
   }
 
   /// Codegen a unary operation (@rm{4-5-6}) as `ada.unop`. The result has the
@@ -1636,8 +1635,8 @@ private:
     // Convert the offset into a zero-based one for MemRef load/store
     // operations.
     mlir::Value offset = mlir::ada::BinOp::create(
-        builder, location, mlir::ada::AdaBinaryOp::Minus, rawIndex, first,
-        mlir::ada::AdaChecksAttr{});
+        builder, location, indexQual, mlir::ada::AdaBinaryOp::Minus, rawIndex,
+        first, mlir::ada::AdaChecksAttr{});
 
     // Element location: memref<!ada.qual<component, @c>, strided<[], offset:
     // ?>>.
@@ -3509,7 +3508,7 @@ private:
       mlir::Value one = emitIntConstant(llvm::APInt(intType.getWidth(), 1),
                                         paramType, loc(loopNode));
       mlir::Value next =
-          mlir::ada::BinOp::create(builder, loc(loopNode),
+          mlir::ada::BinOp::create(builder, loc(loopNode), paramType,
                                    isReverse ? mlir::ada::AdaBinaryOp::Minus
                                              : mlir::ada::AdaBinaryOp::Plus,
                                    paramVal, one, mlir::ada::AdaChecksAttr{});
