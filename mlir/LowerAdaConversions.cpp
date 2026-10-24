@@ -58,29 +58,34 @@ static std::pair<APInt, APInt> clampTo(const APSInt &lo, const APSInt &hi,
 
 /// Give `value` the machine representation of `targetQual`: sign or zero extend
 /// an integer as the source reads its values, truncate it, or change a float's
-/// precision. The machine value is kept as is between the same types.
+/// precision. The machine value is kept as is between the same types. The cast,
+/// the only new value, keeps the object name of `loc` with the Ada type
+/// `nameType` for debug info.
 static Value changeRepresentation(PatternRewriter &rewriter, Location loc,
                                   Value value, ada::QualType targetQual,
-                                  bool sourceUnsigned) {
+                                  bool sourceUnsigned,
+                                  FlatSymbolRefAttr nameType) {
   Type sourceType = cast<ada::QualType>(value.getType()).getMlirType();
   Type targetType = targetQual.getMlirType();
-  Value raw = ada::UnwrapOp::create(rewriter, loc, sourceType, value);
+  Location unnamed = ada::unnamedLoc(loc);
+  Location castLoc = ada::attachAdaTypeRef(loc, nameType);
+  Value raw = ada::UnwrapOp::create(rewriter, unnamed, sourceType, value);
   unsigned sourceWidth = sourceType.getIntOrFloatBitWidth();
   unsigned targetWidth = targetType.getIntOrFloatBitWidth();
   if (isa<FloatType>(sourceType)) {
     if (targetWidth < sourceWidth)
-      raw = arith::TruncFOp::create(rewriter, loc, targetType, raw);
+      raw = arith::TruncFOp::create(rewriter, castLoc, targetType, raw);
     else if (targetWidth > sourceWidth)
-      raw = arith::ExtFOp::create(rewriter, loc, targetType, raw);
+      raw = arith::ExtFOp::create(rewriter, castLoc, targetType, raw);
   } else if (targetWidth < sourceWidth) {
-    raw = arith::TruncIOp::create(rewriter, loc, targetType, raw);
+    raw = arith::TruncIOp::create(rewriter, castLoc, targetType, raw);
   } else if (targetWidth > sourceWidth) {
     if (sourceUnsigned)
-      raw = arith::ExtUIOp::create(rewriter, loc, targetType, raw);
+      raw = arith::ExtUIOp::create(rewriter, castLoc, targetType, raw);
     else
-      raw = arith::ExtSIOp::create(rewriter, loc, targetType, raw);
+      raw = arith::ExtSIOp::create(rewriter, castLoc, targetType, raw);
   }
-  return ada::WrapOp::create(rewriter, loc, targetQual, raw);
+  return ada::WrapOp::create(rewriter, unnamed, targetQual, raw);
 }
 
 namespace {
@@ -242,7 +247,7 @@ struct RepresentationChangeConversion
 
     // Representation change, to the target's base type.
     value = changeRepresentation(rewriter, loc, value, targetBaseQual,
-                                 sourceUnsigned);
+                                 sourceUnsigned, target.getAdaType());
 
     // Check after a preserving widening, which establishes the target subtype,
     // or against a dynamic range, or requalify.

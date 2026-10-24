@@ -64,20 +64,6 @@ struct AdaToLLVMLoweringPass
 };
 } // namespace
 
-/// If `loc` is a NameLoc, wrap its child in a FusedLoc that carries the Ada
-/// type reference `adaType` as metadata. AdaDebugInfoPass reads this to resolve
-/// the correct DIType for each value, bypassing the MLIR-type-keyed cache that
-/// conflates distinct Ada types sharing the same machine representation.
-static mlir::Location attachAdaTypeRef(MLIRContext *ctx, mlir::Location loc,
-                                       mlir::FlatSymbolRefAttr adaType) {
-  auto nl = mlir::dyn_cast<mlir::NameLoc>(loc);
-  if (!nl)
-    return loc;
-  return mlir::NameLoc::get(
-      nl.getName(), mlir::FusedLoc::get(ctx, {nl.getChildLoc()},
-                                        ada::DITypeRefAttr::get(ctx, adaType)));
-}
-
 /// Build an `arith.constant` of integer `type` holding `value`.
 static mlir::Value constInt(mlir::ConversionPatternRewriter &rewriter,
                             mlir::Location loc, mlir::Type type,
@@ -208,8 +194,7 @@ struct ConstantOpLowering : public OpConversionPattern<ada::ConstantOp> {
   matchAndRewrite(ada::ConstantOp op, OpAdaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto typed = mlir::cast<ada::QualType>(op.getResult().getType());
-    mlir::Location loc = attachAdaTypeRef(rewriter.getContext(), op.getLoc(),
-                                          typed.getAdaType());
+    mlir::Location loc = ada::attachAdaTypeRef(op.getLoc(), typed.getAdaType());
     auto newOp = mlir::arith::ConstantOp::create(
         rewriter, loc, mlir::cast<mlir::TypedAttr>(op.getValue()));
     rewriter.replaceOp(op, newOp.getResult());
@@ -235,8 +220,8 @@ struct CoerceOpLowering : public OpConversionPattern<ada::CoerceOp> {
     }
 
     auto resultTyped = mlir::cast<ada::QualType>(op.getResult().getType());
-    mlir::Location loc = attachAdaTypeRef(rewriter.getContext(), op.getLoc(),
-                                          resultTyped.getAdaType());
+    mlir::Location loc =
+        ada::attachAdaTypeRef(op.getLoc(), resultTyped.getAdaType());
 
     if (auto srcInt = mlir::dyn_cast<mlir::IntegerType>(input.getType())) {
       if (auto dstInt = mlir::dyn_cast<mlir::IntegerType>(resultType)) {
@@ -1101,8 +1086,8 @@ struct AllocaAdaTypedLowering : public OpConversionPattern<ada::AllocaOp> {
     auto llvmElem = getTypeConverter()->convertType(typedElem.getMlirType());
     if (!llvmElem)
       return failure();
-    mlir::Location loc = attachAdaTypeRef(rewriter.getContext(), op.getLoc(),
-                                          typedElem.getAdaType());
+    mlir::Location loc =
+        ada::attachAdaTypeRef(op.getLoc(), typedElem.getAdaType());
     auto one =
         LLVM::ConstantOp::create(rewriter, op.getLoc(), rewriter.getI64Type(),
                                  rewriter.getI64IntegerAttr(1));
@@ -1234,8 +1219,7 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
         if (!paramTypeRefs[i])
           continue;
         BlockArgument arg = entry.getArgument(i);
-        arg.setLoc(
-            attachAdaTypeRef(op.getContext(), arg.getLoc(), paramTypeRefs[i]));
+        arg.setLoc(ada::attachAdaTypeRef(arg.getLoc(), paramTypeRefs[i]));
       }
     }
 

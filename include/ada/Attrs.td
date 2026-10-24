@@ -181,7 +181,7 @@ def ArrayTypeInfoAttr : AttrDef<Ada_Dialect, "ArrayTypeInfo"> {
 }
 
 // Reference to an ada.type op by sym_name, for use as FusedLoc metadata in
-// value locations. Embedded by LowerToLLVM's attachAdaTypeRef so that
+// value locations. Embedded by `ada::attachAdaTypeRef` so that
 // AdaDebugInfoPass can resolve the correct DIType for each value.
 def DITypeRefAttr : AttrDef<Ada_Dialect, "DITypeRef"> {
   let mnemonic = "typeref";

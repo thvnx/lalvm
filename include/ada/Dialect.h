@@ -107,6 +107,11 @@ mlir::Value getOrCreateStaticRange(mlir::OpBuilder &builder, mlir::Location loc,
 
 /// `loc` without the object name MLIRGen may attach to a value.
 mlir::Location unnamedLoc(mlir::Location loc);
+
+/// If `loc` is a NameLoc, wrap its child in a FusedLoc that carries the Ada
+/// type reference `adaType` as metadata.
+mlir::Location attachAdaTypeRef(mlir::Location loc,
+                                mlir::FlatSymbolRefAttr adaType);
 } // namespace ada
 } // namespace mlir
 
