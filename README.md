@@ -108,7 +108,8 @@ Options:
 - `-P <project.gpr>` (alias `--project`): load a GPR project so `with`ed units
   resolve through its unit provider (otherwise the single file is parsed alone).
 - `--bind`: emit the bind module of the given main unit.
-- `-O {0,1,2,3}`: optimization level (default `0`; `1` and above run `mem2reg`).
+- `-O {0,1,2,3}`: optimization level (default `0`; `1` and above run `mem2reg`
+  and the canonicalizer).
 - `-g`: generate DWARF debug info (off by default).
 - `--record-command-line`: record the invocation in `llvm.commandline` (off by
   default; it embeds input/output paths).
