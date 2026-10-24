@@ -1606,25 +1606,19 @@ private:
     std::optional<llvm::APSInt> staticIndex;
     if (auto cst = rawIndex.getDefiningOp<mlir::ada::ConstantOp>())
       staticIndex = cst.getIntValue();
-    // Coerce to the base type but do not range check. An index check is
-    // generated below.
-    rawIndex = coerce(rawIndex, indexQual, location);
-    if (!rawIndex)
-      return nullptr;
+    // The index is a value of the index type, whatever its subtype: its
+    // conversion to that type changes nothing (@rm{4-1-1}(7)).
 
     llvm::APSInt lo = mlir::ada::boundValue(info.staticLower(0));
     llvm::APSInt hi = mlir::ada::boundValue(info.staticUpper(0));
     if (!staticIndex || warnOutOfSubtypeRange(staticIndex.value(), lo, hi,
                                               indexSym.getValue(), location)) {
-      // The check yields the index (anonymous) subtype and convert back to the
-      // base type to compute the offset. Using a plain `ada.coerce` op since
-      // `coerce` would add a range check.
+      // The check yields the index (anonymous) subtype, from which the offset
+      // is computed.
       mlir::Value range = mlir::ada::getOrCreateStaticRange(
           builder, location, indexSym, indexQual, lo, hi);
-      mlir::Value checked = mlir::ada::IndexCheckOp::create(
-          builder, location, subQual, rawIndex, range);
-      rawIndex =
-          mlir::ada::CoerceOp::create(builder, location, indexQual, checked);
+      rawIndex = mlir::ada::IndexCheckOp::create(builder, location, subQual,
+                                                 rawIndex, range);
     }
 
     auto intType = mlir::cast<mlir::IntegerType>(indexQual.getMlirType());
