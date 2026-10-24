@@ -1137,16 +1137,14 @@ mlir::ada::intTypeInfoOfAdaType(mlir::Operation *from,
                 : IntegerTypeInfoAttr();
 }
 
-bool mlir::ada::inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
-                              const llvm::APInt &hi, bool isUnsigned) {
-  // Compare at a common width, one bit wider so no value changes sign.
-  unsigned width =
-      std::max({value.getBitWidth(), lo.getBitWidth(), hi.getBitWidth()}) + 1;
-  auto ext = [&](const llvm::APInt &v) {
-    return isUnsigned ? v.zext(width) : v.sext(width);
-  };
-  llvm::APInt v = ext(value), l = ext(lo), h = ext(hi);
-  return isUnsigned ? l.ule(v) && v.ule(h) : l.sle(v) && v.sle(h);
+bool mlir::ada::inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
+                              const llvm::APSInt &hi) {
+  return llvm::APSInt::compareValues(lo, value) <= 0 &&
+         llvm::APSInt::compareValues(value, hi) <= 0;
+}
+
+llvm::APSInt mlir::ada::boundValue(mlir::IntegerAttr bound) {
+  return llvm::APSInt(bound.getValue(), /*isUnsigned=*/false);
 }
 
 mlir::Value mlir::ada::createIntConstant(mlir::OpBuilder &builder,

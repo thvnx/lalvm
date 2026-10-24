@@ -13,7 +13,7 @@
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
-#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/APSInt.h"
 
 /// Include the auto-generated header file containing the declaration of the Ada
 /// dialect.
@@ -80,10 +80,14 @@ mlir::IntegerAttr modulusOfAdaType(mlir::Operation *from,
 IntegerTypeInfoAttr intTypeInfoOfAdaType(mlir::Operation *from,
                                          mlir::FlatSymbolRefAttr sym);
 
-/// Whether `value` lies in `lo..hi`, compared as signed unless `isUnsigned`.
-/// The three values may have different bit widths.
-bool inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
-                   const llvm::APInt &hi, bool isUnsigned);
+/// Whether `value` lies in `lo..hi`. The three values may have different bit
+/// widths and signedness.
+bool inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
+                   const llvm::APSInt &hi);
+
+/// The value of a static bound attribute (`int_info`, `array_info`), stored
+/// signless at its minimal signed width, so read as signed.
+llvm::APSInt boundValue(mlir::IntegerAttr bound);
 
 /// Build an integer `ada.constant` of `type`, `value` fit to its width.
 mlir::Value createIntConstant(mlir::OpBuilder &builder, mlir::Location loc,

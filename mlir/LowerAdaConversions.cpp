@@ -13,10 +13,10 @@
 using namespace mlir;
 
 /// Whether `knownLo..knownHi` lies within `lo..hi`.
-static bool rangeWithin(const APInt &knownLo, const APInt &knownHi,
-                        const APInt &lo, const APInt &hi, bool isUnsigned) {
-  return ada::inStaticRange(knownLo, lo, hi, isUnsigned) &&
-         ada::inStaticRange(knownHi, lo, hi, isUnsigned);
+static bool rangeWithin(const APSInt &knownLo, const APSInt &knownHi,
+                        const APSInt &lo, const APSInt &hi) {
+  return ada::inStaticRange(knownLo, lo, hi) &&
+         ada::inStaticRange(knownHi, lo, hi);
 }
 
 namespace {
@@ -72,10 +72,9 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
     if (ada::IntegerTypeInfoAttr known =
             ada::intTypeInfoOfAdaType(op, source.getAdaType())) {
       IntegerAttr knownLo = known.staticLower(), knownHi = known.staticUpper();
-      bool isUnsigned = static_cast<bool>(ada::modulusOfAdaType(op, base));
       if (knownLo && knownHi &&
-          rangeWithin(knownLo.getValue(), knownHi.getValue(), lo.getValue(),
-                      hi.getValue(), isUnsigned)) {
+          rangeWithin(knownLo.getAPSInt(), knownHi.getAPSInt(), lo.getAPSInt(),
+                      hi.getAPSInt())) {
         rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target,
                                                       op.getInput());
         return success();
