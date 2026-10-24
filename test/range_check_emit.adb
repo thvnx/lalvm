@@ -3,6 +3,7 @@
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-conversions %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWERED
 
 -- A dynamic value flowing into a constrained subtype emits a Constraint_Check
 -- (RM 11.5): the static bounds become an `ada.range`, checked by
@@ -11,10 +12,13 @@
 -- checked.
 
 -- MLIR-LABEL: ada.subp @range_check_emit
--- MLIR:      %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
--- MLIR:      %[[HI:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 10
--- MLIR:      ada.range %[[LO]], %[[HI]] : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_emit.small>
--- MLIR:      ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
+-- MLIR:      ada.convert implicit %arg0 : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
+
+-- LOWERED-LABEL: ada.subp @range_check_emit
+-- LOWERED:   %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
+-- LOWERED:   %[[HI:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 10
+-- LOWERED:   ada.range %[[LO]], %[[HI]] : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_emit.small>
+-- LOWERED:   ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
 
 -- LLVM-LABEL: define i32 @_ada_range_check_emit(
 -- LLVM:      icmp slt i32 %0, 1
