@@ -3807,16 +3807,22 @@ private:
       expr = visit_expr(return_expr);
       if (!expr)
         return mlir::failure();
-      // Coerce to the subprogram's declared return type (handles subtypes and
-      // implicit conversions).
+      // Convert to the subprogram's result subtype (@rm{6-5}).
       mlir::Operation *enclosing =
           builder.getInsertionBlock()->getParent()->getParentOp();
       if (auto subp = mlir::dyn_cast<mlir::ada::SubpOp>(enclosing)) {
         auto results = subp.getFunctionType().getResults();
         if (!results.empty())
           if (auto retType =
-                  mlir::dyn_cast<mlir::ada::QualType>(results.front()))
-            expr = coerce(expr, retType, loc(return_expr));
+                  mlir::dyn_cast<mlir::ada::QualType>(results.front())) {
+            if (expr.getType() != retType) {
+              expr = emitConversion(expr, retType,
+                                    mlir::ada::AdaConversionKind::Implicit,
+                                    loc(return_expr));
+              if (!expr)
+                return mlir::failure();
+            }
+          }
       }
     }
     return expr;
