@@ -5,8 +5,8 @@
 
 -- Unary operand, on the base type.
 
--- CHECK: ada.coerce %{{.*}} : <i32, @unary_operand.small> to <i32, @standard.integer>
--- CHECK: ada.unop "-"
+-- CHECK: %[[Y:.*]] = memref.load
+-- CHECK-NEXT: ada.unop "-" %[[Y]] checks<overflow> : (!ada.qual<i32, @unary_operand.small>) -> !ada.qual<i32, @standard.integer>
 
 function Unary_Operand return Integer is
    subtype Small is Integer range 1 .. 10;

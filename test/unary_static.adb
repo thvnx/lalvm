@@ -22,7 +22,7 @@
 
 -- CHECK-LABEL: ada.subp private @unary_static.minus_one_mod(
 -- CHECK:         [[ONE:%[0-9]+]] = ada.constant : !ada.qual<i8, @unary_static.m10> = 1
--- CHECK:         ada.unop "-" [[ONE]] : !ada.qual<i8, @unary_static.m10>
+-- CHECK:         ada.unop "-" [[ONE]] : (!ada.qual<i8, @unary_static.m10>) -> !ada.qual<i8, @unary_static.m10>
 
 procedure Unary_Static is
    type M10 is mod 10;

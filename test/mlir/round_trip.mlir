@@ -60,8 +60,8 @@ module {
     // CHECK: ada.constant : !ada.qual<i32, @integer> = 42
     %3 = ada.constant : !ada.qual<i32, @integer> = 42
 
-    // CHECK: ada.unop "not" %{{.*}} : !ada.qual<i1, @boolean>
-    %4 = ada.unop "not" %2 : !ada.qual<i1, @boolean>
+    // CHECK: ada.unop "not" %{{.*}} : (!ada.qual<i1, @boolean>) -> !ada.qual<i1, @boolean>
+    %4 = ada.unop "not" %2 : (!ada.qual<i1, @boolean>) -> !ada.qual<i1, @boolean>
 
     ada.return %0 : !ada.qual<i32, @integer>
   }

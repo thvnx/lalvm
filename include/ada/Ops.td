@@ -616,20 +616,24 @@ def CmpOp : Ada_Op<"cmp", [Pure,
 // Same as `ada.binop`: only speculatable without checks.
 def UnOp : Ada_Op<"unop", [NoMemoryEffect,
     DeclareOpInterfaceMethods<ConditionallySpeculatable>,
-    SameOperandsAndResultType]> {
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Ada predefined unary operation";
   let description = [{
     Represents an Ada predefined unary operation (@rm{4-5-6}). The operator is
-    encoded as an `AdaUnaryOp` enum attribute. Type-preserving: operand and
-    result share one type, so the quoted-operator spelling carries a single
-    type.
+    encoded as an `AdaUnaryOp` enum attribute. The result has the operand's
+    type, which the operand may have through any of its subtypes: they share a
+    machine type and a base type.
 
     An optional `checks<...>` group lists the run-time checks the operation
     must perform. `-X` and `abs X` can overflow when `X` is `T'Base'First`.
 
     ```mlir
-    %0 = ada.unop "not" %b : !ada.qual<i1, @standard.boolean>
-    %1 = ada.unop "-" %x checks<overflow> : !ada.qual<i32, @standard.integer>
+    %0 = ada.unop "not" %b
+        : (!ada.qual<i1, @standard.boolean>)
+       -> !ada.qual<i1, @standard.boolean>
+    %1 = ada.unop "abs" %p checks<overflow>
+        : (!ada.qual<i32, @standard.positive>)
+       -> !ada.qual<i32, @standard.integer>
     ```
   }];
 
@@ -639,7 +643,7 @@ def UnOp : Ada_Op<"unop", [NoMemoryEffect,
 
   let assemblyFormat = [{
     custom<Operator>($kind) $operand custom<Checks>($checks) attr-dict
-    `:` type($result)
+    `:` functional-type($operand, $result)
   }];
   let hasVerifier = 1;
 }
