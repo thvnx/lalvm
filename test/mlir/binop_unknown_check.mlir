@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
+
 // The `checks<...>` group only accepts the `AdaChecks` bit-enum flags
 // (`overflow`, `division`); `parseChecks` rejects anything else.
 
@@ -7,7 +10,7 @@
 
 module {
   ada.subp @bad(%a: i32, %b: i32) -> i32 {
-    %0 = ada.binop "+" %a, %b checks<bogus> : i32
+    %0 = ada.binop "+" %a, %b checks<bogus> : (i32, i32) -> i32
     ada.return %0 : i32
   }
 }

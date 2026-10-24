@@ -43,5 +43,5 @@ lalvm --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope add.adb
 This prints each op's source location inline, for example:
 
 ```mlir
-%0 = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @standard.integer> loc("add.adb":15:13 to :14)
+%0 = ada.binop "+" %arg0, %arg1 : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer> loc("add.adb":15:13 to :14)
 ```

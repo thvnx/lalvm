@@ -32,7 +32,7 @@ module {
       }
     }
     %r = ada.call @outer.inner() : () -> !ada.qual<i32, @integer>
-    %s = ada.binop "+" %c, %r : !ada.qual<i32, @integer>
+    %s = ada.binop "+" %c, %r : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
     ada.return %s : !ada.qual<i32, @integer>
   }
 }

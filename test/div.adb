@@ -1,8 +1,11 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @div
--- MLIR:         %[[R:.*]] = ada.binop "/" %arg0, %arg1 checks<division> : !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[R:.*]] = ada.binop "/" %arg0, %arg1 checks<division> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_div(

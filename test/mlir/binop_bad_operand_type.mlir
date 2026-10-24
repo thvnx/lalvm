@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
+
 // `ada.binop` operands must be integer or float machine types (possibly
 // wrapped in `!ada.qual`); `index` is neither.
 
@@ -7,7 +10,7 @@
 
 module {
   ada.subp @bad(%a: !ada.qual<index, @s>, %b: !ada.qual<index, @s>) -> !ada.qual<index, @s> {
-    %0 = ada.binop "+" %a, %b : !ada.qual<index, @s>
+    %0 = ada.binop "+" %a, %b : (!ada.qual<index, @s>, !ada.qual<index, @s>) -> !ada.qual<index, @s>
     ada.return %0 : !ada.qual<index, @s>
   }
 }

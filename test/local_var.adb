@@ -8,7 +8,7 @@
 -- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
 -- MLIR-DAG:     %[[X:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 5
 -- MLIR-DAG:     %[[Y:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
--- MLIR:         %[[R:.*]] = ada.binop "+" %[[X]], %[[Y]] checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %[[X]], %[[Y]] checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_local_var(

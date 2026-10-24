@@ -1,9 +1,12 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @long_float
 -- MLIR-SAME:    (%arg0: !ada.qual<f64, @standard.long_float>, %arg1: !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<f64, @standard.long_float>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : (!ada.qual<f64, @standard.long_float>, !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<f64, @standard.long_float>
 
 -- LLVM-LABEL: define double @_ada_long_float(

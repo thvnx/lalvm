@@ -6,7 +6,7 @@
 
 -- Scalar `in out` is passed by reference: only the callee converts.
 
--- CHECK: ada.coerce %{{.*}} : <i32, @param_in_out.small> to <i32, @standard.integer>
+-- CHECK: ada.binop "+" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @param_in_out.small>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in_out.small>
 -- CHECK-NOT: ada.coerce
 -- CHECK-NOT: ada.convert

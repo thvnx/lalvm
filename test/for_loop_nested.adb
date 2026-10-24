@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
 -- Nested `for` loops (RM 5.5): the inner loop nests inside the outer body,
@@ -17,9 +20,9 @@
 -- CHECK:         ada.binop "*" %{{.*}}, %{{.*}} checks<overflow>
 -- CHECK:         ada.binop "+" %{{.*}}, %{{.*}} checks<overflow>
 -- CHECK:         ada.cmp "=" %{{.*}}, %{{.*}}
--- CHECK:         ada.binop "+" %{{[^ ]+}}, %{{[^ ]+}} : !ada.qual<i32, @standard.integer>
+-- CHECK:         ada.binop "+" %{{[^ ]+}}, %{{[^ ]+}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK:         ada.cmp "=" %{{.*}}, %{{.*}}
--- CHECK:         ada.binop "+" %{{[^ ]+}}, %{{[^ ]+}} : !ada.qual<i32, @standard.integer>
+-- CHECK:         ada.binop "+" %{{[^ ]+}}, %{{[^ ]+}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK:       ^[[OMERGE]]:
 -- CHECK:         ada.return
 

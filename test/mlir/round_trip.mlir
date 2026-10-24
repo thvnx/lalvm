@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Copyright (c) 2026 The LALVM Project
+
 // Round-trip coverage for the Ada dialect ops with a custom assembly format
 // (`ada.type`, `ada.constant`, `ada.binop`, `ada.cmp`). Compiling Ada source
 // only exercises their printers and lowering; parsing the textual form back
@@ -48,11 +51,11 @@ module {
 
   // CHECK-LABEL: ada.subp @ops
   ada.subp @ops(%a: !ada.qual<i32, @integer>, %b: !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer> {
-    // CHECK: %[[SUM:.*]] = ada.binop "+" %arg0, %arg1 : !ada.qual<i32, @integer>
-    %0 = ada.binop "+" %a, %b : !ada.qual<i32, @integer>
+    // CHECK: %[[SUM:.*]] = ada.binop "+" %arg0, %arg1 : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
+    %0 = ada.binop "+" %a, %b : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
 
-    // CHECK: ada.binop "*" %arg0, %arg1 : !ada.qual<i32, @integer>
-    %1 = ada.binop "*" %a, %b : !ada.qual<i32, @integer>
+    // CHECK: ada.binop "*" %arg0, %arg1 : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
+    %1 = ada.binop "*" %a, %b : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>
 
     // CHECK: ada.cmp "=" %arg0, %arg1 : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i1, @boolean>
     %2 = ada.cmp "=" %a, %b : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i1, @boolean>

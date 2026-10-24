@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -7,7 +10,7 @@
 -- MLIR-LABEL: ada.subp @param_in
 -- MLIR:         ada.subp private @param_in.double(%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NOT:       memref
--- MLIR:           %[[R:.*]] = ada.binop "+" %arg0, %arg0 checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR:           %[[R:.*]] = ada.binop "+" %arg0, %arg0 checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 21
 -- MLIR:         %[[V:.*]] = ada.call @param_in.double(%[[C]]) : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>

@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
 -- Reverse `for` loop (RM 5.5): starts at `hi`, tests `I = lo`, steps by an
@@ -7,7 +10,7 @@
 -- CHECK-LABEL: ada.subp @for_loop_reverse
 -- CHECK:         ada.cmp "<="
 -- CHECK:         ada.cmp "="
--- CHECK:         ada.binop "-" %{{[^ ]+}}, %{{[^ ]+}} : !ada.qual<i32, @standard.integer>
+-- CHECK:         ada.binop "-" %{{[^ ]+}}, %{{[^ ]+}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK:         ada.return
 
 function For_Loop_Reverse (N : Integer) return Integer is

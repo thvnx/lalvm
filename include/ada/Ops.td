@@ -536,30 +536,28 @@ def AttrOp : Ada_Op<"attr", [Pure,
 // BinOp
 //===----------------------------------------------------------------------===//
 
-// SameOperandsAndResultType constrains the op so that all operands and the
-// result share one type. It also auto-generates build(AdaBinaryOp, Value,
-// Value) that infers the result type from the operands, so no custom builder is
-// needed. No side-effect but a run-time check can raise, so it is only
-// speculatable when no checks.
+// No side-effect but a run-time check can raise, so it is only speculatable
+// when no checks.
 def BinOp : Ada_Op<"binop", [NoMemoryEffect,
     DeclareOpInterfaceMethods<ConditionallySpeculatable>,
-    SameOperandsAndResultType]> {
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Ada predefined binary arithmetic operation";
   let description = [{
     Represents an Ada predefined binary arithmetic operation (@rm{4-5-3} to
     @rm{4-5-5}). The operator is encoded as an `AdaBinaryOp` enum attribute.
 
-    `SameOperandsAndResultType` constrains the op so that both operands and the
-    result share one type (integer or float). The constraint also auto-generates
-    a builder that infers the result type from the operands.
+    The result has the operator's type which each operand may have through any
+    of its subtypes: they share a machine type and a base type.
 
     An optional `checks<...>` group lists the run-time checks the operation
-    must perform (`overflow` for signed-integer `+`/`-`/`*`); it is printed only
-    when nonempty. Operands and result share one type:
+    must perform (`overflow` for signed-integer `+`/`-`/`*`). It is printed only
+    when nonempty:
 
     ```mlir
-    %0 = ada.binop "+" %a, %b : i32
-    %0 = ada.binop "+" %a, %b checks<overflow> : i32
+    %0 = ada.binop "+" %a, %b checks<overflow>
+        : (!ada.qual<i32, @standard.positive>,
+           !ada.qual<i32, @standard.natural>)
+       -> !ada.qual<i32, @standard.integer>
     ```
   }];
 
@@ -567,11 +565,9 @@ def BinOp : Ada_Op<"binop", [NoMemoryEffect,
                        OptionalAttr<AdaChecks>:$checks);
   let results = (outs AnyType:$result);
 
-  // The operator keyword and the optional `checks<...>` group are the only
-  // pieces not expressible declaratively; the rest is the shared-type form.
   let assemblyFormat = [{
     custom<Operator>($kind) $lhs `,` $rhs custom<Checks>($checks) attr-dict
-    `:` type($result)
+    `:` functional-type(operands, results)
   }];
   let hasVerifier = 1;
 }

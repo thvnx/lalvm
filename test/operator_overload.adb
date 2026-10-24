@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -6,10 +9,10 @@
 -- name is the bare operator symbol; MLIR then quotes it as @"operator_overload.*".
 
 -- MLIR-LABEL: ada.subp @operator_overload
--- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.binop "*" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.decls {
 -- MLIR:           ada.subp private @"operator_overload.*"(%{{.*}}: !ada.qual<i32, @standard.integer>, %{{.*}}: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR:             %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} checks<overflow> : !ada.qual<i32, @standard.integer>
+-- MLIR:             %[[SUM:.*]] = ada.binop "+" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:        ada.return %[[SUM]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return

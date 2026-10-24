@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
 -- Attribute bounds (`Integer'Last`, RM 5.5) fold statically; the pre-step
@@ -16,7 +19,7 @@
 -- CHECK:         ada.cmp "=" %{{.*}}, %{{.*}}
 -- CHECK:         cf.cond_br %{{.*}}, ^[[MERGE]], ^[[STEP:bb[0-9]+]]
 -- CHECK:       ^[[STEP]]:
--- CHECK:         ada.binop "+" %{{[^ ]+}}, %{{[^ ]+}} : !ada.qual<i32, @standard.integer>
+-- CHECK:         ada.binop "+" %{{[^ ]+}}, %{{[^ ]+}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK:       ^[[MERGE]]:
 -- CHECK:         ada.return
 
