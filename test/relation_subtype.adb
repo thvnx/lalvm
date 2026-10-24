@@ -10,26 +10,22 @@
 -- CHECK-NOT:     ada.range_check
 -- CHECK:         %[[Y:.*]] = memref.load %{{.*}} : memref<!ada.qual<i32, @relation_subtype.small>>
 -- CHECK:         %[[I:.*]] = memref.load %{{.*}} : memref<!ada.qual<i32, @standard.integer>>
--- CHECK:         %[[YB:.*]] = ada.coerce %[[Y]] : <i32, @relation_subtype.small> to <i32, @standard.integer>
--- CHECK:         ada.cmp "=" %[[YB]], %[[I]] : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>)
+-- CHECK-NEXT:    ada.cmp "=" %[[Y]], %[[I]] : (!ada.qual<i32, @relation_subtype.small>, !ada.qual<i32, @standard.integer>)
 -- CHECK-NOT:     ada.range_check
 -- CHECK:         ada.constant : !ada.qual<i32, {{.*}}> = 111
 -- CHECK:         ada.cmp "<=" %{{.*}}, %{{.*}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>)
 -- CHECK-NOT:     ada.range_check
 -- CHECK:         %[[Y2:.*]] = memref.load %{{.*}} : memref<!ada.qual<i32, @relation_subtype.small>>
 -- CHECK:         %[[C:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 200
--- CHECK:         %[[Y2B:.*]] = ada.coerce %[[Y2]] : <i32, @relation_subtype.small> to <i32, @standard.integer>
--- CHECK:         ada.cmp ">=" %[[Y2B]], %[[C]] : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>)
+-- CHECK-NEXT:    ada.cmp ">=" %[[Y2]], %[[C]] : (!ada.qual<i32, @relation_subtype.small>, !ada.qual<i32, @standard.integer>)
 -- CHECK-NOT:     ada.range_check
 -- CHECK:         %[[Z:.*]] = memref.load %{{.*}} : memref<!ada.qual<i32, @relation_subtype.tiny>>
 -- CHECK:         %[[I2:.*]] = memref.load %{{.*}} : memref<!ada.qual<i32, @standard.integer>>
--- CHECK:         %[[ZB:.*]] = ada.coerce %[[Z]] : <i32, @relation_subtype.tiny> to <i32, @standard.integer>
--- CHECK:         ada.cmp "=" %[[ZB]], %[[I2]] : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>)
+-- CHECK-NEXT:    ada.cmp "=" %[[Z]], %[[I2]] : (!ada.qual<i32, @relation_subtype.tiny>, !ada.qual<i32, @standard.integer>)
 -- CHECK-NOT:     ada.range_check
 -- CHECK:         %[[W:.*]] = memref.load %{{.*}} : memref<!ada.qual<i3, @relation_subtype.warm>>
 -- CHECK:         %[[CL:.*]] = memref.load %{{.*}} : memref<!ada.qual<i3, @relation_subtype.color>>
--- CHECK:         %[[WB:.*]] = ada.coerce %[[W]] : <i3, @relation_subtype.warm> to <i3, @relation_subtype.color>
--- CHECK:         ada.cmp "<" %[[WB]], %[[CL]] : (!ada.qual<i3, @relation_subtype.color>, !ada.qual<i3, @relation_subtype.color>)
+-- CHECK-NEXT:    ada.cmp "<" %[[W]], %[[CL]] : (!ada.qual<i3, @relation_subtype.warm>, !ada.qual<i3, @relation_subtype.color>)
 -- CHECK-NOT:     ada.range_check
 -- CHECK:         ada.return
 

@@ -849,10 +849,17 @@ mlir::Speculation::Speculatability BinOp::getSpeculatability() {
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult CmpOp::verify() {
-  // SameTypeOperands guarantees both operands share this type.
-  mlir::Type operandType = getLhs().getType();
-  if (auto typedType = mlir::dyn_cast<ada::QualType>(operandType))
-    operandType = typedType.getMlirType();
+  // The operands may have different subtypes, but share a machine type.
+  auto machineType = [](mlir::Type type) {
+    auto typed = mlir::dyn_cast<ada::QualType>(type);
+    return typed ? typed.getMlirType() : type;
+  };
+  mlir::Type lhsType = getLhs().getType(), rhsType = getRhs().getType();
+  mlir::Type operandType = machineType(lhsType);
+  if (mlir::isa<ada::QualType>(lhsType) != mlir::isa<ada::QualType>(rhsType) ||
+      operandType != machineType(rhsType))
+    return emitOpError() << "operand types " << lhsType << " and " << rhsType
+                         << " do not share a machine type";
   if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(operandType))
     return emitOpError() << "unsupported operand type " << operandType
                          << "; expected integer or float";
@@ -863,6 +870,21 @@ llvm::LogicalResult CmpOp::verify() {
     resultType = typedType.getMlirType();
   if (!resultType.isInteger(1))
     return emitOpError() << "result must be Boolean (i1), got " << resultType;
+  return mlir::success();
+}
+
+llvm::LogicalResult CmpOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  // Both operands belong to one type (share a base, @rm{4-5-2}), checked when
+  // both `ada.type` symbols resolve.
+  auto lhs = mlir::dyn_cast<ada::QualType>(getLhs().getType());
+  auto rhs = mlir::dyn_cast<ada::QualType>(getRhs().getType());
+  if (!lhs || !rhs)
+    return mlir::success();
+  mlir::FlatSymbolRefAttr lhsBase = baseOfAdaType(*this, lhs.getAdaType());
+  mlir::FlatSymbolRefAttr rhsBase = baseOfAdaType(*this, rhs.getAdaType());
+  if (lhsBase && rhsBase && lhsBase != rhsBase)
+    return emitOpError() << "operand types " << lhs.getAdaType() << " and "
+                         << rhs.getAdaType() << " do not share a base type";
   return mlir::success();
 }
 
