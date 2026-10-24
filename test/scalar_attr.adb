@@ -12,7 +12,7 @@
 -- MLIR-LABEL: ada.subp @scalar_attr
 -- MLIR:         %[[R:.*]] = ada.range %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @scalar_attr.s>
 -- MLIR:         %[[L:.*]] = ada.attr "last", %[[R]] : !ada.qual<i32, @scalar_attr.s>
--- MLIR:         ada.coerce %[[L]] : <i32, @scalar_attr.s> to <i32, @standard.integer>
+-- MLIR:         ada.convert implicit %[[L]] : !ada.qual<i32, @scalar_attr.s> to !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.constant : !ada.qual<i32, @standard.integer> = 1
 
 -- `S'Last - S'First` keeps its overflow check.

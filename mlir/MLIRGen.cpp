@@ -1718,7 +1718,8 @@ private:
     }
     mlir::Value attr = mlir::ada::AttrOp::create(
         builder, location, type, builder.getStringAttr(name), range);
-    return coerce(attr, baseType, location);
+    return emitConversion(attr, baseType,
+                          mlir::ada::AdaConversionKind::Implicit, location);
   }
 
   /// Codegen an expression node. Returns the SSA Value for the result, or
