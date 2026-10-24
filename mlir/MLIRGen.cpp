@@ -2542,7 +2542,13 @@ private:
                           "deferred constant declarations are not supported");
           return mlir::failure();
         }
-        init = coerce(init, elemType, loc(id));
+        // Convert to the object's subtype (@rm{3-3-1}).
+        if (init.getType() != elemType) {
+          init = emitConversion(
+              init, elemType, mlir::ada::AdaConversionKind::Implicit, loc(id));
+          if (!init)
+            return mlir::failure();
+        }
         setAdaNameLoc(init, nameAttr, loc(id));
         declare(id, init);
       } else {
@@ -2559,7 +2565,14 @@ private:
         setAdaNameLoc(mlir::Value(allocaOp), nameAttr);
         mlir::Value ptr = allocaOp;
         if (init) {
-          init = coerce(init, elemType, loc(id));
+          // Convert to the object's subtype (@rm{3-3-1}).
+          if (init.getType() != elemType) {
+            init =
+                emitConversion(init, elemType,
+                               mlir::ada::AdaConversionKind::Implicit, loc(id));
+            if (!init)
+              return mlir::failure();
+          }
           auto storeOp =
               mlir::memref::StoreOp::create(builder, loc(id), init, ptr);
           setAdaNameLoc(storeOp, nameAttr);
