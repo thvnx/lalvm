@@ -3458,8 +3458,19 @@ private:
     mlir::Value hi = visit_expr(highNode);
     if (!hi)
       return mlir::failure();
-    lo = coerce(lo, paramType, loc(lowNode));
-    hi = coerce(hi, paramType, loc(highNode));
+    // Convert each bound to the loop parameter's subtype.
+    if (lo.getType() != paramType) {
+      lo = emitConversion(lo, paramType, mlir::ada::AdaConversionKind::Implicit,
+                          loc(lowNode));
+      if (!lo)
+        return mlir::failure();
+    }
+    if (hi.getType() != paramType) {
+      hi = emitConversion(hi, paramType, mlir::ada::AdaConversionKind::Implicit,
+                          loc(highNode));
+      if (!hi)
+        return mlir::failure();
+    }
 
     auto nameAttr = getNameAttr(id);
     mlir::Value paramPtr = mlir::ada::AllocaOp::create(
