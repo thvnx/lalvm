@@ -485,6 +485,17 @@ llvm::LogicalResult ConstantOp::verify() {
 
 mlir::OpFoldResult ConstantOp::fold(FoldAdaptor) { return getValue(); }
 
+std::optional<llvm::APSInt> ConstantOp::getIntValue() {
+  auto attr = mlir::dyn_cast<mlir::IntegerAttr>(getValue());
+  if (!attr)
+    return std::nullopt;
+  // The Ada type gives the signedness.
+  auto type = mlir::cast<QualType>(getResult().getType());
+  bool isUnsigned =
+      static_cast<bool>(modulusOfAdaType(*this, type.getAdaType()));
+  return llvm::APSInt(attr.getValue(), isUnsigned);
+}
+
 //===----------------------------------------------------------------------===//
 // CoerceOp
 //===----------------------------------------------------------------------===//

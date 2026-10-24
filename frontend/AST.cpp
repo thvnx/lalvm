@@ -371,7 +371,7 @@ std::string libadalang::bigIntToString(ada_big_integer bigint) {
   return s;
 }
 
-std::optional<llvm::APInt> libadalang::bigIntToAPInt(ada_big_integer bigint) {
+std::optional<llvm::APSInt> libadalang::bigIntToAPSInt(ada_big_integer bigint) {
   std::string s = bigIntToString(bigint);
   // Validate before handing to APInt, whose string constructor asserts on
   // malformed input instead of failing.
@@ -384,7 +384,8 @@ std::optional<llvm::APInt> libadalang::bigIntToAPInt(ada_big_integer bigint) {
   // getBitsNeeded is the unsigned magnitude width for non-negative values;
   // one more bit keeps the sign clear under signed interpretation.
   unsigned bits = llvm::APInt::getBitsNeeded(str, /*radix=*/10) + 1;
-  return llvm::APInt(bits, str, /*radix=*/10);
+  return llvm::APSInt(llvm::APInt(bits, str, /*radix=*/10),
+                      /*isUnsigned=*/false);
 }
 
 bool libadalang::isStaticExpr(ada_node &expr) {
@@ -394,11 +395,11 @@ bool libadalang::isStaticExpr(ada_node &expr) {
          isStatic;
 }
 
-std::optional<llvm::APInt> libadalang::evalExprAsInt(ada_node &expr) {
+std::optional<llvm::APSInt> libadalang::evalExprAsInt(ada_node &expr) {
   ada_big_integer bigint;
   if (!ada_expr_p_eval_as_int(&expr, &bigint))
     return std::nullopt;
-  return bigIntToAPInt(bigint);
+  return bigIntToAPSInt(bigint);
 }
 
 ada_node libadalang::parent(ada_node *node) {

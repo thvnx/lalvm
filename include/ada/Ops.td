@@ -247,6 +247,10 @@ def ConstantOp : Ada_Op<"constant", [Pure, ConstantLike]> {
   // `ConstantLike` requires folding to the value (the folder identifies and
   // deduplicates constants through it).
   let hasFolder = 1;
+  let extraClassDeclaration = [{
+    /// The integer value, unsigned for a modular type.
+    std::optional<llvm::APSInt> getIntValue();
+  }];
 }
 
 //===----------------------------------------------------------------------===//

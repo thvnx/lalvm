@@ -970,15 +970,15 @@ private:
   }
 
   /// Extract the value of an ada_int_literal node via `p_denoted_value`, as an
-  /// APInt (exact at any width). Returns nullopt and emits a diagnostic on
+  /// APSInt (exact at any width). Returns nullopt and emits a diagnostic on
   /// failure.
-  std::optional<llvm::APInt> evalIntLiteral(ada_node &node) {
+  std::optional<llvm::APSInt> evalIntLiteral(ada_node &node) {
     ada_big_integer bigint;
     if (!ada_int_literal_p_denoted_value(&node, &bigint)) {
       mlir::emitError(loc(node), "failed to evaluate integer literal");
       return std::nullopt;
     }
-    auto value = libadalang::bigIntToAPInt(bigint);
+    auto value = libadalang::bigIntToAPSInt(bigint);
     if (!value) {
       ada_text text;
       ada_node_text(&node, &text);
@@ -989,9 +989,9 @@ private:
   }
 
   /// Both static bounds recorded in a type's `int_info`, or nullopt when the
-  /// type has no integer info or a bound is dynamic. Bounds are kept as APInts
-  /// so they stay exact at any integer width.
-  std::optional<std::pair<llvm::APInt, llvm::APInt>>
+  /// type has no integer info or a bound is dynamic. Bounds are kept as
+  /// APSInts so they stay exact at any integer width.
+  std::optional<std::pair<llvm::APSInt, llvm::APSInt>>
   ownStaticBounds(ada_node &type_decl, mlir::Location location) {
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
     if (!typeOp)
@@ -1003,23 +1003,15 @@ private:
     mlir::IntegerAttr lo = info.staticLower(), hi = info.staticUpper();
     if (!lo || !hi)
       return std::nullopt;
-    return std::make_pair(lo.getValue(), hi.getValue());
-  }
-
-  /// Whether `value` lies in `lo..hi`, all signed as Libadalang evaluates them.
-  static bool inStaticRange(const llvm::APInt &value, const llvm::APInt &lo,
-                            const llvm::APInt &hi) {
-    return mlir::ada::inStaticRange(llvm::APSInt(value, /*isUnsigned=*/false),
-                                    llvm::APSInt(lo, /*isUnsigned=*/false),
-                                    llvm::APSInt(hi, /*isUnsigned=*/false));
+    return std::make_pair(mlir::ada::boundValue(lo), mlir::ada::boundValue(hi));
   }
 
   /// A static value outside the base range of its type is illegal
   /// (@rm{4-9}(35)): emit the two errors and return true.
-  bool diagnoseOutOfBaseRange(const llvm::APInt &value, const llvm::APInt &lo,
-                              const llvm::APInt &hi, llvm::StringRef typeName,
+  bool diagnoseOutOfBaseRange(const llvm::APSInt &value, const llvm::APSInt &lo,
+                              const llvm::APSInt &hi, llvm::StringRef typeName,
                               mlir::Location location) {
-    if (inStaticRange(value, lo, hi))
+    if (mlir::ada::inStaticRange(value, lo, hi))
       return false;
     mlir::emitError(location, "value not in range of type \"")
         << typeName << "\"";
@@ -1030,10 +1022,10 @@ private:
   /// A static value inside the base range but outside the static range of a
   /// subtype is legal, but its range check fails (@rm{11-5}): warn, as GNAT
   /// does, and return true so the caller keeps the run-time check.
-  bool warnOutOfSubtypeRange(const llvm::APInt &value, const llvm::APInt &lo,
-                             const llvm::APInt &hi, llvm::StringRef typeName,
+  bool warnOutOfSubtypeRange(const llvm::APSInt &value, const llvm::APSInt &lo,
+                             const llvm::APSInt &hi, llvm::StringRef typeName,
                              mlir::Location location) {
-    if (inStaticRange(value, lo, hi))
+    if (mlir::ada::inStaticRange(value, lo, hi))
       return false;
     mlir::emitWarning(location, "value not in range of type \"")
         << typeName << "\"";
@@ -1046,7 +1038,7 @@ private:
   /// static range is emitted in the base type and coerced to the subtype,
   /// which warns and emits the range check that raises at run time. Returns
   /// null on error (a diagnostic is emitted).
-  mlir::Value emitCheckedIntConstant(const llvm::APInt &value,
+  mlir::Value emitCheckedIntConstant(const llvm::APSInt &value,
                                      ada_node type_decl,
                                      mlir::Location location) {
     std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
@@ -1064,7 +1056,7 @@ private:
     if (!type)
       return nullptr;
     if (auto b = ownStaticBounds(type_decl, location))
-      if (!inStaticRange(value, b->first, b->second)) {
+      if (!mlir::ada::inStaticRange(value, b->first, b->second)) {
         mlir::ada::QualType baseType = getAdaQualType(base, location);
         if (!baseType)
           return nullptr;
@@ -1244,9 +1236,9 @@ private:
       // dynamic value checks against constant bounds, reusing one descriptor
       // per block rather than re-emitting per check.
       if (auto cst = src.getDefiningOp<mlir::ada::ConstantOp>())
-        if (auto valAttr = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue()))
-          if (!warnOutOfSubtypeRange(valAttr.getValue(), loAttr.getValue(),
-                                     hiAttr.getValue(), typeOp.getSymName(),
+        if (std::optional<llvm::APSInt> value = cst.getIntValue())
+          if (!warnOutOfSubtypeRange(*value, loAttr.getAPSInt(),
+                                     hiAttr.getAPSInt(), typeOp.getSymName(),
                                      location))
             return retype();
       range = mlir::ada::getOrCreateStaticRange(
@@ -1532,18 +1524,17 @@ private:
     auto indexQual = mlir::ada::QualType::get(builder.getContext(), machine,
                                               indexOp.getBaseAttr());
 
-    std::optional<llvm::APInt> staticIndex;
+    std::optional<llvm::APSInt> staticIndex;
     if (auto cst = rawIndex.getDefiningOp<mlir::ada::ConstantOp>())
-      if (auto v = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue()))
-        staticIndex = v.getValue();
+      staticIndex = cst.getIntValue();
     // Coerce to the base type but do not range check. An index check is
     // generated below.
     rawIndex = coerce(rawIndex, indexQual, location);
     if (!rawIndex)
       return nullptr;
 
-    llvm::APInt lo = info.staticLower(0).getValue();
-    llvm::APInt hi = info.staticUpper(0).getValue();
+    llvm::APSInt lo = mlir::ada::boundValue(info.staticLower(0));
+    llvm::APSInt hi = mlir::ada::boundValue(info.staticUpper(0));
     if (!staticIndex || warnOutOfSubtypeRange(staticIndex.value(), lo, hi,
                                               indexSym.getValue(), location)) {
       // The check yields the index (anonymous) subtype and convert back to the
@@ -1902,7 +1893,7 @@ private:
       mlir::emitError(location, "failed to get enum literal rep value");
       return std::nullopt;
     }
-    auto val = libadalang::bigIntToAPInt(bigint);
+    auto val = libadalang::bigIntToAPSInt(bigint);
     // Enum rep values are stored as int64 in EnumTypeInfoAttr, which covers any
     // normally-sized enum (i8..i64); reject the rare value that would not fit.
     if (!val || val->getSignificantBits() > 64) {
@@ -3866,7 +3857,7 @@ private:
                       "failed to evaluate floating-point type digits");
       return std::nullopt;
     }
-    auto value = libadalang::bigIntToAPInt(bigint);
+    auto value = libadalang::bigIntToAPSInt(bigint);
     // 18 is System.Max_Digits for x86-64 (the 80-bit extended type); GNAT
     // emits the same error, located at the digits expression.
     // @todo Retrieve the maximum from the System package (System.Max_Digits)
