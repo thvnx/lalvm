@@ -57,8 +57,10 @@ std::string libraryLevelSymbol(llvm::StringRef name);
 /// walk the enclosing scopes and, at each `ada.subp`, search its `ada.decls`
 /// SymbolTable children (which `lookupNearestSymbolFrom` cannot reach, since
 /// `ada.subp` is not a SymbolTable and `ada.decls` is a sibling of statements).
-/// Returns the symbol op, or null.
-mlir::Operation *lookupSymbolFrom(mlir::Operation *from, llvm::StringRef name);
+/// Returns the symbol op, or null. Reuse `symbolTables` when provided.
+mlir::Operation *
+lookupSymbolFrom(mlir::Operation *from, llvm::StringRef name,
+                 mlir::SymbolTableCollection *symbolTables = nullptr);
 
 /// The `ada.type` named by `sym`, looked up from `from` (or anywhere in the
 /// module, for a subprogram hoisted out of its scope), or null.

@@ -363,8 +363,9 @@ TypeOp::verifySymbolUses(mlir::SymbolTableCollection &symbolTables) {
   auto arrayInfo = mlir::dyn_cast_or_null<ArrayTypeInfoAttr>(getTypeInfoAttr());
   auto arrayType = mlir::dyn_cast<ada::ArrayType>(getMlirType());
   if (arrayInfo && arrayType)
-    if (auto compOp = symbolTables.lookupNearestSymbolFrom<TypeOp>(
-            getOperation(), arrayInfo.getComponent()))
+    if (auto compOp = mlir::dyn_cast_or_null<TypeOp>(lookupSymbolFrom(
+            getOperation(), arrayInfo.getComponent().getValue(),
+            &symbolTables)))
       if (compOp.getMlirType() != arrayType.getComponentType())
         return emitOpError()
                << "array component '" << arrayInfo.getComponent().getValue()
@@ -373,7 +374,8 @@ TypeOp::verifySymbolUses(mlir::SymbolTableCollection &symbolTables) {
   if (auto base = getBaseAttr()) {
     // Best-effort cross-check: hoisting moves type symbols across scopes
     // mid-pipeline, so an unresolved base is not an error here.
-    auto *sym = symbolTables.lookupNearestSymbolFrom(getOperation(), base);
+    auto *sym =
+        lookupSymbolFrom(getOperation(), base.getValue(), &symbolTables);
     if (auto baseOp = mlir::dyn_cast_or_null<TypeOp>(sym)) {
       if (baseOp.getMlirType() != getMlirType())
         return emitOpError()
@@ -1386,17 +1388,24 @@ void SubpOp::print(mlir::OpAsmPrinter &p) {
 /// `ada.type`) live in an interior `ada.decls`, a sibling of the statements
 /// rather than an ancestor, so at each enclosing `SubpOp` the walk searches
 /// that subprogram's `ada.decls` children too.
-mlir::Operation *mlir::ada::lookupSymbolFrom(mlir::Operation *from,
-                                             llvm::StringRef name) {
+mlir::Operation *
+mlir::ada::lookupSymbolFrom(mlir::Operation *from, llvm::StringRef name,
+                            mlir::SymbolTableCollection *symbolTables) {
+  auto lookupIn = [&](mlir::Operation *scope) {
+    if (symbolTables)
+      return symbolTables->lookupSymbolIn(
+          scope, mlir::StringAttr::get(from->getContext(), name));
+    return mlir::SymbolTable::lookupSymbolIn(scope, name);
+  };
   for (mlir::Operation *scope = from; scope; scope = scope->getParentOp()) {
     if (mlir::isa<DeclsOp, mlir::ModuleOp>(scope))
-      if (auto *sym = mlir::SymbolTable::lookupSymbolIn(scope, name))
+      if (auto *sym = lookupIn(scope))
         return sym;
     if (auto subp = mlir::dyn_cast<SubpOp>(scope))
       for (mlir::Block &block : subp.getBody())
         for (mlir::Operation &op : block)
           if (auto decls = mlir::dyn_cast<DeclsOp>(&op))
-            if (auto *sym = mlir::SymbolTable::lookupSymbolIn(decls, name))
+            if (auto *sym = lookupIn(decls))
               return sym;
   }
   return nullptr;
