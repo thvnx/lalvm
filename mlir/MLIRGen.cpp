@@ -2813,12 +2813,15 @@ private:
     }
 
     // Procedures can have no explicit return statement, so add an implicit one
-    // unless the body already ended in a terminator.
-    if (isProc) {
-      if (!currentBlockTerminated())
-        mlir::ada::ReturnOp::create(builder,
-                                    mlir::UnknownLoc::get(builder.getContext()),
-                                    mlir::Value{});
+    // unless the body already ended in a terminator. It is located at the end
+    // name, if any, where a debugger stops last.
+    if (isProc && !currentBlockTerminated()) {
+      ada_node endName = {};
+      mlir::Location retLoc = ada_subp_body_f_end_name(&subp_body, &endName) &&
+                                      !ada_node_is_null(&endName)
+                                  ? loc(endName)
+                                  : mlir::UnknownLoc::get(builder.getContext());
+      mlir::ada::ReturnOp::create(builder, retLoc, mlir::Value{});
     }
 
     // Expr function has one expression to visit and to return.
