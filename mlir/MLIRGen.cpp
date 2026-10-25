@@ -3357,13 +3357,10 @@ private:
     // A statically null range (`lo > hi`) provably runs zero iterations; warn.
     if (libadalang::isStaticExpr(lowNode) && libadalang::isStaticExpr(highNode))
       if (auto staticLo = libadalang::evalExprAsInt(lowNode))
-        if (auto staticHi = libadalang::evalExprAsInt(highNode)) {
-          unsigned width =
-              std::max(staticLo->getBitWidth(), staticHi->getBitWidth()) + 1;
-          if (staticLo->sext(width).sgt(staticHi->sext(width)))
+        if (auto staticHi = libadalang::evalExprAsInt(highNode))
+          if (llvm::APSInt::compareValues(*staticLo, *staticHi) > 0)
             mlir::emitWarning(loc(loopNode),
                               "loop range is null, loop will not execute");
-        }
 
     mlir::Value lo = visit_expr(lowNode);
     if (!lo)
@@ -4046,8 +4043,9 @@ private:
         ada_node_is_null(&range.low_bound) ||
         ada_node_is_null(&range.high_bound))
       return std::nullopt;
-    std::optional<llvm::APInt> lo = libadalang::evalExprAsInt(range.low_bound);
-    std::optional<llvm::APInt> hi = libadalang::evalExprAsInt(range.high_bound);
+    std::optional<llvm::APSInt> lo = libadalang::evalExprAsInt(range.low_bound);
+    std::optional<llvm::APSInt> hi =
+        libadalang::evalExprAsInt(range.high_bound);
     if (!lo || !hi) {
       mlir::emitError(diagLoc, "failed to evaluate integer type bounds");
       return mlir::Type{};
