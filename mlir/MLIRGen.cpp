@@ -104,15 +104,12 @@ public:
 
     // We create an empty MLIR module and walk the entire compilation unit to
     // codegen its contents into it.
-    char *filename = ada_unit_filename(ada_node_unit(&compilationUnit));
-    llvm::StringRef stem = llvm::sys::path::stem(filename);
-    adaModule = mlir::ModuleOp::create(loc(compilationUnit), stem);
-    // Standard input has no file name to match the unit name against.
-    bool fromStdin =
-        llvm::sys::path::filename(filename) == libadalang::kStdinName;
-    free(filename);
+    std::string filename = libadalang::unitFilename(compilationUnit);
+    adaModule = mlir::ModuleOp::create(loc(compilationUnit),
+                                       llvm::sys::path::stem(filename));
 
-    if (!fromStdin)
+    // Standard input has no file name to match the unit name against.
+    if (llvm::sys::path::filename(filename) != libadalang::kStdinName)
       verifyUnitFileName(compilationUnit);
 
     // Use a simple Libadalang AST traversal approach based on the C API.
@@ -314,16 +311,9 @@ private:
   /// Canonical fully-qualified name of a defining name (e.g.
   /// `standard.integer`), falling back to its simple name on failure.
   std::string canonicalFqn(ada_node defName) {
-    ada_string_type fqn;
-    if (ada_defining_name_p_canonical_fully_qualified_name(&defName, &fqn)) {
-      char *buf;
-      size_t len;
-      ada_string_to_utf8(fqn, &buf, &len);
-      std::string name(buf, len);
-      free(buf);
-      ada_string_dec_ref(fqn);
-      return name;
-    }
+    if (std::optional<std::string> fqn =
+            libadalang::canonicalFullyQualifiedName(defName))
+      return *fqn;
     return libadalang::getName(&defName, /*canonical=*/true);
   }
 

@@ -69,18 +69,10 @@ static void fprint_text(llvm::raw_ostream &stream, ada_text text,
 /// `standard.integer`), or "?" when Libadalang cannot give it.
 static std::string declFqn(ada_node decl) {
   ada_node defName = {};
-  ada_string_type fqn;
   if (!ada_basic_decl_p_defining_name(&decl, &defName) ||
-      ada_node_is_null(&defName) ||
-      !ada_defining_name_p_canonical_fully_qualified_name(&defName, &fqn))
+      ada_node_is_null(&defName))
     return "?";
-  char *buf;
-  size_t len;
-  ada_string_to_utf8(fqn, &buf, &len);
-  std::string name(buf, len);
-  free(buf);
-  ada_string_dec_ref(fqn);
-  return name;
+  return libadalang::canonicalFullyQualifiedName(defName).value_or("?");
 }
 
 /// `declFqn (decl)` followed by `@line:col` of the declaration's start, with
@@ -88,12 +80,9 @@ static std::string declFqn(ada_node decl) {
 /// (e.g. `standard.integer@__standard:4:3`).
 static std::string declRef(ada_node decl, ada_node *from) {
   std::string ref = declFqn(decl) + "@";
-  ada_analysis_unit unit = ada_node_unit(&decl);
-  if (unit != ada_node_unit(from)) {
-    char *filename = ada_unit_filename(unit);
-    ref += llvm::sys::path::filename(filename).str() + ":";
-    free(filename);
-  }
+  if (ada_node_unit(&decl) != ada_node_unit(from))
+    ref +=
+        llvm::sys::path::filename(libadalang::unitFilename(decl)).str() + ":";
   ada_source_location_range r;
   ada_node_sloc_range(&decl, &r);
   return ref + std::to_string(r.start.line) + ":" +
@@ -311,11 +300,9 @@ libadalang::AdaAST::~AdaAST() {
 
 void libadalang::dump(ada_node *node, llvm::raw_ostream &os) {
   if (!ada_node_is_null(node)) {
-    char *filename = ada_unit_filename(ada_node_unit(node));
     llvm::WithColor(os, llvm::raw_ostream::SAVEDCOLOR, /*Bold=*/true).get()
-        << "file " << llvm::sys::path::filename(filename);
+        << "file " << llvm::sys::path::filename(unitFilename(*node));
     os << '\n';
-    free(filename);
   }
   if (!is_hidden(node))
     dump_image(os, node, "");
@@ -361,6 +348,25 @@ std::string libadalang::textToString(ada_text &text) {
   std::string result(buf, length);
   free(buf);
   return result;
+}
+
+std::string libadalang::unitFilename(const ada_node &node) {
+  // const_cast: the Libadalang C API has no const-qualified overloads.
+  char *filename =
+      ada_unit_filename(ada_node_unit(const_cast<ada_node *>(&node)));
+  std::string result = filename ? filename : "";
+  free(filename);
+  return result;
+}
+
+std::optional<std::string>
+libadalang::canonicalFullyQualifiedName(ada_node &defName) {
+  ada_string_type fqn;
+  if (!ada_defining_name_p_canonical_fully_qualified_name(&defName, &fqn))
+    return std::nullopt;
+  std::string name = stringTypeToString(fqn);
+  ada_string_dec_ref(fqn);
+  return name;
 }
 
 std::string libadalang::bigIntToString(ada_big_integer bigint) {
@@ -446,11 +452,9 @@ bool libadalang::emitParserDiagnostics(const ada_node &node) {
 
   // Only the first diagnostic is reported: parse errors are often cascading,
   // and showing just the root cause is less noisy.
-  char *rawFilename = ada_unit_filename(unit);
   ada_diagnostic diag;
   if (ada_unit_diagnostic(unit, 0, &diag))
-    frontend::DiagnosticPrinter().emitDiag(rawFilename, diag);
-  free(rawFilename);
+    frontend::DiagnosticPrinter().emitDiag(unitFilename(node), diag);
   return true;
 }
 
@@ -605,17 +609,11 @@ mlir::Location libadalang::sourceLocation(mlir::MLIRContext &context,
                                           const ada_node &node) {
   // const_cast: the Libadalang C API has no const-qualified overloads: the
   // underlying objects are never actually const.
-  ada_node *n = const_cast<ada_node *>(&node);
   ada_source_location_range range;
-  ada_node_sloc_range(n, &range);
-  char *filename = ada_unit_filename(ada_node_unit(n));
-  // StringAttr::get copies the string into the context, so filename can be
-  // freed immediately.
-  auto result = mlir::FileLineColRange::get(
-      mlir::StringAttr::get(&context, filename), range.start.line,
+  ada_node_sloc_range(const_cast<ada_node *>(&node), &range);
+  return mlir::FileLineColRange::get(
+      mlir::StringAttr::get(&context, unitFilename(node)), range.start.line,
       range.start.column, range.end.line, range.end.column);
-  free(filename);
-  return result;
 }
 
 std::optional<ada_node> libadalang::declPart(ada_node &body) {

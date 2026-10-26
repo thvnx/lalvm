@@ -41,12 +41,7 @@ void frontend::DiagnosticPrinter::emitDiag(llvm::StringRef filename,
 
   printSeverity(mlir::DiagnosticSeverity::Error);
 
-  char *msgBuf;
-  size_t msgLen;
-  ada_text_to_utf8(&diag.message, &msgBuf, &msgLen);
-  ada_destroy_text(&diag.message);
-  llvm::errs() << llvm::StringRef(msgBuf, msgLen) << "\n";
-  free(msgBuf);
+  llvm::errs() << libadalang::textToString(diag.message) << "\n";
 }
 
 // Render a solver-diagnostic argument. These are usually entities (type or
@@ -66,11 +61,7 @@ static std::string solverArgImage(ada_node &node) {
 static std::string
 formatSolverDiag(const ada_internal_solver_diagnostic &diag) {
   // message_template is a UTF-32 ada_string_type; convert it to UTF-8 first.
-  char *buf;
-  size_t len;
-  ada_string_to_utf8(diag.message_template, &buf, &len);
-  std::string tmpl(buf, len);
-  free(buf);
+  std::string tmpl = libadalang::stringTypeToString(diag.message_template);
 
   // Remap known LAL solver messages to GNAT-style wording.
   // Template comes from @predicate_error annotations in nodes.lkt.
@@ -99,11 +90,8 @@ void frontend::DiagnosticPrinter::emitDiag(ada_node &node,
                                            llvm::StringRef msg) const {
   ada_source_location_range sloc = {{0, 0}, {0, 0}};
   ada_node_sloc_range(&node, &sloc);
-  ada_analysis_unit unit = ada_node_unit(&node);
-  char *rawFilename = ada_unit_filename(unit);
-  printPrefix(llvm::sys::path::filename(rawFilename), sloc.start.line,
-              sloc.start.column);
-  free(rawFilename);
+  printPrefix(llvm::sys::path::filename(libadalang::unitFilename(node)),
+              sloc.start.line, sloc.start.column);
   printSeverity(severity);
   llvm::errs() << msg << "\n";
 }

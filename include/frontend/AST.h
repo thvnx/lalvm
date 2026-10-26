@@ -5,6 +5,7 @@
 #define FRONTEND_AST_H
 
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <string>
 #include <utility>
@@ -43,6 +44,25 @@ ada_node enclosingSubpBody(ada_node *node);
 
 /// Convert an ada_text to a UTF-8 std::string, freeing the text afterwards.
 std::string textToString(ada_text &text);
+
+/// Convert an ada_string_type to a UTF-8 std::string. The string is not
+/// released. Defined inline: a function taking that unnamed type has no
+/// linkage.
+inline std::string stringTypeToString(ada_string_type str) {
+  char *buf;
+  size_t length;
+  ada_string_to_utf8(str, &buf, &length);
+  std::string result(buf, length);
+  free(buf);
+  return result;
+}
+
+/// Name of the source file of the unit `node` belongs to.
+std::string unitFilename(const ada_node &node);
+
+/// Canonical fully qualified name of the defining name `defName` (e.g.
+/// `standard.integer`), or `std::nullopt` when Libadalang cannot give it.
+std::optional<std::string> canonicalFullyQualifiedName(ada_node &defName);
 
 /// Convert `bigint` to its decimal string representation, consuming it.
 std::string bigIntToString(ada_big_integer bigint);

@@ -114,9 +114,7 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
     return error(item, "failed to get the main subprogram's name");
   std::string symbol = mlir::ada::libraryLevelSymbol(LAL::getName(&defName));
 
-  char *filename = ada_unit_filename(ada_node_unit(&root));
-  std::string unitName = llvm::sys::path::stem(filename).str();
-  free(filename);
+  std::string unitName = llvm::sys::path::stem(LAL::unitFilename(root)).str();
 
   return Program{unitName, symbol, isFunction,
                  LAL::sourceLocation(context, spec)};
