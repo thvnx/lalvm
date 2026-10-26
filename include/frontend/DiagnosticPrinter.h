@@ -55,6 +55,13 @@ public:
                 const llvm::Twine &msg) const;
 };
 
+/// Print every diagnostic of `context` with a DiagnosticPrinter while in
+/// scope, warnings included (MLIR does not print them by default).
+class ScopedDiagnosticPrinter : public mlir::ScopedDiagnosticHandler {
+public:
+  explicit ScopedDiagnosticPrinter(mlir::MLIRContext *context);
+};
+
 /// Shortcuts for `DiagnosticPrinter().emitDiag(...)`.
 void emitErrorDiag(const llvm::Twine &msg);
 void emitErrorDiag(ada_node &node, llvm::StringRef msg);

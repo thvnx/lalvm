@@ -5,6 +5,7 @@
 #include "frontend/AST.h"
 
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/MLIRContext.h"
 
 #include "llvm/Support/Path.h"
 #include "llvm/Support/WithColor.h"
@@ -148,6 +149,13 @@ void frontend::DiagnosticPrinter::emitDiag(mlir::Diagnostic &diag) const {
   for (mlir::Diagnostic &note : diag.getNotes())
     emitDiag(note);
 }
+
+frontend::ScopedDiagnosticPrinter::ScopedDiagnosticPrinter(
+    mlir::MLIRContext *context)
+    : mlir::ScopedDiagnosticHandler(context, [](mlir::Diagnostic &diag) {
+        DiagnosticPrinter().emitDiag(diag);
+        return mlir::success();
+      }) {}
 
 void frontend::emitErrorDiag(const llvm::Twine &msg) {
   DiagnosticPrinter().emitDiag(mlir::DiagnosticSeverity::Error, msg);

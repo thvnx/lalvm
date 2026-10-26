@@ -166,12 +166,7 @@ emitBindModule(mlir::MLIRContext &context, const Program &program) {
 
 mlir::OwningOpRef<mlir::ModuleOp> lalvm::bind(mlir::MLIRContext &context,
                                               ada_node &compilationUnit) {
-  // Print the diagnostics to stderr in the standard format, as MLIRGen does.
-  mlir::ScopedDiagnosticHandler diagHandler(
-      &context, [](mlir::Diagnostic &diag) {
-        frontend::DiagnosticPrinter().emitDiag(diag);
-        return mlir::success();
-      });
+  frontend::ScopedDiagnosticPrinter diagPrinter(&context);
 
   std::optional<Program> program = describeProgram(context, compilationUnit);
   if (!program)

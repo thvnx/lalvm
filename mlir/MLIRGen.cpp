@@ -93,14 +93,7 @@ public:
 
   /// Public API: convert an Ada compilation unit to an MLIR module.
   mlir::ModuleOp mlirGen(ada_node &compilationUnit) {
-    // Install a diagnostic handler that prints all diagnostics (including
-    // warnings) to stderr. Without this, MLIR's diagnostic engine silently
-    // drops non-error diagnostics.
-    mlir::ScopedDiagnosticHandler diagHandler(
-        builder.getContext(), [](mlir::Diagnostic &diag) {
-          frontend::DiagnosticPrinter().emitDiag(diag);
-          return mlir::success();
-        });
+    frontend::ScopedDiagnosticPrinter diagPrinter(builder.getContext());
 
     // We create an empty MLIR module and walk the entire compilation unit to
     // codegen its contents into it.
