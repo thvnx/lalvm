@@ -89,6 +89,10 @@ bool inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
 /// signless at its minimal signed width, so read as signed.
 llvm::APSInt boundValue(mlir::IntegerAttr bound);
 
+/// `value` as a signless IntegerAttr of minimal signed width.
+mlir::IntegerAttr minimalWidthIntAttr(mlir::MLIRContext *ctx,
+                                      const llvm::APInt &value);
+
 /// Build an integer `ada.constant` of `type`, `value` fit to its width.
 mlir::Value createIntConstant(mlir::OpBuilder &builder, mlir::Location loc,
                               QualType type, const llvm::APInt &value);

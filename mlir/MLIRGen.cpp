@@ -3842,12 +3842,10 @@ private:
     return mlir::success();
   }
 
-  /// Minimal-signed-width IntegerAttr, the canonical bound form shared with
-  /// the info attr parsers.
+  /// `value` as a type info bound or modulus (see
+  /// `mlir::ada::minimalWidthIntAttr`).
   mlir::IntegerAttr minimalWidthIntAttr(const llvm::APInt &value) {
-    unsigned bits = value.getSignificantBits();
-    return mlir::IntegerAttr::get(builder.getIntegerType(bits),
-                                  value.sextOrTrunc(bits));
+    return mlir::ada::minimalWidthIntAttr(builder.getContext(), value);
   }
 
   /// One range bound as type info metadata: minimalWidthIntAttr of its

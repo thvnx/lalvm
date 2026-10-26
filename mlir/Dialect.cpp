@@ -60,6 +60,11 @@ struct AdaFoldInterface : public mlir::DialectFoldInterface {
 };
 } // namespace
 
+/// Whether `type` is an integer or float machine type.
+static bool isNumericMachineType(mlir::Type type) {
+  return mlir::isa<mlir::IntegerType, mlir::FloatType>(type);
+}
+
 //===----------------------------------------------------------------------===//
 // AdaDialect
 //===----------------------------------------------------------------------===//
@@ -93,10 +98,8 @@ std::optional<int64_t> EnumTypeInfoAttr::enumRep(llvm::StringRef name) const {
   return std::nullopt;
 }
 
-/// `value` as an IntegerAttr of minimal signed width (canonical at any width).
-/// The encoding must match MLIRGen's `minimalWidthIntAttr`.
-static mlir::IntegerAttr minWidthIntAttr(mlir::MLIRContext *ctx,
-                                         const llvm::APInt &value) {
+mlir::IntegerAttr mlir::ada::minimalWidthIntAttr(mlir::MLIRContext *ctx,
+                                                 const llvm::APInt &value) {
   unsigned bits = value.getSignificantBits();
   return mlir::IntegerAttr::get(mlir::IntegerType::get(ctx, bits),
                                 value.sextOrTrunc(bits));
@@ -117,7 +120,7 @@ static mlir::ParseResult parseRangeBounds(mlir::AsmParser &parser,
     if (!res.has_value() || failed(*res))
       return parser.emitError(parser.getCurrentLocation(),
                               "expected integer or `?` range bound");
-    bound = minWidthIntAttr(parser.getContext(), value);
+    bound = minimalWidthIntAttr(parser.getContext(), value);
     return mlir::success();
   };
   if (parseBound(lower) || parser.parseKeyword("to") || parseBound(upper))
@@ -202,7 +205,7 @@ mlir::Attribute IntegerTypeInfoAttr::parse(mlir::AsmParser &parser,
     mlir::OptionalParseResult res = parser.parseOptionalInteger(value);
     if (!res.has_value() || failed(*res))
       return {};
-    modulus = minWidthIntAttr(parser.getContext(), value);
+    modulus = minimalWidthIntAttr(parser.getContext(), value);
     expectRange = succeeded(parser.parseOptionalComma());
   }
 
@@ -237,25 +240,25 @@ void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 
 /// Builds a `TypeOp` with the given Ada type name, MLIR type, and metadata.
-/// @param odsBuilder MLIR op builder; used to intern `name` as a `StringAttr`.
+/// @param odsBuilder MLIR op builder used to intern `name` as a `StringAttr`.
 /// @param odsState   Operation construction state accumulating attributes.
 /// @param name       Ada type declaration name.
-/// @param mlirType   Corresponding MLIR type; wrapped in a `TypeAttr`.
-/// @param typeInfo   Kind-specific metadata; one of the Ada dialect type info
+/// @param mlirType   Corresponding MLIR type wrapped in a `TypeAttr`.
+/// @param typeInfo   Kind-specific metadata. One of the Ada dialect type info
 ///                   attributes, or null (unconstrained subtype).
-/// @param base       Canonical base type symbol; null when the type is its
-///                   own base.
-void TypeOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+/// @param base       Canonical base type symbol. Null when the type is its own
+///                   base.
+void TypeOp::build(mlir::OpBuilder &odsBuilder, mlir::OperationState &odsState,
                    llvm::StringRef name, mlir::Type mlirType,
                    mlir::Attribute typeInfo, mlir::FlatSymbolRefAttr base) {
-  state.addAttribute(getSymNameAttrName(state.name),
-                     builder.getStringAttr(name));
-  state.addAttribute(getMlirTypeAttrName(state.name),
-                     mlir::TypeAttr::get(mlirType));
+  odsState.addAttribute(getSymNameAttrName(odsState.name),
+                        odsBuilder.getStringAttr(name));
+  odsState.addAttribute(getMlirTypeAttrName(odsState.name),
+                        mlir::TypeAttr::get(mlirType));
   if (typeInfo)
-    state.addAttribute(getTypeInfoAttrName(state.name), typeInfo);
+    odsState.addAttribute(getTypeInfoAttrName(odsState.name), typeInfo);
   if (base)
-    state.addAttribute(getBaseAttrName(state.name), base);
+    odsState.addAttribute(getBaseAttrName(odsState.name), base);
 }
 
 /// Assembly format: `@sym_name (base @ref)? : mlir_type = type_info_attr`
@@ -501,17 +504,14 @@ std::optional<llvm::APSInt> ConstantOp::getIntValue() {
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult ConvertOp::verify() {
-  // Only numeric values (integer or float machine types) are converted.
-  auto isNumeric = [](mlir::Type type) {
-    return mlir::isa<mlir::IntegerType, mlir::FloatType>(type);
-  };
+  // Only numeric values are converted.
   mlir::Type source =
       mlir::cast<ada::QualType>(getInput().getType()).getMlirType();
   mlir::Type target =
       mlir::cast<ada::QualType>(getResult().getType()).getMlirType();
-  if (!isNumeric(source))
+  if (!isNumericMachineType(source))
     return emitOpError() << "unsupported source type: " << source;
-  if (!isNumeric(target))
+  if (!isNumericMachineType(target))
     return emitOpError() << "unsupported target type: " << target;
   // An implicit conversion stays within one numeric class (@rm{4-6}(60)). Only
   // an explicit one can convert between integer and float (@rm{4-6}(24.1/2)).
@@ -584,7 +584,7 @@ llvm::LogicalResult IndexOp::verify() {
 llvm::LogicalResult RangeOp::verify() {
   mlir::Type boundType =
       mlir::cast<ada::RangeType>(getResult().getType()).getBoundType();
-  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(boundType))
+  if (!isNumericMachineType(boundType))
     return emitOpError() << "range bound type must be integer or float, got "
                          << boundType;
   mlir::Type boundMachineType =
@@ -713,44 +713,37 @@ llvm::LogicalResult AttrOp::verify() {
 //===----------------------------------------------------------------------===//
 
 // `custom<Operator>($kind)`: the predefined operator as a quoted keyword
-// (`"+"`, `"="`, `"not"`) -- the symbol/enum mapping is the only part of these
+// (`"+"`, `"="`, `"not"`): the symbol/enum mapping is the only part of these
 // ops not expressible declaratively. One directive, overloaded per operator
 // enum, shared by `binop`, `cmp`, and `unop`.
-static mlir::ParseResult parseOperator(mlir::OpAsmParser &parser,
-                                       ada::AdaBinaryOpAttr &kind) {
+
+/// Parse a quoted operator of the enum attribute `AttrTy`, named a `what`
+/// operator in the diagnostic.
+template <typename AttrTy>
+static mlir::ParseResult parseOperatorKind(mlir::OpAsmParser &parser,
+                                           AttrTy &kind, llvm::StringRef what) {
   std::string sym;
   SMLoc loc = parser.getCurrentLocation();
   if (parser.parseString(&sym))
     return mlir::failure();
-  auto k = ada::symbolizeAdaBinaryOp(sym);
+  auto k = ada::symbolizeEnum<typename AttrTy::ValueType>(sym);
   if (!k)
-    return parser.emitError(loc, "unknown binary operator '") << sym << "'";
-  kind = ada::AdaBinaryOpAttr::get(parser.getContext(), *k);
+    return parser.emitError(loc, "unknown ")
+           << what << " operator '" << sym << "'";
+  kind = AttrTy::get(parser.getContext(), *k);
   return mlir::success();
+}
+static mlir::ParseResult parseOperator(mlir::OpAsmParser &parser,
+                                       ada::AdaBinaryOpAttr &kind) {
+  return parseOperatorKind(parser, kind, "binary");
 }
 static mlir::ParseResult parseOperator(mlir::OpAsmParser &parser,
                                        ada::AdaRelationalOpAttr &kind) {
-  std::string sym;
-  SMLoc loc = parser.getCurrentLocation();
-  if (parser.parseString(&sym))
-    return mlir::failure();
-  auto k = ada::symbolizeAdaRelationalOp(sym);
-  if (!k)
-    return parser.emitError(loc, "unknown relational operator '") << sym << "'";
-  kind = ada::AdaRelationalOpAttr::get(parser.getContext(), *k);
-  return mlir::success();
+  return parseOperatorKind(parser, kind, "relational");
 }
 static mlir::ParseResult parseOperator(mlir::OpAsmParser &parser,
                                        ada::AdaUnaryOpAttr &kind) {
-  std::string sym;
-  SMLoc loc = parser.getCurrentLocation();
-  if (parser.parseString(&sym))
-    return mlir::failure();
-  auto k = ada::symbolizeAdaUnaryOp(sym);
-  if (!k)
-    return parser.emitError(loc, "unknown unary operator '") << sym << "'";
-  kind = ada::AdaUnaryOpAttr::get(parser.getContext(), *k);
-  return mlir::success();
+  return parseOperatorKind(parser, kind, "unary");
 }
 
 static void printOperator(mlir::OpAsmPrinter &p, mlir::Operation *,
@@ -844,7 +837,7 @@ static llvm::LogicalResult verifySameBaseType(mlir::Operation *op,
 
 /// Operators apply to integer and float machine types only.
 static llvm::LogicalResult verifyNumeric(mlir::Operation *op, mlir::Type type) {
-  if (!mlir::isa<mlir::IntegerType, mlir::FloatType>(type))
+  if (!isNumericMachineType(type))
     return op->emitOpError() << "unsupported operand type " << type
                              << "; expected integer or float";
   return mlir::success();
@@ -1059,13 +1052,14 @@ std::string mlir::ada::libraryLevelSymbol(llvm::StringRef name) {
 /// @param odsBuilder MLIR op builder.
 /// @param odsState   Operation construction state accumulating attributes.
 /// @param name       Ada subprogram name (bare, no ABI mangling).
-/// @param type       Function type; empty result list for procedures, one
+/// @param type       Function type. Empty result list for procedures, one
 ///                   result type for functions.
 /// @param attrs      Additional named attributes (e.g. arg/res attrs).
-void SubpOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
+void SubpOp::build(mlir::OpBuilder &odsBuilder, mlir::OperationState &odsState,
                    llvm::StringRef name, mlir::FunctionType type,
                    llvm::ArrayRef<mlir::NamedAttribute> attrs) {
-  buildWithEntryBlock(builder, state, name, type, attrs, type.getInputs());
+  buildWithEntryBlock(odsBuilder, odsState, name, type, attrs,
+                      type.getInputs());
 }
 
 /// Assembly format: standard MLIR function syntax (name, argument list,
