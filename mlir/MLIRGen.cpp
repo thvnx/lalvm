@@ -142,11 +142,7 @@ private:
   /// Overload for values: handles block arguments (which have no defining op)
   /// as well as op results.
   void setAdaNameLoc(mlir::Value val, mlir::StringAttr name) {
-    auto newLoc = mlir::NameLoc::get(name, val.getLoc());
-    if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(val))
-      arg.setLoc(newLoc);
-    else
-      val.getDefiningOp()->setLoc(newLoc);
+    setAdaNameLoc(val, name, val.getLoc());
   }
 
   /// Overload with explicit source location: replaces the value's existing
@@ -301,6 +297,14 @@ private:
     return scopeStack.empty() ? std::string() : scopeStack.back();
   }
 
+  /// `simple` qualified by the current enclosing scope, made unique with
+  /// `__N` (see makeUnique).
+  std::string makeUniqueInScope(llvm::StringRef simple) {
+    std::string prefix = scopePrefixForInsertion();
+    return makeUnique(prefix.empty() ? simple.str()
+                                     : prefix + "." + simple.str());
+  }
+
   /// Canonical fully-qualified name of a defining name (e.g.
   /// `standard.integer`), falling back to its simple name on failure.
   std::string canonicalFqn(ada_node defName) {
@@ -322,13 +326,10 @@ private:
     if (auto it = symbolNames.find(canonDef.node); it != symbolNames.end())
       return it->second;
     std::string name;
-    if (useFqn) {
+    if (useFqn)
       name = canonicalFqn(canonDef);
-    } else {
-      std::string prefix = scopePrefixForInsertion();
-      name = makeUnique(prefix.empty() ? simple.str()
-                                       : prefix + "." + simple.str());
-    }
+    else
+      name = makeUniqueInScope(simple);
     symbolNames[canonDef.node] = name;
     return name;
   }
@@ -1028,11 +1029,8 @@ private:
     mlir::ada::QualType baseType = getAdaQualType(base, location);
     if (!type || !baseType)
       return nullptr;
-    mlir::Value constant = emitIntConstant(value, baseType, location);
-    if (type == baseType)
-      return constant;
-    return emitConversion(constant, type,
-                          mlir::ada::AdaConversionKind::Implicit, location);
+    return convertImplicitly(emitIntConstant(value, baseType, location), type,
+                             location);
   }
 
   mlir::Value mlirGenIntLiteral(ada_node &node) {
@@ -1162,6 +1160,17 @@ private:
     }
     return mlir::ada::ConvertOp::create(builder, location, target, kind, val,
                                         range);
+  }
+
+  /// Convert `val` to `target` with an implicit conversion (see
+  /// emitConversion), unless it already has that type. Returns null after a
+  /// diagnostic.
+  mlir::Value convertImplicitly(mlir::Value val, mlir::ada::QualType target,
+                                mlir::Location location) {
+    if (val.getType() == target)
+      return val;
+    return emitConversion(val, target, mlir::ada::AdaConversionKind::Implicit,
+                          location);
   }
 
   /// Return the `ada.type` op for a type declaration, emitting it lazily at
@@ -1315,14 +1324,11 @@ private:
             return nullptr;
           // Convert to the subtype of the formal (@rm{6-4-1}), at the actual.
           if (auto formalTyped =
-                  mlir::dyn_cast<mlir::ada::QualType>(formalTypes[i]))
-            if (val.getType() != formalTyped) {
-              val = emitConversion(val, formalTyped,
-                                   mlir::ada::AdaConversionKind::Implicit,
-                                   loc(r_expr));
-              if (!val)
-                return nullptr;
-            }
+                  mlir::dyn_cast<mlir::ada::QualType>(formalTypes[i])) {
+            val = convertImplicitly(val, formalTyped, loc(r_expr));
+            if (!val)
+              return nullptr;
+          }
           args.push_back(val);
         }
       }
@@ -1632,11 +1638,7 @@ private:
             mlir::ada::QualType tgtType = resolveLiteralQualType(expr, exprLoc);
             if (!tgtType)
               return nullptr;
-            if (value.getType() == tgtType)
-              return value;
-            return emitConversion(value, tgtType,
-                                  mlir::ada::AdaConversionKind::Implicit,
-                                  exprLoc);
+            return convertImplicitly(value, tgtType, exprLoc);
           }
           mlir::emitError(loc(expr), "failed to evaluate named number");
           return nullptr;
@@ -1964,6 +1966,17 @@ private:
     return {};
   }
 
+  /// Create the `ada.type` named `name` of a subtype of `baseOp` constrained to
+  /// `[lo, hi]` (see subtypeInfo) at the insertion point.
+  mlir::ada::TypeOp createSubtypeOp(llvm::StringRef name,
+                                    mlir::ada::TypeOp baseOp, ada_node lo,
+                                    ada_node hi, mlir::Location location) {
+    return mlir::ada::TypeOp::create(
+        builder, location, name, baseOp.getMlirType(),
+        subtypeInfo(baseOp, lo, hi),
+        mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
+  }
+
   /// Elaborate the dynamic range of `typeOp`, a subtype of `baseOp` constrained
   /// to `[lo, hi]`, at the insertion point (@rm{3-2-2}(10)): evaluate its
   /// bounds once and emit the `ada.range` that `findDynamicRange` recovers at
@@ -1988,10 +2001,7 @@ private:
       if (stat)
         return emitIntConstant(stat.getValue(), baseQual, location);
       mlir::Value v = visit_expr(expr);
-      if (!v || v.getType() == baseQual)
-        return v;
-      return emitConversion(v, baseQual, mlir::ada::AdaConversionKind::Implicit,
-                            loc(expr));
+      return v ? convertImplicitly(v, baseQual, loc(expr)) : v;
     };
     mlir::Value loValue = boundValue(lo, intInfo.staticLower());
     mlir::Value hiValue = boundValue(hi, intInfo.staticUpper());
@@ -2016,11 +2026,8 @@ private:
     if (!baseOp)
       return {};
 
-    std::string prefix = scopePrefixForInsertion();
-    std::string simple =
-        mlir::ada::kAnonymousTypePrefix.str() + libadalang::getName(&id);
-    std::string name =
-        makeUnique(prefix.empty() ? simple : prefix + "." + simple);
+    std::string name = makeUniqueInScope(mlir::ada::kAnonymousTypePrefix.str() +
+                                         libadalang::getName(&id));
 
     mlir::ada::TypeOp typeOp;
     {
@@ -2029,10 +2036,7 @@ private:
         builder.setInsertionPointToEnd(currentDeclsBlock);
       else
         builder.setInsertionPointToStart(adaModule.getBody());
-      typeOp = mlir::ada::TypeOp::create(
-          builder, location, name, baseOp.getMlirType(),
-          subtypeInfo(baseOp, lo, hi),
-          mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
+      typeOp = createSubtypeOp(name, baseOp, lo, hi, location);
     }
     elaborateDynamicRange(typeOp, baseOp, lo, hi, location);
     return typeOp;
@@ -2066,10 +2070,7 @@ private:
       hi = range.high_bound;
     }
 
-    auto typeOp = mlir::ada::TypeOp::create(
-        builder, location, *typeName, baseOp.getMlirType(),
-        subtypeInfo(baseOp, lo, hi),
-        mlir::FlatSymbolRefAttr::get(baseOp.getSymNameAttr()));
+    auto typeOp = createSubtypeOp(*typeName, baseOp, lo, hi, location);
     typeDecls[type_decl.node] = typeOp;
 
     // The bound values go in the body's entry block, before this `ada.decls`,
@@ -2286,14 +2287,10 @@ private:
     if (auto base = indexOp.getBaseAttr())
       indexBaseOp = mlir::cast<mlir::ada::TypeOp>(
           mlir::ada::lookupSymbolFrom(indexOp, base.getValue()));
-    std::string prefix = scopePrefixForInsertion();
-    std::string simple = mlir::ada::kAnonymousTypePrefix.str() +
-                         mlir::ada::bareName(*typeName).str() + "_index_1";
-    auto indexSubtype = mlir::ada::TypeOp::create(
-        builder, location,
-        makeUnique(prefix.empty() ? simple : prefix + "." + simple),
-        indexBaseOp.getMlirType(), subtypeInfo(indexBaseOp, lo_node, hi_node),
-        mlir::FlatSymbolRefAttr::get(indexBaseOp.getSymNameAttr()));
+    auto indexSubtype = createSubtypeOp(
+        makeUniqueInScope(mlir::ada::kAnonymousTypePrefix.str() +
+                          mlir::ada::bareName(*typeName).str() + "_index_1"),
+        indexBaseOp, lo_node, hi_node, location);
     indexSym = mlir::FlatSymbolRefAttr::get(indexSubtype.getSymNameAttr());
 
     // Extent is the element count: `hi - lo + 1`.
@@ -2493,12 +2490,9 @@ private:
           return mlir::failure();
         }
         // Convert to the object's subtype (@rm{3-3-1}).
-        if (init.getType() != elemType) {
-          init = emitConversion(
-              init, elemType, mlir::ada::AdaConversionKind::Implicit, loc(id));
-          if (!init)
-            return mlir::failure();
-        }
+        init = convertImplicitly(init, elemType, loc(id));
+        if (!init)
+          return mlir::failure();
         setAdaNameLoc(init, nameAttr, loc(id));
         declare(id, init);
       } else {
@@ -2516,13 +2510,9 @@ private:
         mlir::Value ptr = allocaOp;
         if (init) {
           // Convert to the object's subtype (@rm{3-3-1}).
-          if (init.getType() != elemType) {
-            init =
-                emitConversion(init, elemType,
-                               mlir::ada::AdaConversionKind::Implicit, loc(id));
-            if (!init)
-              return mlir::failure();
-          }
+          init = convertImplicitly(init, elemType, loc(id));
+          if (!init)
+            return mlir::failure();
           auto storeOp =
               mlir::memref::StoreOp::create(builder, loc(id), init, ptr);
           setAdaNameLoc(storeOp, nameAttr);
@@ -2829,8 +2819,13 @@ private:
       mlir::ada::ReturnOp::create(builder, loc(expr), retVal.value());
     }
 
-    // Fuse each recorded label's `DILabelRef` marker onto its anchor op,
-    // keeping the op's own loc as the fused inner.
+    anchorPendingLabels();
+    return op;
+  }
+
+  /// Fuse each label recorded in `pendingLabels` as a `DILabelRef` marker onto
+  /// its anchor op, keeping the op's own loc as the fused inner.
+  void anchorPendingLabels() {
     mlir::MLIRContext *ctx = builder.getContext();
     for (auto &[blk, name, labelLoc] : pendingLabels) {
       // Find a lowering-surviving anchor for the label's low_pc: skip ops later
@@ -2862,8 +2857,6 @@ private:
           ctx, {anchor->getLoc()},
           mlir::ada::DILabelRefAttr::get(ctx, name, labelLoc)));
     }
-
-    return op;
   }
 
   /// Lower an Ada block statement (ada_begin_block or ada_decl_block). The
@@ -2874,9 +2867,7 @@ private:
   mlir::LogicalResult mlirGenBlock(ada_node &blockNode, llvm::StringRef name) {
     bool isDecl = ada_node_kind(&blockNode) == ada_decl_block;
 
-    std::string seg = name.empty() ? std::string("b") : name.str();
-    std::string prefix = scopePrefixForInsertion();
-    scopeStack.push_back(makeUnique(prefix.empty() ? seg : prefix + "." + seg));
+    scopeStack.push_back(makeUniqueInScope(name.empty() ? "b" : name));
     auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
 
     // Codegen the declarative part (ada_decl_block only).
@@ -2983,6 +2974,13 @@ private:
         ctx, {location}, mlir::ada::DITypeRefAttr::get(ctx, qual.getAdaType()));
     return mlir::ada::UnwrapOp::create(builder, fused, qual.getMlirType(),
                                        value);
+  }
+
+  /// Emit the Boolean condition `cond` (@rm{5-3}, @rm{4-5-7}) as an `i1`.
+  /// Returns null after a diagnostic.
+  mlir::Value mlirGenCondition(ada_node &cond) {
+    mlir::Value c = visit_expr(cond);
+    return c ? unwrap(c, loc(cond)) : c;
   }
 
   /// True if the current insertion block ends in a terminator (e.g. a
@@ -3101,12 +3099,7 @@ private:
       bool last = (i + 1 == guards.size());
 
       builder.setInsertionPointToEnd(curTest);
-      mlir::Value c = visit_expr(guards[i].first);
-      if (!c)
-        return mlir::failure();
-      // The condition must be Boolean (@rm{5-3}, enforced by libadalang).
-      // Unwrap to the underlying type; cf.cond_br's verifier requires i1.
-      mlir::Value condI1 = unwrap(c, loc(guards[i].first));
+      mlir::Value condI1 = mlirGenCondition(guards[i].first);
       if (!condI1)
         return mlir::failure();
 
@@ -3189,10 +3182,7 @@ private:
       ada_node cond;
       ada_while_loop_spec_f_expr(&spec, &cond);
       builder.setInsertionPointToEnd(headerBlock);
-      mlir::Value c = visit_expr(cond);
-      if (!c)
-        return mlir::failure();
-      mlir::Value condI1 = unwrap(c, loc(cond));
+      mlir::Value condI1 = mlirGenCondition(cond);
       if (!condI1)
         return mlir::failure();
       mlir::cf::CondBranchOp::create(builder, loc(cond), condI1, bodyBlock,
@@ -3355,18 +3345,12 @@ private:
     if (!hi)
       return mlir::failure();
     // Convert each bound to the loop parameter's subtype.
-    if (lo.getType() != paramType) {
-      lo = emitConversion(lo, paramType, mlir::ada::AdaConversionKind::Implicit,
-                          loc(lowNode));
-      if (!lo)
-        return mlir::failure();
-    }
-    if (hi.getType() != paramType) {
-      hi = emitConversion(hi, paramType, mlir::ada::AdaConversionKind::Implicit,
-                          loc(highNode));
-      if (!hi)
-        return mlir::failure();
-    }
+    lo = convertImplicitly(lo, paramType, loc(lowNode));
+    if (!lo)
+      return mlir::failure();
+    hi = convertImplicitly(hi, paramType, loc(highNode));
+    if (!hi)
+      return mlir::failure();
 
     auto nameAttr = getNameAttr(id);
     mlir::Value paramPtr = mlir::ada::AllocaOp::create(
@@ -3472,10 +3456,7 @@ private:
     mlir::Block *current = builder.getInsertionBlock();
     mlir::Block *contBlock = current->splitBlock(builder.getInsertionPoint());
     builder.setInsertionPointToEnd(current);
-    mlir::Value c = visit_expr(cond);
-    if (!c)
-      return mlir::failure();
-    mlir::Value condI1 = unwrap(c, loc(cond));
+    mlir::Value condI1 = mlirGenCondition(cond);
     if (!condI1)
       return mlir::failure();
     mlir::cf::CondBranchOp::create(builder, loc(exit_stmt), condI1, target,
@@ -3595,12 +3576,7 @@ private:
     ada_node condNode = guards[idx].first;
     ada_node thenNode = guards[idx].second;
 
-    mlir::Value cond = visit_expr(condNode);
-    if (!cond)
-      return nullptr;
-    // The condition is Boolean (@rm{4-5-7}, enforced by libadalang); unwrap to
-    // the underlying i1 that scf.if's verifier requires.
-    mlir::Value condI1 = unwrap(cond, loc(condNode));
+    mlir::Value condI1 = mlirGenCondition(condNode);
     if (!condI1)
       return nullptr;
 
@@ -3615,13 +3591,9 @@ private:
       return nullptr;
     // Each dependent expression is converted to the expression's type
     // (@rm{4-5-7}).
-    if (thenVal.getType() != resultType) {
-      thenVal =
-          emitConversion(thenVal, resultType,
-                         mlir::ada::AdaConversionKind::Implicit, loc(thenNode));
-      if (!thenVal)
-        return nullptr;
-    }
+    thenVal = convertImplicitly(thenVal, resultType, loc(thenNode));
+    if (!thenVal)
+      return nullptr;
     mlir::scf::YieldOp::create(builder, loc(thenNode), thenVal);
 
     // Else region: the next guard, the explicit else, or a synthesized True.
@@ -3632,18 +3604,14 @@ private:
                                 location);
     } else if (hasElse) {
       elseVal = visit_expr(elseExpr);
-      if (elseVal && elseVal.getType() != resultType)
-        elseVal = emitConversion(elseVal, resultType,
-                                 mlir::ada::AdaConversionKind::Implicit,
-                                 loc(elseExpr));
+      if (elseVal)
+        elseVal = convertImplicitly(elseVal, resultType, loc(elseExpr));
     } else {
       // No else: the if expression is of a boolean type and the absent else
       // yields True (@rm{4-5-7}(18/3, 20/3)).
       elseVal = synthesizeBooleanTrue(condNode, location);
-      if (elseVal && elseVal.getType() != resultType)
-        elseVal =
-            emitConversion(elseVal, resultType,
-                           mlir::ada::AdaConversionKind::Implicit, location);
+      if (elseVal)
+        elseVal = convertImplicitly(elseVal, resultType, location);
     }
     if (!elseVal)
       return nullptr;
@@ -3785,14 +3753,11 @@ private:
     // Convert to the subtype of the target (@rm{5-2}(11)).
     auto memrefTy = mlir::cast<mlir::MemRefType>(ptr.getType());
     if (auto elemType =
-            mlir::dyn_cast<mlir::ada::QualType>(memrefTy.getElementType()))
-      if (rhs.getType() != elemType) {
-        rhs = emitConversion(rhs, elemType,
-                             mlir::ada::AdaConversionKind::Implicit,
-                             loc(assign_stmt));
-        if (!rhs)
-          return mlir::failure();
-      }
+            mlir::dyn_cast<mlir::ada::QualType>(memrefTy.getElementType())) {
+      rhs = convertImplicitly(rhs, elemType, loc(assign_stmt));
+      if (!rhs)
+        return mlir::failure();
+    }
 
     mlir::memref::StoreOp::create(
         builder, propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
@@ -3815,13 +3780,9 @@ private:
         if (!results.empty())
           if (auto retType =
                   mlir::dyn_cast<mlir::ada::QualType>(results.front())) {
-            if (expr.getType() != retType) {
-              expr = emitConversion(expr, retType,
-                                    mlir::ada::AdaConversionKind::Implicit,
-                                    loc(return_expr));
-              if (!expr)
-                return mlir::failure();
-            }
+            expr = convertImplicitly(expr, retType, loc(return_expr));
+            if (!expr)
+              return mlir::failure();
           }
       }
     }
