@@ -33,6 +33,7 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -44,8 +45,6 @@
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
@@ -176,14 +175,15 @@ static llvm::codegen::RegisterCodeGenFlags codeGenFlags;
 // Load a .mlir file directly, bypassing Libadalang entirely.
 static int loadMLIRFile(mlir::MLIRContext &context,
                         mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-      llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
-  if (std::error_code ec = fileOrErr.getError()) {
-    frontend::emitErrorDiag("could not open input file: " + ec.message());
+  std::string errorMessage;
+  std::unique_ptr<llvm::MemoryBuffer> file =
+      mlir::openInputFile(inputFilename, &errorMessage);
+  if (!file) {
+    frontend::emitErrorDiag(errorMessage);
     return 1;
   }
   llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
   // Route MLIR parse diagnostics through the source manager so errors print
   // with file:line:col and a source snippet instead of only the terse "can't
   // load file" fallback below.
@@ -277,15 +277,15 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
 // Write textual output produced by `print` to `outputFilename` ("-" = stdout).
 static int
 writeTextOutput(llvm::function_ref<void(llvm::raw_ostream &)> print) {
-  std::error_code ec;
-  llvm::ToolOutputFile out(outputFilename, ec, llvm::sys::fs::OF_Text);
-  if (ec) {
-    frontend::emitErrorDiag("could not open output file '" + outputFilename +
-                            "': " + ec.message());
+  std::string errorMessage;
+  std::unique_ptr<llvm::ToolOutputFile> out =
+      mlir::openOutputFile(outputFilename, &errorMessage);
+  if (!out) {
+    frontend::emitErrorDiag(errorMessage);
     return 1;
   }
-  print(out.os());
-  out.keep();
+  print(out->os());
+  out->keep();
   return 0;
 }
 
@@ -313,21 +313,20 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
     return 1;
   }
 
-  std::error_code ec;
-  llvm::ToolOutputFile out(
-      path, ec, emitObject ? llvm::sys::fs::OF_None : llvm::sys::fs::OF_Text);
-  if (ec) {
-    frontend::emitErrorDiag("could not open output file '" + path +
-                            "': " + ec.message());
+  std::string errorMessage;
+  std::unique_ptr<llvm::ToolOutputFile> out =
+      mlir::openOutputFile(path, &errorMessage);
+  if (!out) {
+    frontend::emitErrorDiag(errorMessage);
     return 1;
   }
 
   // addPassesToEmitFile writes via pwrite; a non-seekable stream (e.g. a pipe)
   // must be buffered first.
-  llvm::raw_pwrite_stream *os = &out.os();
+  llvm::raw_pwrite_stream *os = &out->os();
   std::unique_ptr<llvm::buffer_ostream> buffered;
-  if (!out.os().supportsSeeking()) {
-    buffered = std::make_unique<llvm::buffer_ostream>(out.os());
+  if (!out->os().supportsSeeking()) {
+    buffered = std::make_unique<llvm::buffer_ostream>(out->os());
     os = buffered.get();
   }
 
@@ -341,7 +340,7 @@ static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
     return 1;
   }
   pm.run(llvmModule);
-  out.keep();
+  out->keep();
   return 0;
 }
 

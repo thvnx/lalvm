@@ -265,7 +265,8 @@ libadalang::AdaAST::AdaAST(llvm::StringRef inputFilename,
       llvm::MemoryBuffer::getFileOrSTDIN(filename);
   if (std::error_code ec = fileOrErr.getError()) {
     valid = false;
-    frontend::emitErrorDiag("could not open input file: " + ec.message());
+    frontend::emitErrorDiag("cannot open input file '" + filename.str() +
+                            "': " + ec.message());
     return;
   }
   auto buffer = fileOrErr.get()->getBuffer();
