@@ -10,17 +10,18 @@
 // available on each llvm.func.
 //
 // Objects are identified by their NameLoc, set by MLIRGen on:
-//   - memref.alloca (ObjectDecl): lowered to llvm.alloca
-//   - arith.constant init expr (ObjectDecl with init): lowered to
-//     llvm.mlir.constant (if mem2reg promotes the alloca)
-//   - arith.constant (NumberDecl): lowered to llvm.mlir.constant
-//   - llvm.func entry block args (parameters): NameLoc set by mlirGenSubpBody
+//   - ada.alloca (ObjectDecl): lowered to llvm.alloca
+//   - the initial value of a constant ObjectDecl, and the ada.constant of a
+//     NumberDecl: lowered to a scalar op (llvm.mlir.constant for a constant)
+//   - entry block args (parameters): NameLoc set by mlirGenSubpBody
 //
-// Ada types are resolved by looking up the op's MLIR type against surviving
-// `ada.type` ops (keyed by getMlirType()). For llvm.alloca the type is
-// getElemType(); for scalar ops it is the result type; for scalar block args
-// it is the arg type; for ptr block args it is inferred from the first
-// llvm.load or llvm.store use of the argument.
+// The Ada type of a value is the `ada.type` named by the DITypeRef that
+// LowerToLLVM fuses into its location (attachAdaTypeRef). Without one, it is
+// looked up by MLIR type among the surviving `ada.type` ops (keyed by
+// getMlirType()): for llvm.alloca the type is getElemType(); for scalar ops it
+// is the result type; for scalar block args it is the arg type; for ptr block
+// args it is inferred from the first llvm.load or llvm.store use of the
+// argument.
 //
 // Dispatch strategy:
 //   llvm.alloca with NameLoc             -> DW_TAG_variable + dbg.declare

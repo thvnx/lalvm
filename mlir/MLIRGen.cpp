@@ -52,15 +52,6 @@ using llvm::cast;
 using llvm::isa;
 using llvm::SmallVector;
 
-// Known limitations of this codegen:
-//
-//  - Integer overflow: Ada defines integer arithmetic over mathematical
-//    integers with range checks that raise Constraint_Error on overflow. This
-//    implementation lowers to arith.addi/subi/muli, which use two's-complement
-//    wrapping semantics with no overflow check. Any Ada code relying on
-//    Constraint_Error for integer overflow will silently produce wrong results.
-//
-
 namespace {
 
 /// DenseMapInfo for ada_node: identity is the raw node pointer; entity info
@@ -356,10 +347,6 @@ private:
     declValues[def_name.node] = value;
   }
 
-  // Recursive AST walker. Handles the node kinds we know how to codegen;
-  // everything else is ignored at this level and its children are visited.
-  // Returning early (without visiting children) stops descent into a subtree
-  // (used when a handler already walked it, e.g. mlirGenSubpBody visits stmts).
   /// If `node` is an xref entry point that fails name resolution, emit
   /// libadalang's diagnostics and return failure. The statement walker
   /// (`visit`) and the declaration walker (`emitDecl`) both route through this,
@@ -373,6 +360,10 @@ private:
     return mlir::success();
   }
 
+  /// Recursive AST walker. Handles the node kinds we know how to codegen;
+  /// everything else is ignored at this level and its children are visited.
+  /// Returning early (without visiting children) stops descent into a subtree
+  /// (a handler that already walked it, e.g. mlirGenSubpBody visits stmts).
   mlir::LogicalResult visit(ada_node &node) {
     if (mlir::failed(checkResolution(node)))
       return mlir::failure();
@@ -1534,7 +1525,7 @@ private:
 
     // Element location: memref<!ada.qual<component, @c>, strided<[], offset:
     // ?>>.
-    // @todo The StridedLayout is not used at the moment but will required to
+    // @todo The StridedLayout is not used at the moment but will be required to
     // support slices.
     auto eltQual = mlir::ada::QualType::get(
         builder.getContext(), layout.getComponentType(), info.getComponent());
@@ -2226,7 +2217,7 @@ private:
                              "unconstrained array types are not supported");
 
     ada_node comp_type = {};
-    if (!ada_base_type_decl_p_comp_type(&type_decl, /*is_subscript*/ false,
+    if (!ada_base_type_decl_p_comp_type(&type_decl, /*is_subscript=*/false,
                                         &libadalang::kNullOrigin, &comp_type) ||
         ada_node_is_null(&comp_type))
       return mlir::failure();
@@ -2260,7 +2251,7 @@ private:
       return mlir::failure();
     auto indexSym = mlir::FlatSymbolRefAttr::get(indexOp.getSymNameAttr());
 
-    // The index bounds live in the ContraintList, it's a BinOp (LO .. HI).
+    // The index bounds live in the ConstraintList, as a BinOp (LO .. HI).
     ada_node constraint_list = {};
     ada_constrained_array_indices_f_list(&indices, &constraint_list);
     ada_node dim0 = {};
@@ -2524,25 +2515,25 @@ private:
   }
 
   /// Emit declarations from a declarative part.
-  /// Supported: ObjectDecl (initialized only), SubpBody (nested subprograms),
-  ///            NumberDecl (expression stashed for lazy use-site emission),
-  ///            ConcreteTypeDecl.
-  /// Silently skipped: SubpDecl (forward declarations), and everything else.
+  /// Supported: ObjectDecl (not at library level), NumberDecl, the supported
+  ///            ConcreteTypeDecl and SubtypeDecl, SubpBody, NullSubpDecl and
+  ///            ExprFunction (nested subprograms).
+  /// Skipped: SubpDecl (forward declarations), EnumRepClause (queried when
+  ///          needed), and unsupported type declarations. Anything else is an
+  ///          error.
   /// The AST structure is: DeclarativePart -> AdaNodeList -> decl...
   ///
-  /// The `ada.subp`/`ada.type` symbols are routed into an interior `ada.decls`
-  /// (a SymbolTable), since neither the enclosing `ada.subp` nor a dissolved
-  /// block is one; locals (objects, numbers) stay inline in the region.
-  /// Declarations are emitted in source order, with the `ada.decls` placed
-  /// *after* the locals: each local lands in the region just before the
-  /// `ada.decls`, each symbol inside it. So a local dominates the `ada.decls`
-  /// (required once a nested subprogram captures it) and is bound before a
-  /// later nested subprogram is emitted, while a symbol is still available by
-  /// name to the locals around it.
-  ///
-  /// @todo Reword that comment. This not true anymore: library-level
-  /// declarative parts, are already SymbolTable operations, so no `ada.decls`
-  /// is generated in those cases.
+  /// At library level, the insertion block is the module body, a SymbolTable:
+  /// every declaration is emitted inline there. Elsewhere, the `ada.subp` and
+  /// `ada.type` symbols are routed into an interior `ada.decls` (a
+  /// SymbolTable), since neither the enclosing `ada.subp` nor a dissolved block
+  /// is one; locals (objects, numbers) stay inline in the region. Declarations
+  /// are emitted in source order, with the `ada.decls` placed *after* the
+  /// locals: each local lands in the region just before the `ada.decls`, each
+  /// symbol inside it. So a local dominates the `ada.decls` (required once a
+  /// nested subprogram captures it) and is bound before a later nested
+  /// subprogram is emitted, while a symbol is still available by name to the
+  /// locals around it.
   mlir::LogicalResult mlirGenDeclarativePart(ada_node &decls) {
     // Visit every declaration in source order, invoking `fn`.
     auto forEachDecl =

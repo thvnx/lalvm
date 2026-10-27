@@ -34,8 +34,8 @@ namespace LLVM = mlir::LLVM;
 
 namespace {
 
-/// Represent the program to bind. ``describeProgram`` fills it from the main
-/// unit and ``emitBindModule`` consumes it (it never looks at Libadalang).
+/// Represent the program to bind. `describeProgram` fills it from the main
+/// unit and `emitBindModule` consumes it (it never looks at Libadalang).
 struct Program {
   /// Unit name of the program to bind.
   std::string unitName;

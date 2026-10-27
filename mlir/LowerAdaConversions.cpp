@@ -137,7 +137,7 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
       return success();
     }
 
-    // Neither does a value known to lie within the target's range.
+    // A value known to lie within the target's range needs no check either.
     if (knownWithin(op, op.getInput(), ada::boundValue(lo),
                     ada::boundValue(hi))) {
       rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target, op.getInput());

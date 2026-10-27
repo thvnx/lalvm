@@ -609,8 +609,8 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
 // RangeCheckOp, IndexCheckOp and RequalifyOp
 //===----------------------------------------------------------------------===//
 
-// These ops forward the machine value unchanged, so only the qualification may
-// differ between `value` and `result`.
+/// These ops forward the machine value unchanged, so only the qualification
+/// may differ between `value` and `result`.
 template <typename OpTy>
 static llvm::LogicalResult verifySameRepresentation(OpTy op) {
   auto source = mlir::cast<ada::QualType>(op.getValue().getType());
@@ -622,8 +622,8 @@ static llvm::LogicalResult verifySameRepresentation(OpTy op) {
   return mlir::success();
 }
 
-// Both must belong to one type (share a base, @rm{3-2-2}), this is checked when
-// both `ada.type` symbols resolve.
+/// Both must belong to one type (share a base, @rm{3-2-2}), checked when both
+/// `ada.type` symbols resolve.
 template <typename OpTy> static llvm::LogicalResult verifySameBase(OpTy op) {
   auto source = mlir::cast<ada::QualType>(op.getValue().getType());
   auto target = mlir::cast<ada::QualType>(op.getResult().getType());

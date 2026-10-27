@@ -45,10 +45,10 @@ void frontend::DiagnosticPrinter::emitDiag(llvm::StringRef filename,
   llvm::errs() << libadalang::textToString(diag.message) << "\n";
 }
 
-// Render a solver-diagnostic argument. These are usually entities (type or
-// object declarations), whose name lives on the defining name rather than the
-// node itself; `getName` only handles Name/DefiningName nodes. Resolve a
-// declaration to its defining name first, then fall back to `getName`.
+/// Render a solver-diagnostic argument. These are usually entities (type or
+/// object declarations), whose name lives on the defining name rather than the
+/// node itself; `getName` only handles Name/DefiningName nodes. Resolve a
+/// declaration to its defining name first, then fall back to `getName`.
 static std::string solverArgImage(ada_node &node) {
   ada_node defName;
   if (ada_basic_decl_p_defining_name(&node, &defName) &&
@@ -57,8 +57,8 @@ static std::string solverArgImage(ada_node &node) {
   return libadalang::getName(&node, /*canonical=*/false);
 }
 
-// Format a solver diagnostic message by substituting {} holes sequentially
-// with the source-text image of each node argument.
+/// Format a solver diagnostic message by substituting {} holes sequentially
+/// with the source-text image of each node argument.
 static std::string
 formatSolverDiag(const ada_internal_solver_diagnostic &diag) {
   // message_template is a UTF-32 ada_string_type; convert it to UTF-8 first.

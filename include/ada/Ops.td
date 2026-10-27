@@ -368,8 +368,7 @@ def IndexOp : Ada_Op<"index", [Pure]> {
 // @rm{3-5}); the constrained subtype is named on the result `!ada.range` type.
 // No folder: there is no attribute form of a range to fold to (static bound
 // metadata lives on `ada.type`'s `int_info` instead); `staticBounds()` exposes
-// the constant operands for future `'First`/`'Last`. `AllTypesMatch` ties the
-// two bounds to one type.
+// the constant operands. `AllTypesMatch` ties the two bounds to one type.
 def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
   let summary = "Ada subtype constraint value (a low/high bound pair)";
   let description = [{
@@ -464,7 +463,7 @@ def IndexCheckOp : Ada_InRangeCheckOp<"index_check"> {
 
 // A scalar attribute that reads a bound from a subtype's range descriptor
 // (@rm{3-5}): `'First` selects the low bound, `'Last` the high bound. The
-// operand is the `!ada.range` descriptor, never the type symbol -- the symbol
+// operand is the `!ada.range` descriptor, never the type symbol: the symbol
 // is static representation metadata with no bounds to read, while the
 // descriptor carries them (static or dynamic, @rm{3-2-2}). The result is the
 // bound as a value of the subtype, read with an `extractvalue`. The

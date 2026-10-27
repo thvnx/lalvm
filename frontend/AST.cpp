@@ -160,7 +160,7 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node,
     printed = true;
   }
   failed |= ada_get_last_exception() != nullptr;
-  // Print expected type if different of type.
+  // Print the expected type if it differs from the type.
   ada_node expected = {};
   if (!ada_node_is_null(&type) &&
       ada_expr_p_expected_expression_type(node, &expected) &&
