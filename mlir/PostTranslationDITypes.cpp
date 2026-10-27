@@ -24,6 +24,36 @@
 // The builders below cache DIFiles by path and retype placeholder DIEs the
 // same way; these helpers capture the shared logic.
 
+/// The first compile unit of `llvmModule`, or null when it has no debug info.
+static llvm::DICompileUnit *firstCompileUnit(llvm::Module &llvmModule) {
+  auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
+  if (!cuMeta || cuMeta->getNumOperands() == 0)
+    return nullptr;
+  return llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
+}
+
+/// Call `fn` on every debug variable record of `llvmModule`.
+static void forEachDbgVariableRecord(
+    llvm::Module &llvmModule,
+    llvm::function_ref<void(llvm::DbgVariableRecord &)> fn) {
+  for (llvm::Function &f : llvmModule)
+    for (llvm::BasicBlock &bb : f)
+      for (llvm::Instruction &i : bb)
+        for (llvm::DbgVariableRecord &dvr :
+             llvm::filterDbgVars(i.getDbgRecordRange()))
+          fn(dvr);
+}
+
+/// The static bound `bound` as a constant of type `ty`, or null when the bound
+/// is not static. The `int_info`/`array_info` encoding is a minimal-width
+/// signed value, widened to fit, so a wide bound stays exact.
+static llvm::Metadata *boundMD(mlir::IntegerAttr bound, llvm::IntegerType *ty) {
+  if (!bound)
+    return nullptr;
+  return llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
+      ty, bound.getValue().sextOrTrunc(ty->getBitWidth())));
+}
+
 /// Return the DIFile for `path`, creating it once and caching by path so
 /// repeated lookups reuse the same file node.
 static llvm::DIFile *
@@ -85,15 +115,11 @@ static llvm::DIType *preserveConst(llvm::DIBuilder &db, llvm::DIType *current,
 static void rewriteVariableTypes(
     llvm::DIBuilder &db, llvm::Module &llvmModule,
     llvm::function_ref<llvm::DIType *(llvm::DIType *)> replace) {
-  for (auto &f : llvmModule)
-    for (auto &bb : f)
-      for (auto &i : bb)
-        for (llvm::DbgVariableRecord &dvr :
-             llvm::filterDbgVars(i.getDbgRecordRange())) {
-          auto *vt = dvr.getVariable()->getType();
-          if (auto *full = replace(stripConst(vt)))
-            retypeLocalVariable(db, dvr, preserveConst(db, vt, full));
-        }
+  forEachDbgVariableRecord(llvmModule, [&](llvm::DbgVariableRecord &dvr) {
+    auto *vt = dvr.getVariable()->getType();
+    if (auto *full = replace(stripConst(vt)))
+      retypeLocalVariable(db, dvr, preserveConst(db, vt, full));
+  });
 }
 
 /// Rewrite placeholder types in subprogram signatures (the DISubroutineType
@@ -184,10 +210,9 @@ static llvm::DIType *basicTypeFor(llvm::DIBuilder &db,
 mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
                                                        mlir::ModuleOp module) {
   DITypeBySymName types;
-  auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
-  if (!cuMeta || cuMeta->getNumOperands() == 0)
+  llvm::DICompileUnit *cu = firstCompileUnit(llvmModule);
+  if (!cu)
     return types;
-  auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
 
   // Collect surviving enum ada.type ops; skip the IR scan if none exist.
   llvm::SmallVector<mlir::ada::TypeOp> enumTypeOps;
@@ -219,17 +244,14 @@ mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
         ct->getElements().empty())
       referenced.insert(ct->getName());
   };
-  for (llvm::Function &f : llvmModule) {
+  for (llvm::Function &f : llvmModule)
     if (auto *sp = f.getSubprogram())
       if (auto *st = sp->getType(); st && st->getRawTypeArray())
         for (llvm::DIType *t : st->getTypeArray())
           noteEnumStub(t);
-    for (llvm::BasicBlock &bb : f)
-      for (llvm::Instruction &i : bb)
-        for (llvm::DbgVariableRecord &dvr :
-             llvm::filterDbgVars(i.getDbgRecordRange()))
-          noteEnumStub(dvr.getVariable()->getType());
-  }
+  forEachDbgVariableRecord(llvmModule, [&](llvm::DbgVariableRecord &dvr) {
+    noteEnumStub(dvr.getVariable()->getType());
+  });
 
   // Build enum DI types directly from the referenced surviving ada.type ops.
   llvm::StringMap<llvm::DICompositeType *> enumTypeByName;
@@ -281,10 +303,9 @@ mlir::ada::DITypeBySymName
 mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
                                 mlir::ModuleOp module) {
   DITypeBySymName types;
-  auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
-  if (!cuMeta || cuMeta->getNumOperands() == 0)
+  llvm::DICompileUnit *cu = firstCompileUnit(llvmModule);
+  if (!cu)
     return types;
-  auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
 
   // Collect constrained integer subtypes (any recorded range, static or
   // dynamic). A static bound becomes a constant; a dynamic one references the
@@ -309,28 +330,13 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
   llvm::DenseMap<std::pair<llvm::DILocalScope *, llvm::StringRef>,
                  llvm::DILocalVariable *>
       boundVarByScopeName;
-  for (llvm::Function &f : llvmModule)
-    for (llvm::BasicBlock &bb : f)
-      for (llvm::Instruction &i : bb)
-        for (llvm::DbgVariableRecord &dvr :
-             llvm::filterDbgVars(i.getDbgRecordRange())) {
-          auto *v = dvr.getVariable();
-          boundVarByScopeName[{v->getScope(), v->getName()}] = v;
-        }
+  forEachDbgVariableRecord(llvmModule, [&](llvm::DbgVariableRecord &dvr) {
+    auto *v = dvr.getVariable();
+    boundVarByScopeName[{v->getScope(), v->getName()}] = v;
+  });
 
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
-
-  // A static bound becomes a constant in the subtype's own machine width (the
-  // `int_info` encoding is a minimal-width signed value, widened to fit), so a
-  // wider-than-64-bit subtype keeps its bounds exact.
-  auto boundMD = [&](mlir::IntegerAttr bound,
-                     llvm::IntegerType *ty) -> llvm::Metadata * {
-    if (!bound)
-      return nullptr;
-    return llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
-        ty, bound.getValue().sextOrTrunc(ty->getBitWidth())));
-  };
 
   llvm::StringMap<llvm::DISubrangeType *> subrangeByName;
   for (mlir::ada::TypeOp typeOp : subtypeOps) {
@@ -399,10 +405,9 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
 void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
                                   mlir::ModuleOp module,
                                   const DITypeBySymName &types) {
-  auto *cuMeta = llvmModule.getNamedMetadata("llvm.dbg.cu");
-  if (!cuMeta || cuMeta->getNumOperands() == 0)
+  llvm::DICompileUnit *cu = firstCompileUnit(llvmModule);
+  if (!cu)
     return;
-  auto *cu = llvm::cast<llvm::DICompileUnit>(cuMeta->getOperand(0));
 
   // Statically constrained arrays only: the others have no stub.
   llvm::SmallVector<mlir::ada::TypeOp> arrayOps;
@@ -421,13 +426,6 @@ void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
 
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
-
-  // A bound as a constant of the index type's width.
-  auto boundMD = [&](mlir::IntegerAttr bound,
-                     llvm::IntegerType *ty) -> llvm::Metadata * {
-    return llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
-        ty, bound.getValue().sextOrTrunc(ty->getBitWidth())));
-  };
 
   llvm::StringMap<llvm::DICompositeType *> arrayByName;
   for (mlir::ada::TypeOp typeOp : arrayOps) {

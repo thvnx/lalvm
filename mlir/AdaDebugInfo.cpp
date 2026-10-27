@@ -236,6 +236,19 @@ lookupNamedDIType(MLIRContext *ctx, mlir::Type mlirType,
   return makeDITypeAttr(ctx, it->second);
 }
 
+/// The DI type of a value of `mlirType` with no Ada type reference: the named
+/// type of a matching `ada.type`, else a generic integer type, else null (no
+/// Ada type, e.g. for MLIR input).
+static LLVM::DITypeAttr
+fallbackDIType(MLIRContext *ctx, mlir::Type mlirType,
+               llvm::DenseMap<mlir::Type, ada::TypeOp> &typeOpCache) {
+  if (LLVM::DITypeAttr diType = lookupNamedDIType(ctx, mlirType, typeOpCache))
+    return diType;
+  if (auto intType = dyn_cast<IntegerType>(mlirType))
+    return makeDIIntType(ctx, intType);
+  return {};
+}
+
 /// Extract the Ada-type-specific DI type from a FusedLoc carrying a
 /// FlatSymbolRefAttr, using `typeOpByName` to resolve the sym_name.
 /// Returns null if the loc has no such metadata or the sym_name is not found.
@@ -512,17 +525,13 @@ struct AdaDebugInfoPass
       LLVM::DITypeAttr diType =
           extractDITypeFromLoc(ctx, entry.innerLoc, typeOpByName);
       if (!diType)
-        diType = lookupNamedDIType(ctx, elemType, typeOpCache);
+        diType = fallbackDIType(ctx, elemType, typeOpCache);
       if (!diType) {
-        auto intType = dyn_cast<IntegerType>(elemType);
-        if (!intType) {
-          // No Ada type (MLIR input): skip the variable.
-          entry.op->emitWarning()
-              << "missing ada.type for variable '" << entry.name.getValue()
-              << "', skipping debug info";
-          continue;
-        }
-        diType = makeDIIntType(ctx, intType);
+        // No Ada type (MLIR input): skip the variable.
+        entry.op->emitWarning()
+            << "missing ada.type for variable '" << entry.name.getValue()
+            << "', skipping debug info";
+        continue;
       }
       auto varInfo = LLVM::DILocalVariableAttr::get(
           entry.subprogram, entry.name, fileAttr, line,
@@ -570,16 +579,12 @@ struct AdaDebugInfoPass
           // Scalar `in` parameter: dbg.value at function entry.
           diType = extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName);
           if (!diType)
-            diType = lookupNamedDIType(ctx, argType, typeOpCache);
+            diType = fallbackDIType(ctx, argType, typeOpCache);
           if (!diType) {
-            auto intType = dyn_cast<IntegerType>(argType);
-            if (!intType) {
-              // No Ada type (MLIR input): skip the parameter.
-              func.emitWarning("missing ada.type for parameter '")
-                  << nl.getName().getValue() << "', skipping debug info";
-              continue;
-            }
-            diType = makeDIIntType(ctx, intType);
+            // No Ada type (MLIR input): skip the parameter.
+            func.emitWarning("missing ada.type for parameter '")
+                << nl.getName().getValue() << "', skipping debug info";
+            continue;
           }
           // Ada `in` parameters are read-only (@rm{6-1}): wrap in const, as
           // GNAT does (reference `in out`/`out` params below stay non-const).
@@ -607,16 +612,12 @@ struct AdaDebugInfoPass
                   << nl.getName().getValue() << "', skipping debug info";
               continue;
             }
-            diType = lookupNamedDIType(ctx, elemType, typeOpCache);
+            diType = fallbackDIType(ctx, elemType, typeOpCache);
             if (!diType) {
-              auto intElemType = dyn_cast<IntegerType>(elemType);
-              if (!intElemType) {
-                // No Ada type (MLIR input): skip the parameter.
-                func.emitWarning("missing ada.type for parameter '")
-                    << nl.getName().getValue() << "', skipping debug info";
-                continue;
-              }
-              diType = makeDIIntType(ctx, intElemType);
+              // No Ada type (MLIR input): skip the parameter.
+              func.emitWarning("missing ada.type for parameter '")
+                  << nl.getName().getValue() << "', skipping debug info";
+              continue;
             }
           }
         } else {
