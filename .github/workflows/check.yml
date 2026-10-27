@@ -36,11 +36,34 @@ jobs:
         with:
           toolchain: gnat_native gprbuild
 
-      - name: Build Libadalang from Alire
-        # The crate directory is a Libadalang build tree.
+      - name: Resolve the Libadalang release and the toolchain
+        id: libadalang
         run: |
-          LIBRARY_TYPE=relocatable alr -n get --build libadalang
-          echo "LIBADALANG_DIR=$PWD/$(alr -n get --dirname libadalang)" >> "$GITHUB_ENV"
+          # Alire computes the directory name from the package index.
+          dir=$(alr -n get --dirname libadalang)
+          version=$(alr --version | awk '{ print $2 }')
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "alire=$version" >> "$GITHUB_OUTPUT"
+          alr -n toolchain | awk '($1 == "gnat_native" || $1 == "gprbuild") && $3 == "Default" { print $1 "=" $2 }' >> "$GITHUB_OUTPUT"
+          echo "LIBADALANG_DIR=$PWD/$dir" >> "$GITHUB_ENV"
+
+      # setup-alire caches its installation and default toolchain. Keep the
+      # dependency sources and builds here, including any additional GNAT
+      # selected by Libadalang's constraints.
+      - name: Restore Libadalang
+        id: libadalang-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.libadalang.outputs.dir }}
+            ~/.local/share/alire/releases
+            ~/.local/share/alire/builds
+            ~/.local/share/alire/toolchains
+          key: ${{ steps.libadalang.outputs.dir }}[${{ steps.libadalang.outputs.alire }}][${{ runner.os }}][${{ runner.arch }}][gnat_native=${{ steps.libadalang.outputs.gnat_native }}][gprbuild=${{ steps.libadalang.outputs.gprbuild }}]
+
+      - name: Build Libadalang from Alire
+        if: steps.libadalang-cache.outputs.cache-hit != 'true'
+        run: LIBRARY_TYPE=relocatable alr -n get --build libadalang
 
       - name: Expose the GNAT toolchain to the later steps
         # `alr printenv` puts the toolchain on PATH (execution tests need it).
