@@ -50,6 +50,11 @@ jobs:
       # setup-alire caches its installation and default toolchain. Keep the
       # dependency sources and builds here, including any additional GNAT
       # selected by Libadalang's constraints.
+      # Reuse the cached dependency versions while the key is unchanged.
+      # A different Libadalang release or source hash changes the directory
+      # name and therefore the key. To refresh dependencies for the same
+      # crate, delete its cache in GitHub. On a miss, build below and save
+      # the cache automatically when the job succeeds.
       - name: Restore Libadalang
         id: libadalang-cache
         uses: actions/cache@v6
