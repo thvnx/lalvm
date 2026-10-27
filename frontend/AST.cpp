@@ -340,6 +340,17 @@ std::string libadalang::getName(ada_node *node, bool canonical) {
   }
 }
 
+std::optional<ada_node> libadalang::declDefiningName(ada_node &decl) {
+  ada_node defName = {};
+  if (!ada_basic_decl_p_defining_name(&decl, &defName) ||
+      ada_node_is_null(&defName)) {
+    frontend::emitErrorDiag(decl,
+                            "failed to get the declaration's defining name");
+    return std::nullopt;
+  }
+  return defName;
+}
+
 std::string libadalang::textToString(ada_text &text) {
   char *buf;
   size_t length;

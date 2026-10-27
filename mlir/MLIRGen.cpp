@@ -283,6 +283,12 @@ private:
     return scopeStack.empty() ? std::string() : scopeStack.back();
   }
 
+  /// Push `scope` on `scopeStack` until the returned guard is destroyed.
+  [[nodiscard]] auto pushScope(std::string scope) {
+    scopeStack.push_back(std::move(scope));
+    return llvm::scope_exit([this] { scopeStack.pop_back(); });
+  }
+
   /// `simple` qualified by the current enclosing scope, made unique with
   /// `__N` (see makeUnique).
   std::string makeUniqueInScope(llvm::StringRef simple) {
@@ -2667,8 +2673,7 @@ private:
     if (!op)
       return nullptr;
     // Enter the subprogram's naming scope for the declarations in its body.
-    scopeStack.push_back(mlir::SymbolTable::getSymbolName(op).str());
-    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
+    auto scopeGuard = pushScope(mlir::SymbolTable::getSymbolName(op).str());
 
     // Neither a loop nor a goto label is reachable across a subprogram boundary
     // (@rm{5-7}, @rm{5-8}), so both are subprogram-local: clear them for this
@@ -2807,8 +2812,7 @@ private:
   mlir::LogicalResult mlirGenBlock(ada_node &blockNode, llvm::StringRef name) {
     bool isDecl = ada_node_kind(&blockNode) == ada_decl_block;
 
-    scopeStack.push_back(makeUniqueInScope(name.empty() ? "b" : name));
-    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
+    auto scopeGuard = pushScope(makeUniqueInScope(name.empty() ? "b" : name));
 
     // Codegen the declarative part (ada_decl_block only).
     if (isDecl) {
@@ -2832,13 +2836,10 @@ private:
   /// parts.
   mlir::LogicalResult mlirGenPackageDecl(ada_node &decl) {
     builder.setInsertionPointToStart(adaModule.getBody());
-
-    ada_node def_name = {};
-    if (!ada_basic_decl_p_defining_name(&decl, &def_name) ||
-        ada_node_is_null(&def_name))
-      return mlir::emitError(loc(decl), "failed to get the package name");
-    scopeStack.push_back(canonicalFqn(def_name));
-    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
+    std::optional<ada_node> def_name = libadalang::declDefiningName(decl);
+    if (!def_name)
+      return mlir::failure();
+    auto scopeGuard = pushScope(canonicalFqn(*def_name));
 
     ada_node public_part = {}, private_part = {};
 
@@ -2864,20 +2865,17 @@ private:
   /// time (@rm{7-2}).
   mlir::LogicalResult mlirGenPackageBody(ada_node &body) {
     builder.setInsertionPointToStart(adaModule.getBody());
-
-    ada_node def_name = {};
-    if (!ada_basic_decl_p_defining_name(&body, &def_name) ||
-        ada_node_is_null(&def_name))
-      return mlir::emitError(loc(body), "failed to get the package name");
-    scopeStack.push_back(canonicalFqn(def_name));
-    auto scopeGuard = llvm::scope_exit([&] { scopeStack.pop_back(); });
+    std::optional<ada_node> def_name = libadalang::declDefiningName(body);
+    if (!def_name)
+      return mlir::failure();
+    auto scopeGuard = pushScope(canonicalFqn(*def_name));
 
     // Process the spec of that body.
     std::optional<ada_node> spec = libadalang::declPart(body);
 
     if (!spec)
-      return mlir::emitError(loc(def_name), "specification of package ")
-             << libadalang::getName(&def_name, /*canonical=*/false)
+      return mlir::emitError(loc(*def_name), "specification of package ")
+             << libadalang::getName(&*def_name, /*canonical=*/false)
              << " not found";
     if (libadalang::emitParserDiagnostics(spec.value()))
       return mlir::failure();

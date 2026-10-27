@@ -36,6 +36,10 @@ void dump(ada_node *node, llvm::raw_ostream &os);
 /// canonical lowercase form; otherwise it is returned as written in the source.
 std::string getName(ada_node *node, bool canonical = true);
 
+/// The defining name of the declaration `decl`, or
+/// std::nullopt after a diagnostic.
+std::optional<ada_node> declDefiningName(ada_node &decl);
+
 /// Syntactic parent of `node`, or null for the root.
 ada_node parent(ada_node *node);
 
