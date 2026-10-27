@@ -21,6 +21,19 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Path.h"
 
+std::optional<mlir::ada::DIBasicEncoding>
+mlir::ada::basicTypeEncoding(mlir::Type mlirType, bool modular) {
+  if (auto intType = mlir::dyn_cast<mlir::IntegerType>(mlirType)) {
+    unsigned enc = modular                   ? llvm::dwarf::DW_ATE_unsigned
+                   : intType.getWidth() == 1 ? llvm::dwarf::DW_ATE_boolean
+                                             : llvm::dwarf::DW_ATE_signed;
+    return DIBasicEncoding{llvm::alignTo(intType.getWidth(), 8), enc};
+  }
+  if (auto floatType = mlir::dyn_cast<mlir::FloatType>(mlirType))
+    return DIBasicEncoding{floatType.getWidth(), llvm::dwarf::DW_ATE_float};
+  return std::nullopt;
+}
+
 // The builders below cache DIFiles by path and retype placeholder DIEs the
 // same way; these helpers capture the shared logic.
 
@@ -190,21 +203,16 @@ static llvm::DIType *basicTypeFor(llvm::DIBuilder &db,
       return nullptr;
     typeOp = baseOp;
   }
-  llvm::StringRef name = mlir::ada::bareName(typeOp.getSymName());
-  if (auto intType = mlir::dyn_cast<mlir::IntegerType>(typeOp.getMlirType())) {
-    auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
-        typeOp.getTypeInfoAttr());
-    if (!intInfo)
-      return nullptr;
-    unsigned enc = intInfo.getModulus()      ? llvm::dwarf::DW_ATE_unsigned
-                   : intType.getWidth() == 1 ? llvm::dwarf::DW_ATE_boolean
-                                             : llvm::dwarf::DW_ATE_signed;
-    return db.createBasicType(name, llvm::alignTo(intType.getWidth(), 8), enc);
-  }
-  if (auto floatType = mlir::dyn_cast<mlir::FloatType>(typeOp.getMlirType()))
-    return db.createBasicType(name, floatType.getWidth(),
-                              llvm::dwarf::DW_ATE_float);
-  return nullptr;
+  auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
+      typeOp.getTypeInfoAttr());
+  if (mlir::isa<mlir::IntegerType>(typeOp.getMlirType()) && !intInfo)
+    return nullptr;
+  std::optional<mlir::ada::DIBasicEncoding> enc = mlir::ada::basicTypeEncoding(
+      typeOp.getMlirType(), intInfo && intInfo.getModulus());
+  if (!enc)
+    return nullptr;
+  return db.createBasicType(mlir::ada::bareName(typeOp.getSymName()),
+                            enc->sizeInBits, enc->encoding);
 }
 
 mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,

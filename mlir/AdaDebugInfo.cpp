@@ -40,6 +40,7 @@
 
 #include "ada/Dialect.h"
 #include "ada/Passes.h"
+#include "ada/PostTranslationDITypes.h"
 #include "lalvm/Support.h"
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -59,22 +60,18 @@ using namespace mlir;
 
 namespace {
 
-/// Build a DIBasicTypeAttr from an MLIR type with an explicit name.
-/// Returns null for unsupported MLIR types (not IntegerType or FloatType).
+/// Build a DIBasicTypeAttr from an MLIR type with an explicit name, unsigned
+/// when `modular`. Returns null for unsupported MLIR types (not IntegerType or
+/// FloatType).
 static LLVM::DIBasicTypeAttr makeDIBasicType(MLIRContext *ctx, StringRef name,
-                                             mlir::Type mlirType) {
-  if (auto intType = dyn_cast<IntegerType>(mlirType)) {
-    unsigned w = intType.getWidth();
-    unsigned enc =
-        (w == 1) ? llvm::dwarf::DW_ATE_boolean : llvm::dwarf::DW_ATE_signed;
-    return LLVM::DIBasicTypeAttr::get(ctx, llvm::dwarf::DW_TAG_base_type, name,
-                                      llvm::alignTo(w, 8), enc);
-  }
-  if (auto floatType = dyn_cast<FloatType>(mlirType))
-    return LLVM::DIBasicTypeAttr::get(ctx, llvm::dwarf::DW_TAG_base_type, name,
-                                      floatType.getWidth(),
-                                      llvm::dwarf::DW_ATE_float);
-  return {};
+                                             mlir::Type mlirType,
+                                             bool modular = false) {
+  std::optional<ada::DIBasicEncoding> enc =
+      ada::basicTypeEncoding(mlirType, modular);
+  if (!enc)
+    return {};
+  return LLVM::DIBasicTypeAttr::get(ctx, llvm::dwarf::DW_TAG_base_type, name,
+                                    enc->sizeInBits, enc->encoding);
 }
 
 /// Build a DIBasicTypeAttr for an integer type with a generic "integer_N" name.
@@ -88,17 +85,10 @@ static LLVM::DIBasicTypeAttr makeDIIntType(MLIRContext *ctx,
 /// Returns null if the MLIR type is neither IntegerType nor FloatType.
 static LLVM::DIBasicTypeAttr makeDINamedType(MLIRContext *ctx,
                                              ada::TypeOp typeOp) {
-  // Modular types use DW_ATE_unsigned instead of DW_ATE_signed.
-  if (auto intInfo =
-          dyn_cast_or_null<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
-    if (intInfo.getModulus())
-      return LLVM::DIBasicTypeAttr::get(
-          ctx, llvm::dwarf::DW_TAG_base_type,
-          ada::bareName(typeOp.getSymName()),
-          llvm::alignTo(cast<IntegerType>(typeOp.getMlirType()).getWidth(), 8),
-          llvm::dwarf::DW_ATE_unsigned);
+  auto intInfo =
+      dyn_cast_or_null<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr());
   return makeDIBasicType(ctx, ada::bareName(typeOp.getSymName()),
-                         typeOp.getMlirType());
+                         typeOp.getMlirType(), intInfo && intInfo.getModulus());
 }
 
 /// Build an empty DICompositeTypeAttr stub for an enum ada.type op.

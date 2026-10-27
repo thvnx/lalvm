@@ -25,6 +25,8 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/ADT/DenseMap.h"
+#include <cstdint>
+#include <optional>
 
 namespace llvm {
 class DIType;
@@ -35,6 +37,19 @@ namespace mlir::ada {
 
 /// Nodes built by a builder, keyed by the `ada.type` sym_name.
 using DITypeBySymName = llvm::DenseMap<mlir::StringAttr, llvm::DIType *>;
+
+/// Size and DWARF encoding (DW_ATE_*) of a DW_TAG_base_type.
+struct DIBasicEncoding {
+  uint64_t sizeInBits;
+  unsigned encoding;
+};
+
+/// The DW_TAG_base_type encoding of a numeric Ada type of machine type
+/// `mlirType`, unsigned when `modular`, or none for a non-numeric type.
+/// AdaDebugInfoPass and these builders share it, so that DIBuilder returns
+/// the very node the pass's attribute translated to.
+std::optional<DIBasicEncoding> basicTypeEncoding(mlir::Type mlirType,
+                                                 bool modular);
 
 /// Build a DW_TAG_enumeration_type for each surviving enum `ada.type` op and
 /// substitute it for the op's empty DICompositeType stub. A local type is
