@@ -210,6 +210,7 @@ static bool isFullWidthModulus(const llvm::APInt &m, unsigned width) {
   return m.isPowerOf2() && m.logBase2() == width;
 }
 
+namespace {
 // OpConversionPattern: the result type changes from !ada.qual to a bare MLIR
 // type; the conversion framework must track that mapping for downstream uses.
 struct ConstantOpLowering : public OpConversionPattern<ada::ConstantOp> {
@@ -269,6 +270,7 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
     return success();
   }
 };
+} // namespace
 
 /// The GNAT runtime entry point raising Constraint_Error for each check kind.
 static llvm::StringRef raiseEntry(ada::RangeCheckOp) {
@@ -278,6 +280,7 @@ static llvm::StringRef raiseEntry(ada::IndexCheckOp) {
   return "__gnat_rcheck_CE_Index_Check";
 }
 
+namespace {
 // OpConversionPattern: lowers the Constraint_Check (@rm{11-5}) to a compare
 // against the bound pair and a conditional branch to a raise block that calls
 // the GNAT runtime and is unreachable. Representation-preserving: the machine
@@ -424,6 +427,7 @@ struct IndexOpLowering : public OpConversionPattern<ada::IndexOp> {
     return success();
   }
 };
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // AdaToLLVM RewritePatterns: Binary/Unary operations
@@ -504,6 +508,7 @@ static std::optional<llvm::APInt> evalConstInt(mlir::Value v) {
   return overflow ? std::nullopt : std::optional<llvm::APInt>(result);
 }
 
+namespace {
 // Lowers ada.binop to the corresponding arith op, dispatching on the operator
 // kind attribute and on integer vs. float operand type.
 // OpConversionPattern: operands are ada.qual typed; the adaptor provides the
@@ -1184,6 +1189,7 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
     return success();
   }
 };
+} // namespace
 
 void AdaToLLVMLoweringPass::runOnOperation() {
   ModuleOp module = getOperation();
