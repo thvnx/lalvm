@@ -112,8 +112,11 @@ public:
   ada_node &getUnitRootNode() { return root; }
 
   /// Return whether everything went well during object construction.
-  bool isValid() { return valid; }
-  void dump(llvm::raw_ostream &os) { libadalang::dump(&root, os); }
+  bool isValid() const { return valid; }
+  void dump(llvm::raw_ostream &os) const {
+    ada_node node = root; // the C API takes a mutable node
+    libadalang::dump(&node, os);
+  }
 
   /// Print the first Libadalang parse/lex diagnostic for this unit to stderr,
   /// matching the standard "file:line:col: error: msg" diagnostic format.
