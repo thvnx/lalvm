@@ -160,11 +160,6 @@ def ArrayTypeInfoAttr : AttrDef<Ada_Dialect, "ArrayTypeInfo"> {
   let extraClassDeclaration = [{
     /// Return the number of dimensions of the array.
     unsigned rank() const { return getIndexTypes().size(); }
-    // Return whether the array is constrained.
-    bool constrained() const {
-      return llvm::any_of(getLowerBounds(),
-                          [](mlir::Attribute b) { return static_cast<bool>(b); });
-    }
     /// The static value of the lower bound of the given dimension, or null when
     /// the bound is dynamic or the dimension is unconstrained.
     mlir::IntegerAttr staticLower(unsigned dim) const {

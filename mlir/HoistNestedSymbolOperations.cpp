@@ -50,6 +50,7 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
   // capture below reads intact FQN sym_names and there is no iterator
   // invalidation.
   ModuleOp module = getOperation();
+  MLIRContext *ctx = module.getContext();
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> subps;
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedTypes;
   llvm::SmallVector<ada::DeclsOp, 4> declsOps;
@@ -91,7 +92,6 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
   // module region (including each subprogram's own body), so self-recursive
   // calls are rewritten too.
   for (auto &[op, mangledName] : subps) {
-    auto *ctx = module.getContext();
     // Capture the bare Ada source name before the sym_name is overwritten with
     // the mangled form (after which it is no longer recoverable: the `__`
     // segment separator collides with MLIRGen's `__N` collision suffix). Fuse
@@ -114,13 +114,11 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
   // the location so the post-translation DI type builders can still place
   // the type's DWARF scope under it.
   for (auto &[op, scopeName] : nestedTypes) {
-    if (!scopeName.empty()) {
-      auto *ctx = module.getContext();
+    if (!scopeName.empty())
       op->setLoc(mlir::FusedLoc::get(
           ctx, {op->getLoc()},
           ada::DIScopeRefAttr::get(
               ctx, mlir::FlatSymbolRefAttr::get(ctx, scopeName))));
-    }
     op->moveBefore(module.getBody(), module.getBody()->end());
   }
   // Closure conversion erased the subprogram-only ada.decls; the rest held

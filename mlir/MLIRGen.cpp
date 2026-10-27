@@ -7,50 +7,45 @@
 #include "frontend/AST.h"
 #include "frontend/DiagnosticPrinter.h"
 #include "libadalang.h"
-#include "mlir/IR/Block.h"
-#include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/Value.h"
-#include "mlir/Support/LogicalResult.h"
-
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/SymbolTable.h"
-#include "mlir/IR/Verifier.h"
-
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
-
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/SaveAndRestore.h"
-
-namespace libadalang = frontend::libadalang;
-
-#define DEBUG_TYPE "ada-mlirgen"
-
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/ADT/bit.h"
-#include <cassert>
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
+#include <string>
+#include <utility>
 
-using llvm::cast;
-using llvm::isa;
-using llvm::SmallVector;
+namespace libadalang = frontend::libadalang;
+
+#define DEBUG_TYPE "ada-mlirgen"
 
 namespace {
 

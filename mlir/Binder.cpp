@@ -29,7 +29,7 @@
 /// @todo The runtime hooks: its initialization and finalization entry points,
 /// and the globals receiving `argc`, `argv` and the exit status.
 
-namespace LAL = frontend::libadalang;
+namespace libadalang = frontend::libadalang;
 namespace LLVM = mlir::LLVM;
 
 namespace {
@@ -52,10 +52,10 @@ struct Program {
 
 /// Whether `typeExpr` designates `Standard.Integer` or one of its subtypes.
 static bool isStandardInteger(ada_node &typeExpr) {
-  std::optional<ada_node> decl = LAL::designatedTypeDecl(typeExpr);
+  std::optional<ada_node> decl = libadalang::designatedTypeDecl(typeExpr);
   if (!decl)
     return false;
-  std::optional<ada_node> canon = LAL::canonicalType(*decl);
+  std::optional<ada_node> canon = libadalang::canonicalType(*decl);
   if (!canon)
     return false;
   ada_node intType = {};
@@ -70,13 +70,13 @@ static bool isStandardInteger(ada_node &typeExpr) {
 static std::optional<Program> describeProgram(mlir::MLIRContext &context,
                                               ada_node &root) {
   auto error = [&](ada_node &at, const llvm::Twine &message) {
-    mlir::emitError(LAL::sourceLocation(context, at), message);
+    mlir::emitError(libadalang::sourceLocation(context, at), message);
     return std::nullopt;
   };
 
   if (ada_node_kind(&root) != ada_compilation_unit)
     return error(root, "the main unit must be a single compilation unit");
-  if (std::optional<llvm::StringRef> kind = LAL::specKind(root))
+  if (std::optional<llvm::StringRef> kind = libadalang::specKind(root))
     return error(root, "cannot bind a " + *kind +
                            ": the main unit must be a subprogram body");
 
@@ -100,7 +100,7 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
   if (params)
     ada_node_array_dec_ref(params);
 
-  bool isFunction = LAL::isFunction(spec);
+  bool isFunction = libadalang::isFunction(spec);
   if (isFunction) {
     ada_node returns = {};
     ada_subp_spec_f_subp_returns(&spec, &returns);
@@ -112,12 +112,14 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
   if (!ada_basic_decl_p_defining_name(&item, &defName) ||
       ada_node_is_null(&defName))
     return error(item, "failed to get the main subprogram's name");
-  std::string symbol = mlir::ada::libraryLevelSymbol(LAL::getName(&defName));
+  std::string symbol =
+      mlir::ada::libraryLevelSymbol(libadalang::getName(&defName));
 
-  std::string unitName = llvm::sys::path::stem(LAL::unitFilename(root)).str();
+  std::string unitName =
+      llvm::sys::path::stem(libadalang::unitFilename(root)).str();
 
   return Program{unitName, symbol, isFunction,
-                 LAL::sourceLocation(context, spec)};
+                 libadalang::sourceLocation(context, spec)};
 }
 
 /// Emit the bind module of `program`. It contains the external declaration of

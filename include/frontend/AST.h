@@ -105,7 +105,6 @@ public:
   AdaAST(const AdaAST &) = delete; // raw handles; a copy would double-free
   ~AdaAST();
 
-  ada_analysis_unit &getAnalysisUnit() { return unit; }
   ada_node &getUnitRootNode() { return root; }
 
   /// Return whether everything went well during object construction.

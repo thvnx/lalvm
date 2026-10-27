@@ -202,7 +202,7 @@ static int loadMLIR(libadalang::AdaAST &ast, mlir::MLIRContext &context,
   if (!ast.isValid())
     return 1;
   module = lalvm::mlirGen(context, ast.getUnitRootNode());
-  return !module ? 1 : 0;
+  return module ? 0 : 1;
 }
 
 // Run `pm` with the command line options, then enable timing as mlir-opt does.
@@ -526,9 +526,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     libadalang::AdaAST ast(inputFilename, projectFile);
-    if (ast.emitParserDiagnostics())
-      return 1;
-    if (!ast.isValid())
+    if (ast.emitParserDiagnostics() || !ast.isValid())
       return 1;
     return writeTextOutput([&](llvm::raw_ostream &os) { ast.dump(os); });
   }
