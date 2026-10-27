@@ -60,8 +60,7 @@ struct AdaFoldInterface : public mlir::DialectFoldInterface {
 };
 } // namespace
 
-/// Whether `type` is an integer or float machine type.
-static bool isNumericMachineType(mlir::Type type) {
+bool mlir::ada::isNumericMachineType(mlir::Type type) {
   return mlir::isa<mlir::IntegerType, mlir::FloatType>(type);
 }
 

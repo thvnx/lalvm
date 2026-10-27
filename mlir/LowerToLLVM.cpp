@@ -185,6 +185,31 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
   return mlir::success();
 }
 
+/// Emit the LLVM `*.with.overflow` intrinsic `OvfOpTy` on `lhs` and `rhs`,
+/// raising Constraint_Error on overflow (@rm{4-5}), and return its result.
+/// Fails if the runtime function cannot be declared.
+template <typename OvfOpTy>
+static mlir::FailureOr<mlir::Value>
+emitOverflowChecked(mlir::ConversionPatternRewriter &rewriter,
+                    mlir::Location loc, mlir::ModuleOp module, mlir::Value lhs,
+                    mlir::Value rhs) {
+  auto st = LLVM::LLVMStructType::getLiteral(
+      rewriter.getContext(), {lhs.getType(), rewriter.getI1Type()});
+  mlir::Value wo = OvfOpTy::create(rewriter, loc, st, lhs, rhs);
+  mlir::Value res = extractField(rewriter, loc, wo, 0);
+  mlir::Value ovf = extractField(rewriter, loc, wo, 1);
+  if (mlir::failed(emitConstraintRaise(rewriter, loc, module, ovf,
+                                       "__gnat_rcheck_CE_Overflow_Check")))
+    return mlir::failure();
+  return res;
+}
+
+/// Whether the modulus `m` is exactly `2**width`, so the wraparound of the
+/// `width`-bit machine arithmetic is the modular one (@rm{3-5-4}).
+static bool isFullWidthModulus(const llvm::APInt &m, unsigned width) {
+  return m.isPowerOf2() && m.logBase2() == width;
+}
+
 // OpConversionPattern: the result type changes from !ada.qual to a bare MLIR
 // type; the conversion framework must track that mapping for downstream uses.
 struct ConstantOpLowering : public OpConversionPattern<ada::ConstantOp> {
@@ -490,8 +515,7 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
   matchAndRewrite(ada::BinOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type type = adaptor.getLhs().getType();
-    if (!mlir::isa<mlir::IntegerType>(type) &&
-        !mlir::isa<mlir::FloatType>(type))
+    if (!ada::isNumericMachineType(type))
       return rewriter.notifyMatchFailure(op, [type](Diagnostic &diag) {
         diag << "unsupported operand type: " << type;
       });
@@ -526,29 +550,27 @@ private:
     if (hasOverflowCheck(op) && !evalConstInt(op.getResult())) {
       mlir::Location loc = op.getLoc();
       auto module = op->getParentOfType<mlir::ModuleOp>();
-      auto st = LLVM::LLVMStructType::getLiteral(rewriter.getContext(),
-                                                 {type, rewriter.getI1Type()});
       mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
-      mlir::Value wo;
+      mlir::FailureOr<mlir::Value> res;
       switch (kind) {
       case ada::AdaBinaryOp::Plus:
-        wo = LLVM::SAddWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
+        res = emitOverflowChecked<LLVM::SAddWithOverflowOp>(rewriter, loc,
+                                                            module, lhs, rhs);
         break;
       case ada::AdaBinaryOp::Minus:
-        wo = LLVM::SSubWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
+        res = emitOverflowChecked<LLVM::SSubWithOverflowOp>(rewriter, loc,
+                                                            module, lhs, rhs);
         break;
       case ada::AdaBinaryOp::Mult:
-        wo = LLVM::SMulWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
+        res = emitOverflowChecked<LLVM::SMulWithOverflowOp>(rewriter, loc,
+                                                            module, lhs, rhs);
         break;
       default:
         return rewriter.notifyMatchFailure(op, "overflow check on non-+-* op");
       }
-      mlir::Value res = extractField(rewriter, loc, wo, 0);
-      mlir::Value ovf = extractField(rewriter, loc, wo, 1);
-      if (mlir::failed(emitConstraintRaise(rewriter, loc, module, ovf,
-                                           "__gnat_rcheck_CE_Overflow_Check")))
+      if (mlir::failed(res))
         return mlir::failure();
-      rewriter.replaceOp(op, res);
+      rewriter.replaceOp(op, *res);
       return success();
     }
 
@@ -635,7 +657,7 @@ private:
     // A modulus of exactly 2**width needs nothing: the plain lowering's
     // wraparound is already exact. Any other modulus needs an explicit
     // reduction, below.
-    if (m.isPowerOf2() && m.logBase2() == w)
+    if (isFullWidthModulus(m, w))
       return std::nullopt;
 
     // Power-of-two modulus 2**k below 2**width: keep the low k bits of the
@@ -903,17 +925,12 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
           neg = arith::SubIOp::create(rewriter, loc, zero, x);
         } else {
           auto module = op->getParentOfType<mlir::ModuleOp>();
-          auto st = LLVM::LLVMStructType::getLiteral(
-              rewriter.getContext(), {type, rewriter.getI1Type()});
-          mlir::Value wo =
-              LLVM::SSubWithOverflowOp::create(rewriter, loc, st, zero, x);
-          mlir::Value res = extractField(rewriter, loc, wo, 0);
-          mlir::Value ovf = extractField(rewriter, loc, wo, 1);
-          if (mlir::failed(
-                  emitConstraintRaise(rewriter, loc, module, ovf,
-                                      "__gnat_rcheck_CE_Overflow_Check")))
+          mlir::FailureOr<mlir::Value> res =
+              emitOverflowChecked<LLVM::SSubWithOverflowOp>(rewriter, loc,
+                                                            module, zero, x);
+          if (mlir::failed(res))
             return mlir::failure();
-          neg = res;
+          neg = *res;
         }
         rewriter.replaceOpWithNewOp<arith::SelectOp>(op, isNeg, neg, x);
       }
@@ -928,26 +945,20 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
       // checked (overflow), `arith.subi` otherwise. `arith.negf` for float.
       if (hasOverflowCheck(op) && !evalConstInt(op.getResult())) {
         auto module = op->getParentOfType<mlir::ModuleOp>();
-        auto st = LLVM::LLVMStructType::getLiteral(
-            rewriter.getContext(), {type, rewriter.getI1Type()});
-        mlir::Value lhs = constInt(rewriter, loc, type, 0);
-        mlir::Value rhs = adaptor.getOperand();
-        mlir::Value wo =
-            LLVM::SSubWithOverflowOp::create(rewriter, loc, st, lhs, rhs);
-        mlir::Value res = extractField(rewriter, loc, wo, 0);
-        mlir::Value ovf = extractField(rewriter, loc, wo, 1);
-        if (mlir::failed(emitConstraintRaise(
-                rewriter, loc, module, ovf, "__gnat_rcheck_CE_Overflow_Check")))
+        mlir::Value zero = constInt(rewriter, loc, type, 0);
+        mlir::FailureOr<mlir::Value> res =
+            emitOverflowChecked<LLVM::SSubWithOverflowOp>(
+                rewriter, loc, module, zero, adaptor.getOperand());
+        if (mlir::failed(res))
           return mlir::failure();
-        rewriter.replaceOp(op, res);
+        rewriter.replaceOp(op, *res);
       } else {
         unsigned width = mlir::isa<mlir::IntegerType>(type)
                              ? mlir::cast<mlir::IntegerType>(type).getWidth()
                              : 0;
         if (mlir::isa<mlir::FloatType>(type)) {
           rewriter.replaceOpWithNewOp<arith::NegFOp>(op, adaptor.getOperand());
-        } else if (modulus && !(modulus.getValue().isPowerOf2() &&
-                                modulus.getValue().logBase2() == width)) {
+        } else if (modulus && !isFullWidthModulus(modulus.getValue(), width)) {
           // For modular arithmetic, `0 - x` is only correct when the modulus is
           // exactly `2**width`. For other modulus, `-X` is `m - X` for a
           // nonzero `X` and 0 for `X = 0` (@rm{4-5-4}(3)): lower to

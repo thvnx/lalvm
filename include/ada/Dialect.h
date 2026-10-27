@@ -80,6 +80,9 @@ mlir::IntegerAttr modulusOfAdaType(mlir::Operation *from,
 IntegerTypeInfoAttr intTypeInfoOfAdaType(mlir::Operation *from,
                                          mlir::FlatSymbolRefAttr sym);
 
+/// Whether `type` is an integer or float machine type.
+bool isNumericMachineType(mlir::Type type);
+
 /// Whether `value` lies in `lo..hi`. The three values may have different bit
 /// widths and signedness.
 bool inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
