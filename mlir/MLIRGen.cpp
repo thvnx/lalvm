@@ -958,10 +958,7 @@ private:
         typeOp.getTypeInfoAttr());
     if (!info)
       return std::nullopt;
-    mlir::IntegerAttr lo = info.staticLower(), hi = info.staticUpper();
-    if (!lo || !hi)
-      return std::nullopt;
-    return std::make_pair(mlir::ada::boundValue(lo), mlir::ada::boundValue(hi));
+    return info.staticBounds();
   }
 
   /// A static value outside the base range of its type is illegal
@@ -1128,9 +1125,8 @@ private:
     auto info = typeOp ? mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
                              typeOp.getTypeInfoAttr())
                        : mlir::ada::IntegerTypeInfoAttr();
-    mlir::IntegerAttr lo = info ? info.staticLower() : mlir::IntegerAttr();
-    mlir::IntegerAttr hi = info ? info.staticUpper() : mlir::IntegerAttr();
-    if (info && (!lo || !hi)) {
+    auto bounds = info ? info.staticBounds() : std::nullopt;
+    if (info && !bounds) {
       range = findDynamicRange(target.getAdaType());
       if (!range) {
         mlir::emitError(location, "no range descriptor in scope for '")
@@ -1140,9 +1136,8 @@ private:
     } else if (info && typeOp.getBaseAttr()) {
       if (auto cst = val.getDefiningOp<mlir::ada::ConstantOp>())
         if (std::optional<llvm::APSInt> value = cst.getIntValue())
-          warnOutOfSubtypeRange(*value, mlir::ada::boundValue(lo),
-                                mlir::ada::boundValue(hi), typeOp.getSymName(),
-                                location);
+          warnOutOfSubtypeRange(*value, bounds->first, bounds->second,
+                                typeOp.getSymName(), location);
     }
     return mlir::ada::ConvertOp::create(builder, location, target, kind, val,
                                         range);
@@ -1973,8 +1968,7 @@ private:
                              mlir::Location location) {
     auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
         typeOp.getTypeInfoAttr());
-    if (!intInfo || !intInfo.hasRange() ||
-        (intInfo.staticLower() && intInfo.staticUpper()))
+    if (!intInfo || !intInfo.hasRange() || intInfo.staticBounds())
       return;
     // Bounds have the subtype's base type (@rm{3-5}). A static bound is an
     // `ada.constant` and a dynamic one is its evaluated expression converted to

@@ -117,6 +117,9 @@ def IntegerTypeInfoAttr : AttrDef<Ada_Dialect, "IntegerTypeInfo"> {
         return mlir::IntegerAttr::get(mod.getType(), mod.getValue() - 1);
       return {};
     }
+    /// The values of `staticLower` and `staticUpper`, or none when either is
+    /// null.
+    std::optional<std::pair<llvm::APSInt, llvm::APSInt>> staticBounds() const;
   }];
   let hasCustomAssemblyFormat = 1;
 }
@@ -169,6 +172,13 @@ def ArrayTypeInfoAttr : AttrDef<Ada_Dialect, "ArrayTypeInfo"> {
     /// the bound is dynamic or the dimension is unconstrained.
     mlir::IntegerAttr staticUpper(unsigned dim) const {
       return llvm::dyn_cast_or_null<mlir::IntegerAttr>(getUpperBounds()[dim]);
+    }
+    /// Whether every bound of every dimension is static.
+    bool hasStaticBounds() const {
+      for (unsigned dim = 0; dim < rank(); ++dim)
+        if (!staticLower(dim) || !staticUpper(dim))
+          return false;
+      return true;
     }
   }];
   let hasCustomAssemblyFormat = 1;

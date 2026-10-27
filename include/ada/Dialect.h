@@ -14,6 +14,8 @@
 #include "mlir/Interfaces/MemorySlotInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/APSInt.h"
+#include <optional>
+#include <utility>
 
 /// Include the auto-generated header file containing the declaration of the Ada
 /// dialect.

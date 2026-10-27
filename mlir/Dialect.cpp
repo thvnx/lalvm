@@ -218,6 +218,14 @@ mlir::Attribute IntegerTypeInfoAttr::parse(mlir::AsmParser &parser,
   return IntegerTypeInfoAttr::get(parser.getContext(), modulus, lower, upper);
 }
 
+std::optional<std::pair<llvm::APSInt, llvm::APSInt>>
+IntegerTypeInfoAttr::staticBounds() const {
+  mlir::IntegerAttr lo = staticLower(), hi = staticUpper();
+  if (!lo || !hi)
+    return std::nullopt;
+  return std::make_pair(boundValue(lo), boundValue(hi));
+}
+
 void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
   mlir::IntegerAttr modulus = getModulus();
   if (!modulus && !hasRange())
@@ -533,7 +541,7 @@ llvm::LogicalResult ConvertOp::verifySymbolUses(mlir::SymbolTableCollection &) {
     return mlir::success();
   auto info =
       mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr());
-  if (info && (!info.staticLower() || !info.staticUpper()))
+  if (info && !info.staticBounds())
     return emitOpError() << "target subtype " << target.getAdaType()
                          << " has a dynamic bound but no range operand";
   return mlir::success();

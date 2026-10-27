@@ -30,11 +30,8 @@ static bool knownWithin(Operation *from, Value value, const APSInt &lo,
       return ada::inStaticRange(*known, lo, hi);
   ada::IntegerTypeInfoAttr info = ada::intTypeInfoOfAdaType(
       from, cast<ada::QualType>(value.getType()).getAdaType());
-  IntegerAttr knownLo = info ? info.staticLower() : IntegerAttr();
-  IntegerAttr knownHi = info ? info.staticUpper() : IntegerAttr();
-  return knownLo && knownHi &&
-         rangeWithin(ada::boundValue(knownLo), ada::boundValue(knownHi), lo,
-                     hi);
+  auto known = info ? info.staticBounds() : std::nullopt;
+  return known && rangeWithin(known->first, known->second, lo, hi);
 }
 
 /// `lo..hi` restricted to the values a `type` integer represents (unsigned when
@@ -125,8 +122,8 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
       rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target, op.getInput());
       return success();
     }
-    IntegerAttr lo = required.staticLower(), hi = required.staticUpper();
-    if (!lo || !hi) {
+    auto bounds = required.staticBounds();
+    if (!bounds) {
       // A dynamic bound: check against the descriptor elaborated at the subtype
       // declaration, which the conversion carries.
       Value range = op.getRange();
@@ -138,8 +135,8 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
     }
 
     // A value known to lie within the target's range needs no check either.
-    if (knownWithin(op, op.getInput(), ada::boundValue(lo),
-                    ada::boundValue(hi))) {
+    auto [lo, hi] = *bounds;
+    if (knownWithin(op, op.getInput(), lo, hi)) {
       rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target, op.getInput());
       return success();
     }
@@ -148,9 +145,9 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
     // base type (@rm{3-5}). The check yields the target subtype.
     auto baseQual =
         ada::QualType::get(getContext(), target.getMlirType(), base);
-    Value range = ada::getOrCreateStaticRange(
-        rewriter, ada::unnamedLoc(op.getLoc()), target.getAdaType(), baseQual,
-        lo.getValue(), hi.getValue());
+    Value range =
+        ada::getOrCreateStaticRange(rewriter, ada::unnamedLoc(op.getLoc()),
+                                    target.getAdaType(), baseQual, lo, hi);
     rewriter.replaceOpWithNewOp<ada::RangeCheckOp>(op, target, op.getInput(),
                                                    range);
     return success();
@@ -187,13 +184,12 @@ struct RepresentationChangeConversion
 
     // @todo Check float and enumeration constraints, only integer ranges are
     // checked for now.
-    IntegerAttr lo, hi;
+    std::optional<std::pair<APSInt, APSInt>> bounds;
     Value dynamicRange;
     if (ada::IntegerTypeInfoAttr required =
             ada::intTypeInfoOfAdaType(op, target.getAdaType())) {
-      lo = required.staticLower();
-      hi = required.staticUpper();
-      if (!lo || !hi) {
+      bounds = required.staticBounds();
+      if (!bounds) {
         // A dynamic bound: the value must first fit the target's base, then the
         // descriptor elaborated at the subtype declaration, which the
         // conversion carries.
@@ -202,9 +198,9 @@ struct RepresentationChangeConversion
           return rewriter.notifyMatchFailure(op, "no range descriptor");
         ada::IntegerTypeInfoAttr baseInfo =
             ada::intTypeInfoOfAdaType(op, targetBase);
-        lo = baseInfo ? baseInfo.staticLower() : IntegerAttr();
-        hi = baseInfo ? baseInfo.staticUpper() : IntegerAttr();
-        if (!lo || !hi)
+        if (baseInfo)
+          bounds = baseInfo.staticBounds();
+        if (!bounds)
           return rewriter.notifyMatchFailure(op, "non-static base range");
       }
     }
@@ -212,10 +208,9 @@ struct RepresentationChangeConversion
     bool sourceUnsigned =
         static_cast<bool>(ada::modulusOfAdaType(op, source.getAdaType()));
     bool check = false, preserving = false;
-    if (lo) {
+    if (bounds) {
       // No check when the value is known to lie within the target's range.
-      check = !knownWithin(op, op.getInput(), ada::boundValue(lo),
-                           ada::boundValue(hi));
+      check = !knownWithin(op, op.getInput(), bounds->first, bounds->second);
       bool targetUnsigned =
           static_cast<bool>(ada::modulusOfAdaType(op, targetBase));
       // Widening preserves every value, except a negative one into a modular
@@ -233,8 +228,8 @@ struct RepresentationChangeConversion
       auto sourceBaseQual =
           ada::QualType::get(getContext(), sourceType, sourceBase);
       auto [clampedLo, clampedHi] =
-          clampTo(ada::boundValue(lo), ada::boundValue(hi),
-                  cast<IntegerType>(sourceType), sourceUnsigned);
+          clampTo(bounds->first, bounds->second, cast<IntegerType>(sourceType),
+                  sourceUnsigned);
       // The descriptor is named after the source base but holds the restricted
       // bounds: a check only reads the bounds.
       Location unnamed = ada::unnamedLoc(loc);
@@ -257,7 +252,7 @@ struct RepresentationChangeConversion
     } else if (check) {
       Value range = ada::getOrCreateStaticRange(
           rewriter, ada::unnamedLoc(loc), target.getAdaType(), targetBaseQual,
-          lo.getValue(), hi.getValue());
+          bounds->first, bounds->second);
       value = ada::RangeCheckOp::create(rewriter, loc, target, value, range);
     } else if (value.getType() != target) {
       value = ada::RequalifyOp::create(rewriter, loc, target, value);

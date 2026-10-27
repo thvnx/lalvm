@@ -414,12 +414,9 @@ void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
   module.walk([&](mlir::ada::TypeOp typeOp) {
     auto info = mlir::dyn_cast_or_null<mlir::ada::ArrayTypeInfoAttr>(
         typeOp.getTypeInfoAttr());
-    if (!info || !mlir::isa<mlir::ada::ArrayType>(typeOp.getMlirType()))
-      return;
-    for (unsigned dim = 0; dim < info.rank(); ++dim)
-      if (!info.staticLower(dim) || !info.staticUpper(dim))
-        return;
-    arrayOps.push_back(typeOp);
+    if (info && mlir::isa<mlir::ada::ArrayType>(typeOp.getMlirType()) &&
+        info.hasStaticBounds())
+      arrayOps.push_back(typeOp);
   });
   if (arrayOps.empty())
     return;

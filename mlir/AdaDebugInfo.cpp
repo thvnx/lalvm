@@ -157,11 +157,9 @@ static LLVM::DICompositeTypeAttr makeDIArrayStub(MLIRContext *ctx,
                                                  ada::TypeOp typeOp,
                                                  ada::ArrayTypeInfoAttr info,
                                                  LLVM::DITypeAttr component) {
-  if (!isa<ada::ArrayType>(typeOp.getMlirType()) || !component)
+  if (!isa<ada::ArrayType>(typeOp.getMlirType()) || !component ||
+      !info.hasStaticBounds())
     return {};
-  for (unsigned dim = 0; dim < info.rank(); ++dim)
-    if (!info.staticLower(dim) || !info.staticUpper(dim))
-      return {};
   return LLVM::DICompositeTypeAttr::get(
       ctx, llvm::dwarf::DW_TAG_array_type,
       StringAttr::get(ctx, typeOp.getSymName()), /*file=*/LLVM::DIFileAttr{},
