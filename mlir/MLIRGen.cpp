@@ -2659,7 +2659,11 @@ private:
       }
     }
 
-    mlir::Operation *op = mlirGenSubpSpec(ada_subp_spec, isProc);
+    std::optional<llvm::SmallVector<SubpParam, 4>> params =
+        subpParams(ada_subp_spec);
+    if (!params)
+      return nullptr;
+    mlir::Operation *op = mlirGenSubpSpec(ada_subp_spec, isProc, *params);
     if (!op)
       return nullptr;
     // Enter the subprogram's naming scope for the declarations in its body.
@@ -2684,58 +2688,14 @@ private:
     });
     mlir::Block *entryBlock = &op->getRegion(0).front();
 
-    // Collect (id, mode, typeDecl) triples for all parameters.
-    struct ParamEntry {
-      ada_node id;
-      ada_node_kind_enum mode;
-      ada_node typeDecl;
-    };
-    llvm::SmallVector<ParamEntry, 4> args_v;
-
-    ada_node_array params;
-    ada_node ids;
-    ada_base_subp_spec_p_params(&ada_subp_spec, &params);
-
-    for (int i = 0; i < params->n; i++) {
-      ada_node mode_node;
-      ada_param_spec_f_mode(&params->items[i], &mode_node);
-      ada_node_kind_enum mode = ada_node_kind(&mode_node);
-
-      ada_node type_expr;
-      ada_param_spec_f_type_expr(&params->items[i], &type_expr);
-      std::optional<ada_node> typeDecl =
-          libadalang::designatedTypeDecl(type_expr);
-      if (!typeDecl) {
-        ada_node_array_dec_ref(params);
-        mlir::emitError(loc(type_expr), "failed to resolve type expression");
-        return nullptr;
-      }
-
-      ada_param_spec_f_ids(&params->items[i], &ids);
-      for (unsigned int j = 0; j < ada_node_children_count(&ids); j++) {
-        ada_node child;
-        if (ada_node_child(&ids, j, &child) == 0) {
-          ada_node_array_dec_ref(params);
-          mlir::emitError(loc(ids), "failed to get parameter identifier");
-          return nullptr;
-        }
-        args_v.push_back({child, mode, typeDecl.value()});
-      }
-    }
-    ada_node_array_dec_ref(params);
-
     builder.setInsertionPointToStart(entryBlock);
 
     // Bind parameters. `in` / default parameters are direct SSA values.
     // `in out` / `out` parameters have memref<T> type and carry the caller's
     // alloca pointer; stores to them are immediately visible at the call site.
     // `out` parameters are additionally marked uninitialized.
-    for (auto [entry, arg] : llvm::zip(args_v, entryBlock->getArguments())) {
-      auto nameAttr = getNameAttr(entry.id);
-      mlir::Location srcLoc = loc(entry.id);
-      // Ensure the ada.type op is emitted so AdaDebugInfoPass can look it up.
-      lookupOrEmitTypeOp(entry.typeDecl, srcLoc);
-      arg.setLoc(mlir::NameLoc::get(nameAttr, srcLoc));
+    for (auto [entry, arg] : llvm::zip(*params, entryBlock->getArguments())) {
+      arg.setLoc(mlir::NameLoc::get(getNameAttr(entry.id), loc(entry.id)));
       // Record `out` / `in out` mode as an `ada.mode` arg attr (`in` is the
       // implicit default); the uninitialized-read check and later passes read
       // it back to tell the two by-reference modes apart.
@@ -3601,41 +3561,64 @@ private:
     return ifOp.getResult(0);
   }
 
+  /// A subprogram parameter: its defining identifier, mode and type
+  /// expression.
+  struct SubpParam {
+    ada_node id;
+    ada_node_kind_enum mode;
+    ada_node typeExpr;
+  };
+
+  /// The parameters of `subp_spec`, one per defining identifier, in order.
+  /// Returns std::nullopt after a diagnostic.
+  std::optional<llvm::SmallVector<SubpParam, 4>>
+  subpParams(ada_node &subp_spec) {
+    ada_node_array params = nullptr;
+    if (!ada_base_subp_spec_p_params(&subp_spec, &params) || !params) {
+      mlir::emitError(loc(subp_spec), "failed to get subprogram parameters");
+      return std::nullopt;
+    }
+    auto paramsGuard =
+        llvm::scope_exit([&] { ada_node_array_dec_ref(params); });
+
+    llvm::SmallVector<SubpParam, 4> result;
+    for (int i = 0; i < params->n; i++) {
+      ada_node mode_node, type_expr, ids;
+      ada_param_spec_f_mode(&params->items[i], &mode_node);
+      ada_param_spec_f_type_expr(&params->items[i], &type_expr);
+      ada_param_spec_f_ids(&params->items[i], &ids);
+      for (unsigned j = 0; j < ada_node_children_count(&ids); j++) {
+        ada_node child;
+        if (ada_node_child(&ids, j, &child) == 0 || ada_node_is_null(&child)) {
+          mlir::emitError(loc(ids), "failed to get parameter identifier");
+          return std::nullopt;
+        }
+        result.push_back({child, ada_node_kind(&mode_node), type_expr});
+      }
+    }
+    return result;
+  }
+
   /// Create an ada.subp with the signature derived from the Ada subprogram
-  /// spec. Returns nullptr on failure.
-  mlir::Operation *mlirGenSubpSpec(ada_node &subp_spec, bool isProc) {
+  /// spec and its `params`. Returns nullptr on failure.
+  mlir::Operation *mlirGenSubpSpec(ada_node &subp_spec, bool isProc,
+                                   llvm::ArrayRef<SubpParam> params) {
     auto location = loc(libadalang::parent(&subp_spec));
 
     ada_node name;
     ada_subp_spec_f_subp_name(&subp_spec, &name);
 
-    ada_node_array params;
-    ada_node ids;
-    ada_base_subp_spec_p_params(&subp_spec, &params);
-
     llvm::SmallVector<mlir::Type, 4> argTypes;
-    for (int i = 0; i < params->n; i++) {
-      ada_node type_expr;
-      ada_param_spec_f_type_expr(&params->items[i], &type_expr);
-      mlir::ada::QualType paramType = getAdaQualType(type_expr);
-      if (!paramType) {
-        ada_node_array_dec_ref(params);
+    for (SubpParam param : params) {
+      mlir::ada::QualType paramType = getAdaQualType(param.typeExpr);
+      if (!paramType)
         return nullptr;
-      }
-      ada_param_spec_f_ids(&params->items[i], &ids);
-
-      ada_node mode_node;
-      ada_param_spec_f_mode(&params->items[i], &mode_node);
-      ada_node_kind_enum mode = ada_node_kind(&mode_node);
-      bool writable = (mode == ada_mode_in_out || mode == ada_mode_out);
-      mlir::Type argType =
-          writable ? mlir::Type(mlir::MemRefType::get({}, paramType))
-                   : mlir::Type(paramType);
-
-      for (unsigned j = 0; j < ada_node_children_count(&ids); j++)
-        argTypes.push_back(argType);
+      bool writable =
+          param.mode == ada_mode_in_out || param.mode == ada_mode_out;
+      argTypes.push_back(writable
+                             ? mlir::Type(mlir::MemRefType::get({}, paramType))
+                             : mlir::Type(paramType));
     }
-    ada_node_array_dec_ref(params);
 
     llvm::SmallVector<mlir::Type, 1> retTypes;
     if (!isProc) {
