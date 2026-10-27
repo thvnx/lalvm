@@ -2993,6 +2993,50 @@ private:
     return mlir::success();
   }
 
+  /// A guard of an if statement or expression: a condition and the
+  /// statements or expression it selects.
+  struct IfGuard {
+    ada_node condition;
+    ada_node thenPart;
+  };
+
+  /// The guards of the if statement or expression `ifNode`: the `if` plus each
+  /// `elsif`, in order. Returns std::nullopt after a diagnostic.
+  std::optional<llvm::SmallVector<IfGuard, 4>>
+  collectIfGuards(ada_node &ifNode) {
+    bool isExpr = ada_node_kind(&ifNode) == ada_if_expr;
+    ada_node cond, then, alternatives;
+    if (isExpr) {
+      ada_if_expr_f_cond_expr(&ifNode, &cond);
+      ada_if_expr_f_then_expr(&ifNode, &then);
+      ada_if_expr_f_alternatives(&ifNode, &alternatives);
+    } else {
+      ada_if_stmt_f_cond_expr(&ifNode, &cond);
+      ada_if_stmt_f_then_stmts(&ifNode, &then);
+      ada_if_stmt_f_alternatives(&ifNode, &alternatives);
+    }
+    llvm::SmallVector<IfGuard, 4> guards{{cond, then}};
+
+    unsigned nalt = ada_node_children_count(&alternatives);
+    for (unsigned i = 0; i < nalt; ++i) {
+      ada_node part;
+      if (ada_node_child(&alternatives, i, &part) == 0 ||
+          ada_node_is_null(&part)) {
+        mlir::emitError(loc(ifNode), "failed to get elsif part");
+        return std::nullopt;
+      }
+      if (isExpr) {
+        ada_elsif_expr_part_f_cond_expr(&part, &cond);
+        ada_elsif_expr_part_f_then_expr(&part, &then);
+      } else {
+        ada_elsif_stmt_part_f_cond_expr(&part, &cond);
+        ada_elsif_stmt_part_f_stmts(&part, &then);
+      }
+      guards.push_back({cond, then});
+    }
+    return guards;
+  }
+
   /// Emit an if statement (@rm{5-3}) as an unstructured CFG. Each guard (the
   /// `if` condition and every `elsif`) branches to its then-block or to the
   /// next test; the last guard's false edge goes to the else-block, or to the
@@ -3002,28 +3046,9 @@ private:
   /// falls through to the merge block. If every path terminates, the merge
   /// block is unreachable and is erased.
   mlir::LogicalResult mlirGenIf(ada_node &if_stmt) {
-    // Collect the guards: the `if` plus each `elsif`, as (condition, stmts).
-    llvm::SmallVector<std::pair<ada_node, ada_node>, 4> guards;
-    ada_node cond, thenStmts;
-    ada_if_stmt_f_cond_expr(&if_stmt, &cond);
-    ada_if_stmt_f_then_stmts(&if_stmt, &thenStmts);
-    guards.push_back({cond, thenStmts});
-
-    ada_node alternatives;
-    ada_if_stmt_f_alternatives(&if_stmt, &alternatives);
-    unsigned nalt = ada_node_children_count(&alternatives);
-    for (unsigned i = 0; i < nalt; ++i) {
-      ada_node part;
-      if (ada_node_child(&alternatives, i, &part) == 0 ||
-          ada_node_is_null(&part)) {
-        mlir::emitError(loc(if_stmt), "failed to get elsif part");
-        return mlir::failure();
-      }
-      ada_node ec, es;
-      ada_elsif_stmt_part_f_cond_expr(&part, &ec);
-      ada_elsif_stmt_part_f_stmts(&part, &es);
-      guards.push_back({ec, es});
-    }
+    auto guards = collectIfGuards(if_stmt);
+    if (!guards)
+      return mlir::failure();
 
     ada_node elsePart;
     ada_if_stmt_f_else_part(&if_stmt, &elsePart);
@@ -3035,11 +3060,11 @@ private:
         condBlock->splitBlock(builder.getInsertionPoint());
 
     mlir::Block *curTest = condBlock;
-    for (unsigned i = 0; i < guards.size(); ++i) {
-      bool last = (i + 1 == guards.size());
+    for (auto [i, guard] : llvm::enumerate(*guards)) {
+      bool last = (i + 1 == guards->size());
 
       builder.setInsertionPointToEnd(curTest);
-      mlir::Value condI1 = mlirGenCondition(guards[i].first);
+      mlir::Value condI1 = mlirGenCondition(guard.condition);
       if (!condI1)
         return mlir::failure();
 
@@ -3053,12 +3078,12 @@ private:
         falseBlock = mergeBlock;
 
       builder.setInsertionPointToEnd(curTest);
-      mlir::cf::CondBranchOp::create(builder, loc(guards[i].first), condI1,
+      mlir::cf::CondBranchOp::create(builder, loc(guard.condition), condI1,
                                      thenBlock, falseBlock);
 
       // Fill the then-block; fall through to merge if it did not terminate.
       builder.setInsertionPointToEnd(thenBlock);
-      if (mlir::failed(visit(guards[i].second)))
+      if (mlir::failed(visit(guard.thenPart)))
         return mlir::failure();
       branchToMergeIfOpen(mergeBlock, loc(if_stmt));
 
@@ -3475,46 +3500,27 @@ private:
     if (!resultType)
       return nullptr;
 
-    // Collect the guards: the `if` plus each `elsif`, as (condition, then).
-    llvm::SmallVector<std::pair<ada_node, ada_node>, 4> guards;
-    ada_node cond, thenExpr;
-    ada_if_expr_f_cond_expr(&if_expr, &cond);
-    ada_if_expr_f_then_expr(&if_expr, &thenExpr);
-    guards.push_back({cond, thenExpr});
-
-    ada_node alternatives;
-    ada_if_expr_f_alternatives(&if_expr, &alternatives);
-    unsigned nalt = ada_node_children_count(&alternatives);
-    for (unsigned i = 0; i < nalt; ++i) {
-      ada_node part;
-      if (ada_node_child(&alternatives, i, &part) == 0 ||
-          ada_node_is_null(&part)) {
-        mlir::emitError(location, "failed to get elsif expression part");
-        return nullptr;
-      }
-      ada_node ec, et;
-      ada_elsif_expr_part_f_cond_expr(&part, &ec);
-      ada_elsif_expr_part_f_then_expr(&part, &et);
-      guards.push_back({ec, et});
-    }
+    auto guards = collectIfGuards(if_expr);
+    if (!guards)
+      return nullptr;
 
     ada_node elseExpr;
     ada_if_expr_f_else_expr(&if_expr, &elseExpr);
     bool hasElse = !ada_node_is_null(&elseExpr);
 
-    return emitIfExprChain(guards, /*idx=*/0, elseExpr, hasElse, resultType,
+    return emitIfExprChain(*guards, /*idx=*/0, elseExpr, hasElse, resultType,
                            location);
   }
 
   /// Recursively emit the `scf.if` for guard `idx`; the else region holds the
   /// next guard's `scf.if`, the explicit else value, or a synthesized `True`
   /// for a missing else (boolean if expression). See `mlirGenIfExpr`.
-  mlir::Value
-  emitIfExprChain(llvm::ArrayRef<std::pair<ada_node, ada_node>> guards,
-                  unsigned idx, ada_node elseExpr, bool hasElse,
-                  mlir::ada::QualType resultType, mlir::Location location) {
-    ada_node condNode = guards[idx].first;
-    ada_node thenNode = guards[idx].second;
+  mlir::Value emitIfExprChain(llvm::ArrayRef<IfGuard> guards, unsigned idx,
+                              ada_node elseExpr, bool hasElse,
+                              mlir::ada::QualType resultType,
+                              mlir::Location location) {
+    ada_node condNode = guards[idx].condition;
+    ada_node thenNode = guards[idx].thenPart;
 
     mlir::Value condI1 = mlirGenCondition(condNode);
     if (!condI1)
