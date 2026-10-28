@@ -529,7 +529,7 @@ def BinOp : Ada_Op<"binop", [NoMemoryEffect,
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
-    custom<Operator>($kind) $lhs `,` $rhs custom<Checks>($checks) attr-dict
+    custom<Operator>($kind) $lhs `,` $rhs `` custom<Checks>($checks) attr-dict
     `:` functional-type(operands, results)
   }];
   let hasVerifier = 1;
@@ -601,7 +601,7 @@ def UnOp : Ada_Op<"unop", [NoMemoryEffect,
   let results = (outs AnyType:$result);
 
   let assemblyFormat = [{
-    custom<Operator>($kind) $operand custom<Checks>($checks) attr-dict
+    custom<Operator>($kind) $operand `` custom<Checks>($checks) attr-dict
     `:` functional-type($operand, $result)
   }];
   let hasVerifier = 1;

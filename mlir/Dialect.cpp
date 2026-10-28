@@ -767,8 +767,8 @@ static void printOperator(mlir::OpAsmPrinter &p, mlir::Operation *,
 }
 
 // `custom<Checks>($checks)`: the optional `checks<overflow|...>` group on
-// `ada.binop` (`|`-separated, matching the bit enum's spelling). An absent
-// group leaves the attribute null.
+// `ada.binop` and `ada.unop` (`|`-separated, matching the bit enum's spelling).
+// An absent group leaves the attribute null.
 static mlir::ParseResult parseChecks(mlir::OpAsmParser &parser,
                                      ada::AdaChecksAttr &checks) {
   if (failed(parser.parseOptionalKeyword("checks")))
@@ -794,7 +794,7 @@ static mlir::ParseResult parseChecks(mlir::OpAsmParser &parser,
 static void printChecks(mlir::OpAsmPrinter &p, mlir::Operation *,
                         ada::AdaChecksAttr checks) {
   if (checks && checks.getValue() != ada::AdaChecks{})
-    p << "checks<" << ada::stringifyAdaChecks(checks.getValue()) << ">";
+    p << " checks<" << ada::stringifyAdaChecks(checks.getValue()) << ">";
 }
 
 /// The machine type of `type`: its underlying type for an `ada.qual`.
