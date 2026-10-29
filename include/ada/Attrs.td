@@ -268,9 +268,9 @@ def DISubrangeBoundsAttr : AttrDef<Ada_Dialect, "DISubrangeBounds"> {
 // AdaParamModeAttr
 //===----------------------------------------------------------------------===//
 
-// Mode of a subprogram parameter (@rm{6-1}), an `ada.mode` arg attr on
-// `ada.subp`. `out` and `in out` (both by-reference `memref` args, otherwise
-// indistinguishable) carry it; `in` (by value, the default) is left implicit.
+// Source mode of a subprogram parameter (@rm{6-1}), an `ada.mode` argument
+// attribute on `ada.subp`, independent of its ABI representation. Explicit
+// source modes carry it. An omitted mode defaults to `in` and stays implicit.
 def AdaMode_In : I32EnumAttrCase<"In", 0, "in">;
 def AdaMode_InOut : I32EnumAttrCase<"InOut", 1, "in_out">;
 def AdaMode_Out : I32EnumAttrCase<"Out", 2, "out">;
