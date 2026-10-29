@@ -119,7 +119,8 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
                                targetOp.getTypeInfoAttr())
                          : ada::IntegerTypeInfoAttr();
     if (!required) {
-      rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target, op.getInput());
+      rewriter.replaceOp(
+          op, ada::requalify(rewriter, op.getLoc(), op.getInput(), target));
       return success();
     }
     auto bounds = required.staticBounds();
@@ -137,7 +138,8 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
     // A value known to lie within the target's range needs no check either.
     auto [lo, hi] = *bounds;
     if (knownWithin(op, op.getInput(), lo, hi)) {
-      rewriter.replaceOpWithNewOp<ada::RequalifyOp>(op, target, op.getInput());
+      rewriter.replaceOp(
+          op, ada::requalify(rewriter, op.getLoc(), op.getInput(), target));
       return success();
     }
 
@@ -254,8 +256,8 @@ struct RepresentationChangeConversion
           rewriter, ada::unnamedLoc(loc), target.getAdaType(), targetBaseQual,
           bounds->first, bounds->second);
       value = ada::RangeCheckOp::create(rewriter, loc, target, value, range);
-    } else if (value.getType() != target) {
-      value = ada::RequalifyOp::create(rewriter, loc, target, value);
+    } else {
+      value = ada::requalify(rewriter, loc, value, target);
     }
     rewriter.replaceOp(op, value);
     return success();

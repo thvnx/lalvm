@@ -622,7 +622,7 @@ llvm::LogicalResult ConvertOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 llvm::LogicalResult IndexOp::verify() {
   auto arrayType = mlir::cast<mlir::MemRefType>(getArray().getType());
   auto indexType = mlir::cast<ada::QualType>(getIndex().getType());
-  auto resultType = mlir::cast<mlir::MemRefType>(getResult().getType());
+  auto resultType = getResult().getType();
 
   // The array operand is a memref of a qual-wrapped !ada.array.
   auto arrayQual = mlir::dyn_cast<QualType>(arrayType.getElementType());
@@ -638,7 +638,11 @@ llvm::LogicalResult IndexOp::verify() {
                          << indexType.getMlirType();
 
   // The result element is the array's component type.
-  auto resultQual = mlir::dyn_cast<QualType>(resultType.getElementType());
+  auto elementType =
+      mlir::isa<RefType>(resultType)
+          ? mlir::cast<RefType>(resultType).getValueType()
+          : mlir::cast<mlir::MemRefType>(resultType).getElementType();
+  auto resultQual = mlir::dyn_cast<QualType>(elementType);
   if (!resultQual)
     return emitOpError("result element type must be ada.qual");
   if (resultQual.getMlirType() != layout.getComponentType())
@@ -1161,12 +1165,24 @@ llvm::LogicalResult SubpOp::verify() {
     if (mlir::isa<RefType>(result))
       return emitOpError("cannot return an object reference");
 
+  bool seenCapture = false;
   for (auto [i, type] : llvm::enumerate(getFunctionType().getInputs())) {
-    if (!mlir::isa<RefType>(type))
+    auto modeAttr = getArgAttr(i, "ada.mode");
+    if (modeAttr && !mlir::isa<AdaParamModeAttr>(modeAttr))
+      return emitOpError("ada.mode must be an Ada parameter mode");
+    auto mode = mlir::dyn_cast_or_null<AdaParamModeAttr>(modeAttr);
+    if (auto capture = getArgAttr(i, "ada.capture")) {
+      if (!mlir::isa<mlir::UnitAttr>(capture) || modeAttr)
+        return emitOpError("captures require a unit ada.capture and "
+                           "no source parameter mode");
+      seenCapture = true;
       continue;
-    auto mode = getArgAttrOfType<AdaParamModeAttr>(i, "ada.mode");
-    if (!mode || (mode.getValue() != AdaParamMode::Out &&
-                  mode.getValue() != AdaParamMode::InOut)) {
+    }
+    if (seenCapture)
+      return emitOpError("capture arguments must follow source formals");
+    if (mlir::isa<RefType>(type) &&
+        (!mode || (mode.getValue() != AdaParamMode::Out &&
+                   mode.getValue() != AdaParamMode::InOut))) {
       return emitOpError("reference formals require out or in_out ada.mode");
     }
   }
@@ -1315,6 +1331,13 @@ mlir::Value mlir::ada::createIntConstant(mlir::OpBuilder &builder,
   return ConstantOp::create(
       builder, loc, type,
       mlir::IntegerAttr::get(intType, value.sextOrTrunc(intType.getWidth())));
+}
+
+mlir::Value mlir::ada::requalify(mlir::OpBuilder &builder, mlir::Location loc,
+                                 mlir::Value value, mlir::Type type) {
+  if (value.getType() == type)
+    return value;
+  return RequalifyOp::create(builder, loc, type, value);
 }
 
 mlir::Value mlir::ada::createRange(mlir::OpBuilder &builder, mlir::Location loc,

@@ -424,7 +424,7 @@ def IndexOp : Ada_Op<"index", [Pure]> {
     ```
   }];
   let arguments = (ins AnyMemRef:$array, Ada_QualType:$index);
-  let results = (outs AnyMemRef:$result);
+  let results = (outs AnyTypeOf<[AnyMemRef, Ada_RefType]>:$result);
   let assemblyFormat = "$array `[` $index `]` attr-dict `:` "
                        "functional-type(operands, results)";
   let hasVerifier = 1;
@@ -868,6 +868,10 @@ def SubpOp : Ada_Op<"subp", [
   let description = [{
     Represents an Ada subprogram. Functions carry one result type; procedures
     have an empty result list. The distinction is entirely in the function type.
+
+    `ada.capture` is a unit argument attribute added by `ClosureConversion`.
+    It identifies an argument carrying a value from an enclosing scope.
+    Captures follow the source formals and have no source `ada.mode`.
 
     Example:
 

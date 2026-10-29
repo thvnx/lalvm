@@ -102,6 +102,10 @@ mlir::IntegerAttr minimalWidthIntAttr(mlir::MLIRContext *ctx,
 mlir::Value createIntConstant(mlir::OpBuilder &builder, mlir::Location loc,
                               QualType type, const llvm::APInt &value);
 
+/// Return `value` unchanged if it has `type`, otherwise create `ada.requalify`.
+mlir::Value requalify(mlir::OpBuilder &builder, mlir::Location loc,
+                      mlir::Value value, mlir::Type type);
+
 /// Build an `ada.range` descriptor of subtype `sym` from base type bounds.
 mlir::Value createRange(mlir::OpBuilder &builder, mlir::Location loc,
                         mlir::Value lo, mlir::Value hi,
