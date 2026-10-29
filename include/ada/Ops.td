@@ -177,6 +177,79 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 }
 
 //===----------------------------------------------------------------------===//
+// ObjectOp
+//===----------------------------------------------------------------------===//
+
+// Introduces object identity independently of its storage representation.
+def ObjectOp : Ada_Op<"object"> {
+  let summary = "Declare an Ada object";
+  let description = [{
+    Declares an Ada object (@rm{3-3}) and returns its reference. Storage
+    duration and elaboration follow the declaration's context. The optional
+    initializer must have the nominal qualified type. Without an initializer,
+    any required initialization must be represented explicitly.
+
+    ```mlir
+    %x = ada.object : !ada.ref<!ada.qual<i32, @integer>>
+    %y = ada.object : !ada.ref<!ada.qual<i32, @integer>> <- %v : !ada.qual<i32, @integer>
+    ```
+  }];
+  let arguments = (ins Optional<Ada_QualType>:$initial);
+  let results = (outs Res<Ada_RefType, "fresh object reference",
+                          [MemAlloc, MemWrite]>:$result);
+  let assemblyFormat =
+      "attr-dict `:` qualified(type($result)) "
+      "(` ` `<` `-` $initial^ `:` qualified(type($initial)))?";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// ReadOp
+//===----------------------------------------------------------------------===//
+
+// Retrieves the current value of a referenced object.
+def ReadOp : Ada_Op<"read", [
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "Read an Ada object";
+  let description = [{
+    Reads a value of the specified type from a referenced object.
+
+    ```mlir
+    %v = ada.read %x : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @integer>
+    ```
+  }];
+  let arguments = (ins Arg<Ada_RefType, "object to read", [MemRead]>:$reference);
+  let results = (outs Ada_QualType:$result);
+  let assemblyFormat =
+      "$reference attr-dict `:` qualified(type($reference)) `->` "
+      "qualified(type($result))";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// WriteOp
+//===----------------------------------------------------------------------===//
+
+// Updates the current value of a referenced object.
+def WriteOp : Ada_Op<"write"> {
+  let summary = "Write an Ada object";
+  let description = [{
+    Assigns a value of the nominal qualified type to a referenced object
+    (@rm{5-2}).
+
+    ```mlir
+    ada.write %v, %x : !ada.qual<i32, @small> -> !ada.ref<!ada.qual<i32, @small>>
+    ```
+  }];
+  let arguments = (ins Ada_QualType:$value,
+                       Arg<Ada_RefType, "object to write", [MemWrite]>:$reference);
+  let assemblyFormat =
+      "$value `,` $reference attr-dict `:` qualified(type($value)) `->` "
+      "qualified(type($reference))";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // AllocaOp
 //===----------------------------------------------------------------------===//
 
@@ -743,6 +816,7 @@ def CallOp : Ada_Op<"call",
                        " `:` functional-type($operands, results)";
 
   let skipDefaultBuilders = 1;
+  let hasVerifier = 1;
   let builders = [
     // Procedure call: resultType is null. Function call: resultType is non-null.
     OpBuilder<(ins "::mlir::FlatSymbolRefAttr":$callee,
@@ -836,6 +910,7 @@ def SubpOp : Ada_Op<"subp", [
   }];
 
   let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
   // skipDefaultBuilders: the ODS-generated default builder doesn't know how to
   // create the entry block, so we provide our own via buildWithEntryBlock.
   let skipDefaultBuilders = 1;

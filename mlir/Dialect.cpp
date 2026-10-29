@@ -65,6 +65,20 @@ bool mlir::ada::isNumericMachineType(mlir::Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// RefType
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult
+RefType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
+                mlir::Type valueType) {
+  auto qual = mlir::dyn_cast<QualType>(valueType);
+  if (!qual || !isNumericMachineType(qual.getMlirType()))
+    return emitError() << "ada.ref requires a scalar ada.qual value type, got "
+                       << valueType;
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // AdaDialect
 //===----------------------------------------------------------------------===//
 
@@ -393,6 +407,60 @@ llvm::LogicalResult TypeOp::verify() {
                            << "' is not an ada.type";
     }
   }
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// ObjectOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult ObjectOp::verify() {
+  auto function = (*this)->getParentOfType<mlir::FunctionOpInterface>();
+  if (!function)
+    return emitOpError("must be nested in a subprogram or function");
+
+  auto valueType = mlir::cast<RefType>(getType()).getValueType();
+  if (getInitial() && getInitial().getType() != valueType)
+    return emitOpError("initializer must have the object's nominal type ")
+           << valueType;
+
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// ReadOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult ReadOp::verify() {
+  auto valueType = mlir::cast<QualType>(
+      mlir::cast<RefType>(getReference().getType()).getValueType());
+  if (mlir::cast<QualType>(getType()).getMlirType() != valueType.getMlirType())
+    return emitOpError(
+        "result and referenced object must share a machine type");
+  return mlir::success();
+}
+
+llvm::LogicalResult ReadOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  auto valueType = mlir::cast<QualType>(
+      mlir::cast<RefType>(getReference().getType()).getValueType());
+  auto resultType = mlir::cast<QualType>(getType());
+  if (resultType == valueType)
+    return mlir::success();
+  auto base = baseOfAdaType(*this, valueType.getAdaType());
+  if (!base || resultType.getAdaType() != base)
+    return emitOpError("result must have the object's nominal or base type");
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// WriteOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult WriteOp::verify() {
+  auto valueType = mlir::cast<RefType>(getReference().getType()).getValueType();
+  if (getValue().getType() != valueType)
+    return emitOpError("value must have the object's nominal type ")
+           << valueType;
   return mlir::success();
 }
 
@@ -1088,6 +1156,23 @@ void SubpOp::build(mlir::OpBuilder &odsBuilder, mlir::OperationState &odsState,
                       type.getInputs());
 }
 
+llvm::LogicalResult SubpOp::verify() {
+  for (mlir::Type result : getFunctionType().getResults())
+    if (mlir::isa<RefType>(result))
+      return emitOpError("cannot return an object reference");
+
+  for (auto [i, type] : llvm::enumerate(getFunctionType().getInputs())) {
+    if (!mlir::isa<RefType>(type))
+      continue;
+    auto mode = getArgAttrOfType<AdaParamModeAttr>(i, "ada.mode");
+    if (!mode || (mode.getValue() != AdaParamMode::Out &&
+                  mode.getValue() != AdaParamMode::InOut)) {
+      return emitOpError("reference formals require out or in_out ada.mode");
+    }
+  }
+  return mlir::success();
+}
+
 /// Assembly format: standard MLIR function syntax (name, argument list,
 /// optional `->` result type, attribute dictionary, region).
 mlir::ParseResult SubpOp::parse(mlir::OpAsmParser &parser,
@@ -1295,6 +1380,12 @@ mlir::Location mlir::ada::attachAdaTypeRef(mlir::Location loc,
 mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
                                       llvm::StringRef name) {
   return mlir::ada::lookupSymbolFrom(from, name);
+}
+
+llvm::LogicalResult CallOp::verify() {
+  if (getResult() && mlir::isa<RefType>(getResult().getType()))
+    return emitOpError("cannot return an object reference");
+  return mlir::success();
 }
 
 llvm::LogicalResult CallOp::verifySymbolUses(mlir::SymbolTableCollection &) {

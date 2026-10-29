@@ -1135,10 +1135,18 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
     }
 
     SmallVector<mlir::Type> inputTypes, resultTypes;
-    for (mlir::Type t : funcType.getInputs())
-      inputTypes.push_back(getTypeConverter()->convertType(t));
-    for (mlir::Type t : funcType.getResults())
-      resultTypes.push_back(getTypeConverter()->convertType(t));
+    for (mlir::Type t : funcType.getInputs()) {
+      auto converted = getTypeConverter()->convertType(t);
+      if (!converted)
+        return rewriter.notifyMatchFailure(op, "unsupported argument type");
+      inputTypes.push_back(converted);
+    }
+    for (mlir::Type t : funcType.getResults()) {
+      auto converted = getTypeConverter()->convertType(t);
+      if (!converted)
+        return rewriter.notifyMatchFailure(op, "unsupported result type");
+      resultTypes.push_back(converted);
+    }
     auto newFuncType =
         mlir::FunctionType::get(op.getContext(), inputTypes, resultTypes);
     auto func = mlir::func::FuncOp::create(rewriter, op.getLoc(), op.getName(),

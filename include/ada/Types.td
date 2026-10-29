@@ -44,6 +44,19 @@ def Ada_QualType : Ada_Type<"Qual", "qual", [MemRefElementTypeInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
+// RefType
+//===----------------------------------------------------------------------===//
+
+// Identifies an Ada object independently of its storage representation.
+// `valueType` is the object's type.
+def Ada_RefType : Ada_Type<"Ref", "ref"> {
+  let summary = "Reference to an Ada object";
+  let parameters = (ins "::mlir::Type":$valueType);
+  let assemblyFormat = "`<` $valueType `>`";
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // RangeType
 //===----------------------------------------------------------------------===//
 
