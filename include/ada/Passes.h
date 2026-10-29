@@ -21,6 +21,9 @@ std::unique_ptr<mlir::Pass> createClosureConversionPass();
 /// Create a pass expanding `ada.convert` into checks, casts and qualification.
 std::unique_ptr<mlir::Pass> createLowerAdaConversionsPass();
 
+/// Create a pass lowering Ada object references and accesses to local storage.
+std::unique_ptr<mlir::Pass> createLowerAdaReferencesPass();
+
 /// Create a pass that applies GNAT ABI name mangling to subprograms (now at
 /// module level after closure conversion) and hoists the remaining nested Ada
 /// `ada.type` ops to module level, erasing the emptied `ada.decls`. Must run

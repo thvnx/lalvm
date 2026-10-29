@@ -1048,8 +1048,10 @@ struct AllocaAdaTypedLowering : public OpConversionPattern<ada::AllocaOp> {
     auto llvmElem = getTypeConverter()->convertType(typedElem.getMlirType());
     if (!llvmElem)
       return failure();
-    mlir::Location loc =
-        ada::attachAdaTypeRef(op.getLoc(), typedElem.getAdaType());
+    // Keep the nominal type already recorded by reference lowering.
+    mlir::Location loc = op.getLoc();
+    if (!loc->findInstanceOf<FusedLocWith<ada::DITypeRefAttr>>())
+      loc = ada::attachAdaTypeRef(loc, typedElem.getAdaType());
     auto one =
         LLVM::ConstantOp::create(rewriter, op.getLoc(), rewriter.getI64Type(),
                                  rewriter.getI64IntegerAttr(1));
@@ -1189,6 +1191,12 @@ struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
         if (!paramTypeRefs[i])
           continue;
         BlockArgument arg = entry.getArgument(i);
+        // Reference lowering already recorded the nominal type before choosing
+        // a base typed slot. Keep that type instead of the slot's type.
+        if (auto name = dyn_cast<NameLoc>(arg.getLoc()))
+          if (auto fused = dyn_cast<FusedLoc>(name.getChildLoc()))
+            if (isa_and_nonnull<ada::DITypeRefAttr>(fused.getMetadata()))
+              continue;
         arg.setLoc(ada::attachAdaTypeRef(arg.getLoc(), paramTypeRefs[i]));
       }
     }
