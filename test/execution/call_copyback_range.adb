@@ -37,3 +37,8 @@ procedure Call_Copyback_Range is
 begin
    Run (5);
 end Call_Copyback_Range;
+
+-- RUN: %lalvm --emit=obj -O1 %s -o %t.o
+-- RUN: %cc %t.o %t.b.o %gnatstub -o %t
+-- RUN: %not %t 2> %t.out
+-- RUN: %FileCheck %s < %t.out
