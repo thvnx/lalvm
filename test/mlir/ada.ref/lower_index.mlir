@@ -10,7 +10,7 @@ module {
   ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
   ada.type @array : !ada.array<i32[i32 x 10]> = #ada.array_info<component @small, dim @integer range 1 to 10>
 
-  // LOWER-LABEL: ada.subp @element
+  // LOWER-LABEL: ada.subp @_ada_element
   // LOWER: %[[ARRAY:.*]] = ada.alloca
   // LOWER: %[[ELEMENT:.*]] = ada.index %[[ARRAY]][%arg0]
   // LOWER-SAME: -> memref<!ada.qual<i32, @integer>>

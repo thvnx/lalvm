@@ -24,7 +24,7 @@ module {
   // CHECK-LABEL: IR Dump After LowerAdaConversions
 
   // Widening, every value fits: no check.
-  // CHECK-LABEL: ada.subp @widen_exact
+  // CHECK-LABEL: ada.subp @_ada_widen_exact
   // CHECK-NOT:     ada.range_check
   // CHECK:         %[[U:.*]] = ada.unwrap %arg0 : !ada.qual<i16, @short_integer> to i16
   // CHECK-NEXT:    %[[E:.*]] = arith.extsi %[[U]] : i16 to i32
@@ -38,7 +38,7 @@ module {
   }
 
   // Widening a modular value zero-extends it.
-  // CHECK-LABEL: ada.subp @widen_modular
+  // CHECK-LABEL: ada.subp @_ada_widen_modular
   // CHECK-NOT:     ada.range_check
   // CHECK:         %[[U:.*]] = ada.unwrap %arg0 : !ada.qual<i16, @word> to i16
   // CHECK-NEXT:    %[[E:.*]] = arith.extui %[[U]] : i16 to i32
@@ -51,7 +51,7 @@ module {
   }
 
   // Widening into a constrained subtype: the check comes after.
-  // CHECK-LABEL: ada.subp @widen_checked
+  // CHECK-LABEL: ada.subp @_ada_widen_checked
   // CHECK:         %[[E:.*]] = arith.extsi %{{.*}} : i16 to i32
   // CHECK-NEXT:    %[[W:.*]] = ada.wrap %[[E]] : i32 to !ada.qual<i32, @integer>
   // CHECK:         %[[C:.*]] = ada.range_check %[[W]], %{{.*}} : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
@@ -63,7 +63,7 @@ module {
 
   // Widening a signed value into a modular type: the check comes first, with
   // the target range restricted to the source representation.
-  // CHECK-LABEL: ada.subp @widen_into_modular
+  // CHECK-LABEL: ada.subp @_ada_widen_into_modular
   // CHECK:         %[[LO:.*]] = ada.constant : !ada.qual<i8, @tiny> = 0
   // CHECK:         %[[HI:.*]] = ada.constant : !ada.qual<i8, @tiny> = 127
   // CHECK:         %[[R:.*]] = ada.range %[[LO]], %[[HI]]
@@ -78,7 +78,7 @@ module {
   }
 
   // Narrowing: the check comes first, on the original value.
-  // CHECK-LABEL: ada.subp @narrow
+  // CHECK-LABEL: ada.subp @_ada_narrow
   // CHECK:         %[[LO:.*]] = ada.constant : !ada.qual<i32, @integer> = -32768
   // CHECK:         %[[HI:.*]] = ada.constant : !ada.qual<i32, @integer> = 32767
   // CHECK:         %[[R:.*]] = ada.range %[[LO]], %[[HI]]
@@ -96,7 +96,7 @@ module {
   }
 
   // Narrowing into a constrained subtype: check, convert, then requalify.
-  // CHECK-LABEL: ada.subp @narrow_into_subtype
+  // CHECK-LABEL: ada.subp @_ada_narrow_into_subtype
   // CHECK:         %[[LO:.*]] = ada.constant : !ada.qual<i64, @long_integer> = 1
   // CHECK:         %[[HI:.*]] = ada.constant : !ada.qual<i64, @long_integer> = 2147483647
   // CHECK:         %[[C:.*]] = ada.range_check %arg0, %{{.*}} : !ada.qual<i64, @long_integer> to !ada.qual<i64, @long_integer>
@@ -111,7 +111,7 @@ module {
   }
 
   // Narrowing, every value fits: no check.
-  // CHECK-LABEL: ada.subp @narrow_exact
+  // CHECK-LABEL: ada.subp @_ada_narrow_exact
   // CHECK-NOT:     ada.range_check
   // CHECK:         %[[U:.*]] = ada.unwrap %arg0 : !ada.qual<i64, @small> to i64
   // CHECK-NEXT:    %[[T:.*]] = arith.trunci %[[U]] : i64 to i32
@@ -123,7 +123,7 @@ module {
   }
 
   // A constant within the target's range is not checked.
-  // CHECK-LABEL: ada.subp @narrow_constant
+  // CHECK-LABEL: ada.subp @_ada_narrow_constant
   // CHECK-NOT:     ada.range_check
   // CHECK:         arith.trunci %{{.*}} : i32 to i16
   ada.subp @narrow_constant() -> !ada.qual<i16, @short_integer> {
@@ -134,7 +134,7 @@ module {
 
   // Another base type of the same width: the check comes first, and the
   // machine value is kept.
-  // CHECK-LABEL: ada.subp @other_base
+  // CHECK-LABEL: ada.subp @_ada_other_base
   // CHECK:         %[[LO:.*]] = ada.constant : !ada.qual<i16, @word> = 0
   // CHECK:         %[[HI:.*]] = ada.constant : !ada.qual<i16, @word> = 32767
   // CHECK:         %[[C:.*]] = ada.range_check %arg0, %{{.*}} : !ada.qual<i16, @word> to !ada.qual<i16, @word>
@@ -148,7 +148,7 @@ module {
 
   // Widening into a dynamic subtype: the check uses the descriptor the
   // conversion carries.
-  // CHECK-LABEL: ada.subp @widen_dynamic
+  // CHECK-LABEL: ada.subp @_ada_widen_dynamic
   // CHECK:         %[[R:.*]] = ada.range %{{.*}}, %arg0
   // CHECK-NOT:     ada.range_check
   // CHECK:         %[[E:.*]] = arith.extsi %{{.*}} : i16 to i32
@@ -167,7 +167,7 @@ module {
 
   // Narrowing into a dynamic subtype: the value is first checked against the
   // target's base, then against the descriptor.
-  // CHECK-LABEL: ada.subp @narrow_dynamic
+  // CHECK-LABEL: ada.subp @_ada_narrow_dynamic
   // CHECK:         %[[R:.*]] = ada.range %{{.*}}, %arg0
   // CHECK:         %[[LO:.*]] = ada.constant : !ada.qual<i64, @long_integer> = -2147483648
   // CHECK:         %[[HI:.*]] = ada.constant : !ada.qual<i64, @long_integer> = 2147483647
@@ -187,7 +187,7 @@ module {
   }
 
   // Floats change precision; their constraints are not checked yet.
-  // CHECK-LABEL: ada.subp @float_widen
+  // CHECK-LABEL: ada.subp @_ada_float_widen
   // CHECK-NOT:     ada.range_check
   // CHECK:         %[[U:.*]] = ada.unwrap %arg0 : !ada.qual<f32, @float> to f32
   // CHECK-NEXT:    %[[E:.*]] = arith.extf %[[U]] : f32 to f64
@@ -197,7 +197,7 @@ module {
     %r = ada.convert implicit %v : !ada.qual<f32, @float> to !ada.qual<f64, @long_float>
     ada.return %r : !ada.qual<f64, @long_float>
   }
-  // CHECK-LABEL: ada.subp @float_narrow
+  // CHECK-LABEL: ada.subp @_ada_float_narrow
   // CHECK-NOT:     ada.range_check
   // CHECK:         arith.truncf %{{.*}} : f64 to f32
   ada.subp @float_narrow(%v: !ada.qual<f64, @long_float>) -> !ada.qual<f32, @float> {
@@ -207,7 +207,7 @@ module {
 
   // Two narrowings from one source base get their own descriptor, reused by an
   // identical one.
-  // CHECK-LABEL: ada.subp @narrow_twice
+  // CHECK-LABEL: ada.subp @_ada_narrow_twice
   // CHECK:         ada.constant : !ada.qual<i32, @integer> = -32768
   // CHECK:         ada.constant : !ada.qual<i32, @integer> = 32767
   // CHECK:         %[[R1:.*]] = ada.range %
@@ -227,7 +227,7 @@ module {
 
   // Narrowing into a dynamic subtype of a modular type: the first check is
   // against the modular base's range.
-  // CHECK-LABEL: ada.subp @narrow_modular_dynamic
+  // CHECK-LABEL: ada.subp @_ada_narrow_modular_dynamic
   // CHECK:         %[[R:.*]] = ada.range %{{.*}}, %arg0
   // CHECK:         ada.constant : !ada.qual<i32, @integer> = 0
   // CHECK:         ada.constant : !ada.qual<i32, @integer> = 65535
@@ -247,7 +247,7 @@ module {
 
   // Another float or enumeration base type of the same width: the machine value
   // is kept, unchecked.
-  // CHECK-LABEL: ada.subp @other_float
+  // CHECK-LABEL: ada.subp @_ada_other_float
   // CHECK-NOT:     ada.range_check
   // CHECK:         %[[U:.*]] = ada.unwrap %arg0 : !ada.qual<f32, @float> to f32
   // CHECK-NEXT:    %[[W:.*]] = ada.wrap %[[U]] : f32 to !ada.qual<f32, @my_float>
@@ -256,7 +256,7 @@ module {
     %r = ada.convert explicit %v : !ada.qual<f32, @float> to !ada.qual<f32, @my_float>
     ada.return %r : !ada.qual<f32, @my_float>
   }
-  // CHECK-LABEL: ada.subp @other_enum
+  // CHECK-LABEL: ada.subp @_ada_other_enum
   // CHECK-NOT:     ada.range_check
   // CHECK:         %[[U:.*]] = ada.unwrap %arg0 : !ada.qual<i8, @color> to i8
   // CHECK-NEXT:    %[[W:.*]] = ada.wrap %[[U]] : i8 to !ada.qual<i8, @hue>
@@ -268,7 +268,7 @@ module {
 
   // No value of the source lies in the target range: the restricted range is
   // empty, so the check always fails.
-  // CHECK-LABEL: ada.subp @empty_range
+  // CHECK-LABEL: ada.subp @_ada_empty_range
   // CHECK:         ada.constant : !ada.qual<i16, @word> = -1
   // CHECK:         ada.constant : !ada.qual<i16, @word> = 0
   // CHECK:         ada.range_check %arg0, %{{.*}} : !ada.qual<i16, @word> to !ada.qual<i16, @word>

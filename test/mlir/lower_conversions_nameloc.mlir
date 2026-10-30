@@ -7,13 +7,13 @@
 
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-conversions --mlir-print-debuginfo --mlir-print-local-scope %s -o /dev/null 2>&1 | %FileCheck %s
 
-// CHECK-LABEL: ada.subp @named
+// CHECK-LABEL: ada.subp @_ada_named
 // CHECK:         ada.constant : !ada.qual<i32, @integer> = 1 loc("f.adb":3:5)
 // CHECK:         ada.constant : !ada.qual<i32, @integer> = 10 loc("f.adb":3:5)
 // CHECK:         ada.range {{.*}} loc("f.adb":3:5)
 // CHECK:         ada.range_check {{.*}} loc("x"("f.adb":3:5))
 
-// CHECK-LABEL: ada.subp @named_widening
+// CHECK-LABEL: ada.subp @_ada_named_widening
 // CHECK:         ada.unwrap {{.*}} loc("f.adb":4:5)
 // CHECK-NEXT:    arith.extsi {{.*}} loc("y"(fused<#ada.typeref<@integer>>["f.adb":4:5]))
 // CHECK-NEXT:    ada.wrap {{.*}} loc("f.adb":4:5)

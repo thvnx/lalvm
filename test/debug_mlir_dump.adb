@@ -12,7 +12,7 @@
 -- CHECK: loc(
 
 -- DUMP: IR Dump After LowerAdaConversions
--- DUMP: ada.subp @debug_mlir_dump
+-- DUMP: ada.subp @_ada_debug_mlir_dump
 -- DUMP: loc(
 
 -- NODEBUG: IR Dump After LowerAdaConversions
