@@ -1,10 +1,10 @@
--- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- while loop (RM 5.5): a header block tests the condition and branches to the
 -- body or the merge; the body branches back to the header. While_Loop(5) = 15.
 
--- MLIR-LABEL: ada.subp @while_loop
+-- MLIR-LABEL: func.func @_ada_while_loop
 -- MLIR:         cf.br ^[[HDR:bb[0-9]+]](
 -- MLIR:       ^[[HDR]](
 -- MLIR:         %[[C:.*]] = ada.cmp "<=" %{{.*}}, %n
@@ -14,7 +14,7 @@
 -- MLIR:         ada.binop "+"
 -- MLIR:         cf.br ^[[HDR]](
 -- MLIR:       ^[[MERGE]]:
--- MLIR:         ada.return
+-- MLIR:         return
 
 -- LLVM-LABEL: define i32 @_ada_while_loop(
 -- LLVM:         phi i32

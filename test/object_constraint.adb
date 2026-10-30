@@ -7,9 +7,9 @@
 
 -- CHECK-LABEL: ada.subp @object_constraint(
 -- CHECK:         ada.range {{.*}} -> !ada.range<i32, @object_constraint.__anonymous_y>
--- CHECK:         ada.alloca : memref<!ada.qual<i32, @object_constraint.__anonymous_y>>
+-- CHECK:         ada.object : !ada.ref<!ada.qual<i32, @object_constraint.__anonymous_y>>
 -- CHECK:         ada.range {{.*}} -> !ada.range<i32, @object_constraint.__anonymous_z>
--- CHECK:         ada.alloca : memref<!ada.qual<i32, @object_constraint.__anonymous_z>>
+-- CHECK:         ada.object : !ada.ref<!ada.qual<i32, @object_constraint.__anonymous_z>>
 -- CHECK:         ada.decls {
 -- CHECK-DAG:       ada.type @object_constraint.__anonymous_y base @standard.integer : i32 = #ada.int_info<range 1 to ?>
 -- CHECK-DAG:       ada.type @object_constraint.__anonymous_z base @standard.integer : i32 = #ada.int_info<range 1 to ?>

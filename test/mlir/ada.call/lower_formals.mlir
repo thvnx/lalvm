@@ -27,7 +27,7 @@ module {
   // DI-DAG: !{null, ![[SMALL]], ![[SMALL]], ![[SMALL]]}
   // DI-DAG: DILocalVariable(name: "b", arg: 2, scope: {{.*}}, type: ![[SMALL]])
   // DI-DAG: DILocalVariable(name: "c", arg: 3, scope: {{.*}}, type: ![[SMALL]])
-  ada.subp @procedure(%a: !ada.qual<i32, @small> loc("a"("formals.adb":1:1)), %b: !ada.ref<!ada.qual<i32, @small>> {ada.mode = #ada<mode out>} loc("b"("formals.adb":1:1)), %c: !ada.ref<!ada.qual<i32, @small>> {ada.mode = #ada<mode in_out>} loc("c"("formals.adb":1:1))) attributes {ada.new_lowering} {
+  ada.subp @procedure(%a: !ada.qual<i32, @small> loc("a"("formals.adb":1:1)), %b: !ada.ref<!ada.qual<i32, @small>> {ada.mode = #ada<mode out>} loc("b"("formals.adb":1:1)), %c: !ada.ref<!ada.qual<i32, @small>> {ada.mode = #ada<mode in_out>} loc("c"("formals.adb":1:1))) {
     ada.write %a, %b : !ada.qual<i32, @small> -> !ada.ref<!ada.qual<i32, @small>>
     ada.return
   } loc("formals.adb":1:1)
@@ -41,7 +41,7 @@ module {
   // CALLEE: return %[[RESULT]], %[[OUTPUT]]
   // LLVM-LABEL: define { i32, i32 } @_ada_unchecked_out(i32
   // LLVM: ret { i32, i32 }
-  ada.subp @unchecked_out(%x: !ada.ref<!ada.qual<i32, @defaulted_small>> {ada.mode = #ada<mode out>} loc("x"("formals.adb":2:1))) -> !ada.qual<i32, @defaulted> attributes {ada.new_lowering} {
+  ada.subp @unchecked_out(%x: !ada.ref<!ada.qual<i32, @defaulted_small>> {ada.mode = #ada<mode out>} loc("x"("formals.adb":2:1))) -> !ada.qual<i32, @defaulted> {
     %value = ada.read %x : !ada.ref<!ada.qual<i32, @defaulted_small>> -> !ada.qual<i32, @defaulted>
     ada.return %value : !ada.qual<i32, @defaulted>
   } loc("formals.adb":2:1)
@@ -58,7 +58,7 @@ module {
   ada.subp @outer(%v: !ada.qual<i32, @small>) {
     %r = ada.object : !ada.ref<!ada.qual<i32, @small>> <- %v : !ada.qual<i32, @small>
     ada.decls {
-      ada.subp private @outer.inner(%x: !ada.ref<!ada.qual<i32, @small>> {ada.mode = #ada<mode out>}) attributes {ada.new_lowering} {
+      ada.subp private @outer.inner(%x: !ada.ref<!ada.qual<i32, @small>> {ada.mode = #ada<mode out>}) {
         %value = ada.read %r : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @small>
         ada.write %value, %x : !ada.qual<i32, @small> -> !ada.ref<!ada.qual<i32, @small>>
         ada.return

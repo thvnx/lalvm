@@ -4,23 +4,22 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- `in out` parameters are passed by reference (memref<T>): the callee
--- operates directly on the caller's alloca. Write-back is automatic.
+-- Writable formals are independent objects, returned in formal order.
 
 -- MLIR-LABEL: ada.subp @proc(
--- MLIR-SAME:    %i: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}, %j: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}, %k: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}
--- MLIR:         %[[J:.*]] = memref.load %j[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         %[[K:.*]] = memref.load %k[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR-SAME:    %i: !ada.ref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}, %j: !ada.ref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}, %k: !ada.ref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode in_out>}
+-- MLIR:         %[[J:.*]] = ada.read %j : !ada.ref<!ada.qual<i32, @standard.integer>> -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[K:.*]] = ada.read %k : !ada.ref<!ada.qual<i32, @standard.integer>> -> !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[R:.*]] = ada.binop "+" %[[J]], %[[K]] checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR:         memref.store %[[R]], %i[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         ada.write %[[R]], %i : !ada.qual<i32, @standard.integer> -> !ada.ref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         ada.return
 
--- LLVM-LABEL: define void @_ada_proc(ptr
+-- LLVM-LABEL: define { i32, i32, i32 } @_ada_proc(i32
 -- LLVM:         load i32, ptr
 -- LLVM:         load i32, ptr
 -- LLVM:         %{{.*}} = call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:         store i32 %{{.*}}, ptr
--- LLVM:         ret void
+-- LLVM:         ret { i32, i32, i32 }
 
 procedure Proc (I, J, K : in out Integer) is
 begin

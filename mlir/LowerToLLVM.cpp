@@ -369,32 +369,26 @@ struct NullOpLowering : public OpRewritePattern<ada::NullOp> {
   }
 };
 
-// OpConversionPattern: operands are ada.qual typed; the adaptor provides them
-// already converted to bare MLIR types.
-struct ReturnOpLowering : public OpConversionPattern<ada::ReturnOp> {
-  using OpConversionPattern<ada::ReturnOp>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ada::ReturnOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, adaptor.getOperands());
-    return success();
-  }
-};
-
 // OpConversionPattern: operands are ada.qual typed (adaptor converts them);
 // result types need getTypeConverter()->convertType().
-struct CallOpLowering : public OpConversionPattern<ada::CallOp> {
-  using OpConversionPattern<ada::CallOp>::OpConversionPattern;
+// Convert Ada operand types before upstream call lowering promotes memrefs.
+// Our object storage is already a bare pointer, not a memref descriptor.
+struct CallOpLowering : public OpConversionPattern<func::CallOp> {
+  CallOpLowering(LLVMTypeConverter &converter, MLIRContext *context)
+      : OpConversionPattern(converter, context, PatternBenefit(2)) {}
 
   LogicalResult
-  matchAndRewrite(ada::CallOp op, OpAdaptor adaptor,
+  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    SmallVector<mlir::Type> resultTypes;
-    for (mlir::Type t : op.getResultTypes())
-      resultTypes.push_back(getTypeConverter()->convertType(t));
-    rewriter.replaceOpWithNewOp<func::CallOp>(op, op.getCallee(), resultTypes,
-                                              adaptor.getOperands());
+    if (getTypeConverter()->isLegal(op))
+      return failure();
+    SmallVector<Type> results;
+    if (failed(getTypeConverter()->convertTypes(op.getResultTypes(), results)))
+      return failure();
+    auto call = func::CallOp::create(rewriter, op.getLoc(), op.getCallee(),
+                                     results, adaptor.getOperands());
+    call->setAttrs(op->getAttrs());
+    rewriter.replaceOp(op, call.getResults());
     return success();
   }
 };
@@ -1107,100 +1101,32 @@ struct StoreAdaTypedLowering : public OpConversionPattern<memref::StoreOp> {
 // AdaToLLVM RewritePatterns: Subprogram operations
 //===----------------------------------------------------------------------===//
 
-// ada.subp is isomorphic to func.func at this level; we just swap the op type
-// and move the region over. The upstream FuncToLLVM pass then handles the
-// func.func -> llvm.func conversion.
-// OpConversionPattern: parameter and result types are ada.qual and need
-// getTypeConverter()->convertType(); convertRegionTypes() rewrites all value
-// types inside the body in one pass, including block arguments.
-struct SubpOpLowering : public OpConversionPattern<ada::SubpOp> {
-  using OpConversionPattern<ada::SubpOp>::OpConversionPattern;
+// Convert the signature before FuncToLLVM so captured object storage remains
+// a bare pointer. Source type and formal metadata already lives on locations.
+struct FunctionOpLowering : public OpConversionPattern<func::FuncOp> {
+  FunctionOpLowering(LLVMTypeConverter &converter, MLIRContext *context)
+      : OpConversionPattern(converter, context, PatternBenefit(2)) {}
 
   LogicalResult
-  matchAndRewrite(ada::SubpOp op, OpAdaptor,
+  matchAndRewrite(func::FuncOp op, OpAdaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    mlir::FunctionType funcType = op.getFunctionType();
-
-    // Collect Ada type refs for input params before region move. A
-    // by-reference (out/in out) parameter is a memref of its ada.qual; an in
-    // parameter is the ada.qual directly. Record the Ada subtype either way so
-    // AdaDebugInfoPass describes the parameter with its own type rather than
-    // re-inferring the base type from a load/store.
-    SmallVector<mlir::FlatSymbolRefAttr> paramTypeRefs;
-    for (mlir::Type t : funcType.getInputs()) {
-      if (auto mr = dyn_cast<MemRefType>(t))
-        t = mr.getElementType();
-      if (auto typed = dyn_cast<ada::QualType>(t))
-        paramTypeRefs.push_back(typed.getAdaType());
-      else
-        paramTypeRefs.push_back({});
-    }
-
-    SmallVector<mlir::Type> inputTypes, resultTypes;
-    for (mlir::Type t : funcType.getInputs()) {
-      auto converted = getTypeConverter()->convertType(t);
-      if (!converted)
-        return rewriter.notifyMatchFailure(op, "unsupported argument type");
-      inputTypes.push_back(converted);
-    }
-    for (mlir::Type t : funcType.getResults()) {
-      auto converted = getTypeConverter()->convertType(t);
-      if (!converted)
-        return rewriter.notifyMatchFailure(op, "unsupported result type");
-      resultTypes.push_back(converted);
-    }
-    auto newFuncType =
-        mlir::FunctionType::get(op.getContext(), inputTypes, resultTypes);
-    auto func = mlir::func::FuncOp::create(rewriter, op.getLoc(), op.getName(),
-                                           newFuncType);
-    // Carry the subprogram's symbol visibility, and give private (nested)
-    // subprograms internal LLVM linkage; library-level (public) subprograms
-    // keep public visibility and external linkage. `func.func` visibility does
-    // not by itself set linkage, so the `llvm.linkage` attribute is what makes
-    // the lowered function `internal`.
-    func.setVisibility(op.getVisibility());
-    if (op.isPrivate())
-      func->setAttr("llvm.linkage",
-                    mlir::LLVM::LinkageAttr::get(
-                        rewriter.getContext(), mlir::LLVM::Linkage::Internal));
-    if (ArrayAttr argAttrs = op.getArgAttrsAttr())
-      func.setAllArgAttrs(argAttrs);
-    if (ArrayAttr resAttrs = op.getResAttrsAttr())
-      func.setAllResultAttrs(resAttrs);
-    // Carry the result's Ada type ref on the function location so
-    // AdaDebugInfoPass can emit the subprogram's return type (DW_AT_type).
-    // Mirrors the per-parameter DITypeRef attached to entry block-arg locs
-    // below, but on the function's own loc: DIScopeForLLVMFuncOpPass nests this
-    // FusedLoc under the DISubprogram, where the DI pass reads it back.
-    // Procedures have no result and keep the plain loc (null return = void).
-    if (!funcType.getResults().empty())
-      if (auto typed = dyn_cast<ada::QualType>(funcType.getResults()[0]))
-        func->setLoc(mlir::FusedLoc::get(
-            func.getContext(), {func.getLoc()},
-            ada::DITypeRefAttr::get(func.getContext(), typed.getAdaType())));
-    rewriter.inlineRegionBefore(op.getRegion(), func.getBody(), func.end());
-    if (mlir::failed(
-            rewriter.convertRegionTypes(&func.getBody(), *getTypeConverter())))
-      return mlir::failure();
-
-    // Attach Ada type refs to entry block args for AdaDebugInfoPass.
-    if (!func.getBody().empty()) {
-      Block &entry = func.getBody().front();
-      for (size_t i = 0;
-           i < paramTypeRefs.size() && i < entry.getNumArguments(); ++i) {
-        if (!paramTypeRefs[i])
-          continue;
-        BlockArgument arg = entry.getArgument(i);
-        // Reference lowering already recorded the nominal type before choosing
-        // a base typed slot. Keep that type instead of the slot's type.
-        if (auto name = dyn_cast<NameLoc>(arg.getLoc()))
-          if (auto fused = dyn_cast<FusedLoc>(name.getChildLoc()))
-            if (isa_and_nonnull<ada::DITypeRefAttr>(fused.getMetadata()))
-              continue;
-        arg.setLoc(ada::attachAdaTypeRef(arg.getLoc(), paramTypeRefs[i]));
-      }
-    }
-
+    auto type = op.getFunctionType();
+    if (getTypeConverter()->isSignatureLegal(type))
+      return failure();
+    SmallVector<Type> inputs, results;
+    if (failed(getTypeConverter()->convertTypes(type.getInputs(), inputs)) ||
+        failed(getTypeConverter()->convertTypes(type.getResults(), results)))
+      return failure();
+    auto function =
+        func::FuncOp::create(rewriter, op.getLoc(), op.getSymName(),
+                             rewriter.getFunctionType(inputs, results));
+    function->setAttrs(op->getAttrs());
+    function.setType(rewriter.getFunctionType(inputs, results));
+    rewriter.inlineRegionBefore(op.getBody(), function.getBody(),
+                                function.end());
+    if (failed(rewriter.convertRegionTypes(&function.getBody(),
+                                           *getTypeConverter())))
+      return failure();
     rewriter.eraseOp(op);
     return success();
   }
@@ -1269,8 +1195,8 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
 
   patterns.add<NullOpLowering>(&getContext());
-  patterns.add<ReturnOpLowering, CallOpLowering, BinOpLowering, CmpOpLowering,
-               UnOpLowering, UnwrapOpLowering, WrapOpLowering, SubpOpLowering,
+  patterns.add<CallOpLowering, BinOpLowering, CmpOpLowering, UnOpLowering,
+               UnwrapOpLowering, WrapOpLowering, FunctionOpLowering,
                ConstantOpLowering, RangeOpLowering,
                InRangeCheckOpLowering<ada::RangeCheckOp>,
                InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,

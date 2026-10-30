@@ -1,27 +1,24 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- `out` parameters are passed by reference (memref<T>) like `in out`, but the
--- callee treats the initial value as undefined (RM 6.4.1). The first operation
--- on the parameter must be a store, not a load.
+-- An out formal denotes an independent object with no initial input.
 
 -- MLIR-LABEL: ada.subp @param_out
--- MLIR:         %[[N_PTR:.*]] = ada.alloca : memref<!ada.qual<i32, @standard.integer>>
--- MLIR-NOT:     memref.store {{.*}}, %[[N_PTR]]
+-- MLIR:         %[[N_PTR:.*]] = ada.object : !ada.ref<!ada.qual<i32, @standard.integer>>
+-- MLIR-NOT:     ada.write {{.*}}, %[[N_PTR]]
 -- MLIR:         ada.decls {
--- MLIR:           ada.subp private @param_out.get_value(%x: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode out>})
--- MLIR-NOT:       memref.load %x
--- MLIR:           memref.store {{.*}}, %x[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:           ada.subp private @param_out.get_value(%x: !ada.ref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode out>})
+-- MLIR-NOT:       ada.read %x
+-- MLIR:           ada.write {{.*}}, %x : !ada.qual<i32, @standard.integer> -> !ada.ref<!ada.qual<i32, @standard.integer>>
 -- MLIR:           ada.return
--- MLIR:         ada.call @param_out.get_value(%[[N_PTR]]) : (memref<!ada.qual<i32, @standard.integer>>) -> ()
--- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         ada.call @param_out.get_value(%[[N_PTR]]) : (!ada.ref<!ada.qual<i32, @standard.integer>>) -> ()
+-- MLIR:         %[[N:.*]] = ada.read %[[N_PTR]] : !ada.ref<!ada.qual<i32, @standard.integer>> -> !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.return %[[N]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_param_out(
--- LLVM-LABEL: define internal void @param_out__get_value(ptr
--- LLVM-NOT:     load
+-- LLVM-LABEL: define internal i32 @param_out__get_value()
 -- LLVM:          store i32 42, ptr
--- LLVM:          ret void
+-- LLVM:          ret i32
 
 function Param_Out return Integer is
    procedure Get_Value (X : out Integer);

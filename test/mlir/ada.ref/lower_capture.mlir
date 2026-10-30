@@ -34,13 +34,13 @@ module {
         ada.return
       }
     }
-    ada.call @outer.inner() : () -> ()
+    ada.call @outer.inner() {arg_attrs = []} : () -> ()
     %value = ada.read %x : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @integer>
     ada.return %value : !ada.qual<i32, @integer>
   } loc("capture.adb":1:1)
 
-  // CHECK-LABEL: define i32 @_ada_formal(
-  // CHECK: load i32, ptr %0
+  // CHECK-LABEL: define { i32, i32 } @_ada_formal(
+  // CHECK: ret { i32, i32 }
   // DI-DAG: ![[SMALL:[0-9]+]] = !DISubrangeType(name: "small"
   // DI-DAG: DILocalVariable(name: "x", scope: {{.*}}, type: ![[SMALL]])
   // DI-DAG: DILocalVariable(name: "x", arg: 1, scope: {{.*}}, type: ![[SMALL]])

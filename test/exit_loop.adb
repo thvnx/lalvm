@@ -1,4 +1,4 @@
--- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- bare loop + `exit when` (RM 5.5/5.7). A bare loop has no header: the body is
@@ -6,7 +6,7 @@
 -- `exit when C` branches to the merge when C holds and continues otherwise.
 -- Exit_Loop(5) = 5.
 
--- MLIR-LABEL: ada.subp @exit_loop
+-- MLIR-LABEL: func.func @_ada_exit_loop
 -- MLIR:         cf.br ^[[BODY:bb[0-9]+]](
 -- MLIR:       ^[[BODY]](
 -- MLIR:         %[[C:.*]] = ada.cmp ">=" %{{.*}}, %n
@@ -16,7 +16,7 @@
 -- MLIR:         ada.binop "+"
 -- MLIR:         cf.br ^[[BODY]](
 -- MLIR:       ^[[MERGE]]:
--- MLIR:         ada.return
+-- MLIR:         return
 
 -- LLVM-LABEL: define i32 @_ada_exit_loop(
 -- LLVM:         phi i32

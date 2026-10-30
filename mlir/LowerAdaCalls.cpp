@@ -7,13 +7,15 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/DialectConversion.h"
+#include "llvm/ADT/DenseMap.h"
 
 using namespace mlir;
 
 namespace {
 
 struct Formal {
-  ada::QualType type;
+  Type type;
   ada::QualType base;
   ada::AdaParamMode mode;
   Location loc;
@@ -36,8 +38,6 @@ struct Signature {
 static LogicalResult mapSignature(Signature &signature) {
   auto op = signature.source;
   auto type = op.getFunctionType();
-  if (!op->getAttrOfType<UnitAttr>("ada.new_lowering"))
-    return op.emitOpError("ada.new_lowering must be a unit attribute");
   if (!isa<ModuleOp>(op->getParentOp()))
     return op.emitOpError("callee lowering requires a module level subprogram");
   if (type.getNumResults() > 1)
@@ -52,8 +52,7 @@ static LogicalResult mapSignature(Signature &signature) {
 
   for (unsigned i = 0, end = op.getNumSourceFormals(); i < end; ++i) {
     Type input = type.getInput(i);
-    auto modeAttr = op.getArgAttrOfType<ada::AdaParamModeAttr>(i, "ada.mode");
-    auto mode = modeAttr ? modeAttr.getValue() : ada::AdaParamMode::In;
+    auto mode = op.getFormalMode(i);
     bool writable = mode != ada::AdaParamMode::In;
     if (auto ref = dyn_cast<ada::RefType>(input)) {
       if (!writable)
@@ -62,25 +61,23 @@ static LogicalResult mapSignature(Signature &signature) {
     } else if (writable) {
       return op.emitOpError("writable formals require ada.ref type");
     }
-    auto qual = dyn_cast<ada::QualType>(input);
-    if (!qual || !ada::isNumericMachineType(qual.getMlirType()))
-      return op.emitOpError("unsupported formal type ") << input;
-    auto base = ada::baseOfAdaType(op, qual.getAdaType());
-    if (!base)
-      return op.emitOpError("unresolved formal type ") << qual.getAdaType();
-
-    auto formalType = ada::lookupAdaType(op, qual.getAdaType());
-    bool hasDefaultValue = formalType && formalType.hasDefaultValue();
+    ada::QualType base;
+    if (writable) {
+      auto qual = dyn_cast<ada::QualType>(input);
+      if (!qual || !ada::isNumericMachineType(qual.getMlirType()))
+        return op.emitOpError("unsupported formal type ") << input;
+      base = ada::baseOfAdaType(op, qual);
+      if (!base)
+        return op.emitOpError("unresolved formal type ") << qual.getAdaType();
+    }
     Location loc = op.isExternal()
                        ? op.getLoc()
                        : op.getBody().front().getArgument(i).getLoc();
-    Formal formal{qual,
-                  ada::QualType::get(op.getContext(), qual.getMlirType(), base),
-                  mode, loc, std::nullopt};
-    if (mode != ada::AdaParamMode::Out || hasDefaultValue) {
+    Formal formal{input, base, mode, loc, std::nullopt};
+    if (op.formalNeedsInput(i)) {
       formal.input = signature.inputs.size();
       signature.inputs.push_back(mode == ada::AdaParamMode::Out ? formal.base
-                                                                : qual);
+                                                                : input);
       NamedAttrList attrs(op.getArgAttrDict(i));
       attrs.erase("ada.mode");
       signature.inputAttrs.push_back(attrs.getDictionary(op.getContext()));
@@ -141,7 +138,7 @@ static void lowerCallee(Signature &signature) {
   for (NamedAttribute attr : source->getAttrs()) {
     StringRef key = attr.getName().getValue();
     if (key != "sym_name" && key != "function_type" && key != "arg_attrs" &&
-        key != "res_attrs" && key != "ada.new_lowering")
+        key != "res_attrs")
       function->setAttr(attr.getName(), attr.getValue());
   }
   function.setAllArgAttrs(builder.getArrayAttr(signature.inputAttrs));
@@ -163,10 +160,12 @@ static void lowerCallee(Signature &signature) {
   for (const Formal &formal : signature.formals) {
     if (!formal.input)
       continue;
-    Location inputLoc =
-        formal.mode == ada::AdaParamMode::In
-            ? ada::attachAdaTypeRef(formal.loc, formal.type.getAdaType())
-            : ada::unnamedLoc(formal.loc);
+    Location inputLoc = ada::unnamedLoc(formal.loc);
+    if (formal.mode == ada::AdaParamMode::In) {
+      inputLoc = formal.loc;
+      if (auto qual = dyn_cast<ada::QualType>(formal.type))
+        inputLoc = ada::attachAdaTypeRef(inputLoc, qual.getAdaType());
+    }
     inputs.push_back(
         entry.addArgument(signature.inputs[*formal.input], inputLoc));
   }
@@ -220,6 +219,74 @@ static void lowerCallee(Signature &signature) {
 }
 
 //===----------------------------------------------------------------------===//
+// Caller lowering
+//===----------------------------------------------------------------------===//
+
+static void lowerCaller(ada::CallOp source, const Signature &signature) {
+  OpBuilder builder(source);
+  SmallVector<Value> inputs;
+  unsigned initial = 0;
+  for (auto [i, formal] : llvm::enumerate(signature.formals)) {
+    if (!formal.input)
+      continue;
+    inputs.push_back(formal.mode == ada::AdaParamMode::In
+                         ? source.getInputs()[i]
+                         : source.getInitialValues()[initial++]);
+  }
+  for (Value capture : source.getInputs().drop_front(signature.formals.size()))
+    inputs.push_back(capture);
+  auto call = func::CallOp::create(builder, source.getLoc(), source.getCallee(),
+                                   signature.results, inputs);
+  if (auto attrs = source.getArgAttrsAttr()) {
+    SmallVector<Attribute> mapped;
+    for (auto [i, formal] : llvm::enumerate(signature.formals))
+      if (formal.input)
+        mapped.push_back(attrs[i]);
+    llvm::append_range(mapped,
+                       attrs.getValue().drop_front(signature.formals.size()));
+    call.setArgAttrsAttr(builder.getArrayAttr(mapped));
+  }
+  if (auto attrs = source.getResAttrsAttr()) {
+    SmallVector<Attribute> mapped(attrs.getValue());
+    mapped.resize(signature.results.size(), builder.getDictionaryAttr({}));
+    call.setResAttrsAttr(builder.getArrayAttr(mapped));
+  }
+  // Call results follow formal order. Stores follow association order, with
+  // each conversion immediately before its write (@rm{6-4-1}).
+  SmallVector<Value> outputs(signature.formals.size());
+  unsigned result = source.getNumResults();
+  for (auto [i, formal] : llvm::enumerate(signature.formals))
+    if (formal.mode != ada::AdaParamMode::In)
+      outputs[i] = call.getResult(result++);
+  SmallVector<Value> ranges(signature.formals.size());
+  if (auto indices =
+          source->getAttrOfType<DenseI32ArrayAttr>("ada.range_formals"))
+    for (auto [i, index] : llvm::enumerate(indices.asArrayRef()))
+      ranges[index] = source.getCopybackRanges()[i];
+  SmallVector<int32_t> order;
+  if (auto indices =
+          source->getAttrOfType<DenseI32ArrayAttr>("ada.actual_order"))
+    llvm::append_range(order, indices.asArrayRef());
+  else
+    for (unsigned i = 0; i < signature.formals.size(); ++i)
+      order.push_back(i);
+  for (int32_t i : order) {
+    if (!outputs[i])
+      continue;
+    Value reference = source.getInputs()[i];
+    auto target = cast<ada::RefType>(reference.getType()).getValueType();
+    Location loc = ada::unnamedLoc(source.getLoc());
+    Value value = ada::ConvertOp::create(builder, loc, target,
+                                         ada::AdaConversionKind::Implicit,
+                                         outputs[i], ranges[i]);
+    ada::WriteOp::create(builder, loc, value, reference);
+  }
+  if (source.getResult())
+    source.getResult().replaceAllUsesWith(call.getResult(0));
+  source.erase();
+}
+
+//===----------------------------------------------------------------------===//
 // LowerAdaCallsPass
 //===----------------------------------------------------------------------===//
 
@@ -233,35 +300,47 @@ struct LowerAdaCallsPass
   StringRef getName() const final { return "LowerAdaCalls"; }
   StringRef getArgument() const final { return "ada-lower-calls"; }
   StringRef getDescription() const final {
-    return "Lower Ada formal objects and results to the value ABI";
+    return "Lower Ada subprograms and calls to the value ABI";
   }
   void runOnOperation() final {
     ModuleOp module = getOperation();
-    SmallVector<ada::SubpOp> callees;
+    SmallVector<Signature, 0> signatures;
+    llvm::DenseMap<Operation *, unsigned> calleeIndices;
+    bool invalid = false;
     module.walk([&](ada::SubpOp op) {
-      if (op->hasAttr("ada.new_lowering"))
-        callees.push_back(op);
-    });
-
-    // Caller lowering is introduced in the next implementation step.
-    bool pendingCall = false;
-    module.walk([&](ada::CallOp call) {
-      Operation *callee = ada::CallOp::lookupCallee(call, call.getCallee());
-      if (callee && callee->hasAttr("ada.new_lowering")) {
-        call.emitOpError(
-            "caller lowering for the value ABI is not implemented yet");
-        pendingCall = true;
-      }
-    });
-    if (pendingCall)
-      return signalPassFailure();
-    for (auto callee : callees) {
       Signature signature;
-      signature.source = callee;
-      if (failed(mapSignature(signature)))
+      signature.source = op;
+      if (failed(mapSignature(signature))) {
+        invalid = true;
+        return;
+      }
+      calleeIndices[op] = signatures.size();
+      signatures.push_back(std::move(signature));
+    });
+    if (invalid)
+      return signalPassFailure();
+    SmallVector<ada::CallOp> calls;
+    module.walk([&](ada::CallOp call) { calls.push_back(call); });
+    SymbolTableCollection symbols;
+    for (auto call : calls) {
+      auto found =
+          calleeIndices.find(ada::CallOp::lookupCallee(call, call.getCallee()));
+      if (found == calleeIndices.end()) {
+        call.emitOpError("requires an Ada callee declaration");
         return signalPassFailure();
-      lowerCallee(signature);
+      }
+      if (failed(call.verify()) || failed(call.verifySymbolUses(symbols)))
+        return signalPassFailure();
+      lowerCaller(call, signatures[found->second]);
     }
+    for (auto &signature : signatures)
+      lowerCallee(signature);
+    ConversionTarget target(getContext());
+    target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
+    target.addIllegalOp<ada::SubpOp, ada::CallOp, ada::ReturnOp>();
+    if (failed(applyPartialConversion(module, target,
+                                      RewritePatternSet(&getContext()))))
+      signalPassFailure();
   }
 };
 

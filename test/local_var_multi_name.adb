@@ -8,11 +8,11 @@
 -- MLIR-LABEL: ada.subp @local_var_multi_name
 -- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[X:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
--- MLIR:         memref.store %[[X]], %{{.*}}[]
+-- MLIR:         ada.object : !ada.ref<!ada.qual<i32, @standard.integer>> <- %[[X]]
 -- MLIR:         %[[Y:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
--- MLIR:         memref.store %[[Y]], %{{.*}}[]
+-- MLIR:         ada.object : !ada.ref<!ada.qual<i32, @standard.integer>> <- %[[Y]]
 -- MLIR:         %[[Z:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
--- MLIR:         memref.store %[[Z]], %{{.*}}[]
+-- MLIR:         ada.object : !ada.ref<!ada.qual<i32, @standard.integer>> <- %[[Z]]
 -- MLIR:         ada.binop "+"
 -- MLIR:         ada.binop "+"
 -- MLIR:         ada.return
