@@ -21,6 +21,9 @@ std::unique_ptr<mlir::Pass> createClosureConversionPass();
 /// Create a pass expanding `ada.convert` into checks, casts and qualification.
 std::unique_ptr<mlir::Pass> createLowerAdaConversionsPass();
 
+/// Create a pass lowering formal objects and results to the value ABI.
+std::unique_ptr<mlir::Pass> createLowerAdaCallsPass();
+
 /// Create a pass lowering Ada object references and accesses to local storage.
 std::unique_ptr<mlir::Pass> createLowerAdaReferencesPass();
 

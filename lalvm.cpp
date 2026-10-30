@@ -230,14 +230,13 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 
-  // Lambda-lift up-level references and hoist nested subprograms to module
-  // level before mem2reg, so a captured local stays an alloca able to carry
-  // up-level writes. Then expand ada.convert, still before mem2reg and the
-  // generic lowering. Run only on the lowering path, leaving --emit=mlir as the
-  // nested dialect view.
+  // Lift and hoist subprograms before choosing their ABI. Expand conversions
+  // and lower references before memory promotion and LLVM lowering. Keep
+  // --emit=mlir as the nested dialect view.
   mlir::PassManager adaLoweringPm(module.get()->getName());
   adaLoweringPm.addPass(mlir::ada::createClosureConversionPass());
   adaLoweringPm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
+  adaLoweringPm.addPass(mlir::ada::createLowerAdaCallsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaConversionsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaReferencesPass());
   if (int error = runPassManager(adaLoweringPm, *module, timing))
@@ -460,6 +459,7 @@ int main(int argc, char **argv) {
   // Register the Ada passes too, so --mlir-print-ir-before/after accept them.
   mlir::registerPass(mlir::ada::createClosureConversionPass);
   mlir::registerPass(mlir::ada::createLowerAdaConversionsPass);
+  mlir::registerPass(mlir::ada::createLowerAdaCallsPass);
   mlir::registerPass(mlir::ada::createLowerAdaReferencesPass);
   mlir::registerPass(mlir::ada::createHoistNestedSymbolOperationsPass);
   mlir::registerPass(mlir::ada::createLowerToLLVMPass);

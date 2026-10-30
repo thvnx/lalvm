@@ -197,6 +197,31 @@ def DITypeRefAttr : AttrDef<Ada_Dialect, "DITypeRef"> {
   let assemblyFormat = "`<` $sym `>`";
 }
 
+// Source formal position, counting from zero, carried as FusedLoc metadata
+// so debug information preserves the original parameter number.
+def DIFormalAttr : AttrDef<Ada_Dialect, "DIFormal"> {
+  let mnemonic = "di_formal";
+  let summary = "Original Ada formal index for location metadata";
+  let parameters = (ins "uint32_t":$index);
+  let assemblyFormat = "`<` $index `>`";
+}
+
+// Original Ada signature, carried as FusedLoc metadata after ABI lowering.
+// The profile dictionary lists `formals` in source declaration order. Each
+// entry contains the source `type` and `mode`, plus an optional `abi_input`
+// index counting from zero. A missing index means there is no incoming ABI
+// value for that formal. Optional `result_type` records the Ada function
+// result. Procedures omit it regardless of additional ABI results for writable
+// formals. Debug lowering uses this to reconstruct the source signature.
+def DIProfileAttr : AttrDef<Ada_Dialect, "DIProfile"> {
+  let mnemonic = "di_profile";
+  let summary = "Ada source signature debug information metadata";
+  let parameters = (ins
+    AttrParameter<"::mlir::DictionaryAttr", "source signature">:$profile
+  );
+  let assemblyFormat = "`<` $profile `>`";
+}
+
 // Reference to an enclosing subprogram, carried as FusedLoc metadata to record
 // the DWARF scope of an op that has been moved away from its lexical parent.
 // Lets a later pass recover the original scope from the location alone, after

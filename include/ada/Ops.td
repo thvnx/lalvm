@@ -189,13 +189,14 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 
 // Introduces object identity independently of its storage representation.
 def ObjectOp : Ada_Op<"object", [
-    DeclareOpInterfaceMethods<PromotableAllocationOpInterface>]> {
+    DeclareOpInterfaceMethods<PromotableAllocationOpInterface>,
+    DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Declare an Ada object";
   let description = [{
     Declares an Ada object (@rm{3-3}) and returns its reference. Storage
     duration and elaboration follow the declaration's context. The optional
-    initializer must have the nominal qualified type. Without an initializer,
-    any required initialization must be represented explicitly.
+    initializer supplies its initial value. Without an initializer, any
+    required initialization must be represented explicitly.
 
     ```mlir
     %x = ada.object : !ada.ref<!ada.qual<i32, @integer>>
@@ -885,6 +886,14 @@ def SubpOp : Ada_Op<"subp", [
     It identifies an argument carrying a value from an enclosing scope.
     Captures follow the source formals and have no source `ada.mode`.
 
+    `ada.new_lowering` is a temporary unit subprogram attribute selecting
+    `LowerAdaCalls` while the value ABI is being introduced. Lowering consumes
+    this marker when replacing the subprogram with `func.func`.
+
+    For an `out` formal whose type has `Default_Value`, `LowerAdaCalls` queries
+    the type metadata and requires an incoming actual value without a nominal
+    subtype check.
+
     Example:
 
     ```mlir
@@ -917,6 +926,8 @@ def SubpOp : Ada_Op<"subp", [
     Region *getCallableRegion() { return &getBody(); }
     bool isProcedure() { return getFunctionType().getNumResults() == 0; }
     bool isFunction() { return getFunctionType().getNumResults() == 1; }
+    /// Number of source formals, excluding closure captures.
+    unsigned getNumSourceFormals();
     /// GNAT ABI name, derived from the qualified sym_name: split on the dot,
     /// operator-map each segment, and join with double underscores (e.g.
     /// proc.b.inner to proc__b__inner). Library subprogram units get the

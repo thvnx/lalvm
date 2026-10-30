@@ -512,11 +512,30 @@ llvm::LogicalResult ObjectOp::verify() {
   if (!function)
     return emitOpError("must be nested in a subprogram or function");
 
-  auto valueType = mlir::cast<RefType>(getType()).getValueType();
-  if (getInitial() && getInitial().getType() != valueType)
-    return emitOpError("initializer must have the object's nominal type ")
-           << valueType;
+  auto valueType =
+      mlir::cast<QualType>(mlir::cast<RefType>(getType()).getValueType());
+  if (getInitial() &&
+      mlir::cast<QualType>(getInitial().getType()).getMlirType() !=
+          valueType.getMlirType())
+    return emitOpError("initializer and object must share a machine type");
 
+  return mlir::success();
+}
+
+// The initializer may have the object's nominal type or its resolved base type.
+llvm::LogicalResult ObjectOp::verifySymbolUses(mlir::SymbolTableCollection &) {
+  if (!getInitial())
+    return mlir::success();
+  auto qual =
+      mlir::cast<QualType>(mlir::cast<RefType>(getType()).getValueType());
+  auto initial = mlir::cast<QualType>(getInitial().getType());
+  if (initial == qual)
+    return mlir::success();
+  auto base = baseOfAdaType(*this, qual.getAdaType());
+  if (!base || initial.getAdaType() != base ||
+      initial.getMlirType() != qual.getMlirType())
+    return emitOpError(
+        "initializer must have the object's nominal or base type");
   return mlir::success();
 }
 
@@ -1384,6 +1403,14 @@ void SubpOp::build(mlir::OpBuilder &odsBuilder, mlir::OperationState &odsState,
                    llvm::ArrayRef<mlir::NamedAttribute> attrs) {
   buildWithEntryBlock(odsBuilder, odsState, name, type, attrs,
                       type.getInputs());
+}
+
+unsigned SubpOp::getNumSourceFormals() {
+  unsigned count = getFunctionType().getNumInputs();
+  for (unsigned i = 0; i < count; ++i)
+    if (getArgAttr(i, "ada.capture"))
+      return i;
+  return count;
 }
 
 llvm::LogicalResult SubpOp::verify() {
