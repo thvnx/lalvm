@@ -19,10 +19,9 @@
 // captures. A static link would be required only for indirect calls through an
 // access-to-subprogram value, which is not yet supported.
 //
-// It must run before `mem2reg`: a captured local has to stay an alloca (passed
-// by `memref`) so the parameter can carry up-level writes back to the caller.
-// Once lifted, a captured local's address escapes through the call, so
-// `mem2reg` leaves it in memory on its own.
+// It must run before `mem2reg`: captured objects retain their references so
+// nested writes affect the same objects. Once lifted, those references escape
+// through calls and prevent promotion.
 //
 //===----------------------------------------------------------------------===//
 
@@ -116,9 +115,17 @@ void ClosureConversionPass::runOnOperation() {
       module.walk([&](ada::CallOp call) {
         if (call.getCallee() != name)
           return WalkResult::advance();
+        auto appendCaptures = [&](ValueRange values) {
+          call.getInputsMutable().append(values);
+          if (auto attrs = call.getArgAttrsAttr()) {
+            SmallVector<Attribute> extended(attrs.getValue());
+            extended.append(values.size(), rewriter.getDictionaryAttr({}));
+            call.setArgAttrsAttr(rewriter.getArrayAttr(extended));
+          }
+        };
         // A self-recursive call inside the body forwards the lifted parameters.
         if (subp->isProperAncestor(call)) {
-          call->insertOperands(call.getNumOperands(), liftedArgs);
+          appendCaptures(liftedArgs);
           return WalkResult::advance();
         }
         // An external call forwards the captured values, which are in scope at
@@ -137,7 +144,7 @@ void ClosureConversionPass::runOnOperation() {
           unsupported = true;
           return WalkResult::interrupt();
         }
-        call->insertOperands(call.getNumOperands(), ValueRange(captures));
+        appendCaptures(ValueRange(captures));
         return WalkResult::advance();
       });
       if (unsupported)

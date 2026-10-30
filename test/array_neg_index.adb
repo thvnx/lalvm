@@ -7,7 +7,7 @@
 
 -- CHECK: %[[FIRST:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = -5
 -- CHECK: %[[OFF:.*]] = ada.binop "-" %{{.*}}, %[[FIRST]]
--- CHECK: ada.index %{{.*}}[%[[OFF]]] : (memref<!ada.qual<!ada.array<i32[i32 x 11]>, @array_neg_index.vec>>, !ada.qual<i32, @standard.integer>) -> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
+-- CHECK: ada.index %{{.*}}[%[[OFF]]] : (memref<!ada.qual<!ada.array<i32[i32 x 11]>, @array_neg_index.vec>>, !ada.qual<i32, @standard.integer>) -> !ada.ref<!ada.qual<i32, @standard.integer>>
 
 procedure Array_Neg_Index is
    type Vec is array (-5 .. 5) of Integer;

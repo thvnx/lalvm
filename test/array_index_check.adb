@@ -6,7 +6,7 @@
 -- A dynamic index is checked against the index subtype before it is rebased,
 -- for a read and for a write. A static index in range needs no check.
 
--- CHECK:       %[[I:.*]] = memref.load %{{.*}}[] : memref<!ada.qual<i32, @standard.integer>>
+-- CHECK:       %[[I:.*]] = ada.read %{{.*}} : !ada.ref<!ada.qual<i32, @standard.integer>> -> !ada.qual<i32, @standard.integer>
 -- CHECK:       ada.index_check %{{.*}}, %{{.*}}
 -- CHECK:       ada.binop "-"
 -- CHECK:       ada.index
@@ -14,7 +14,7 @@
 -- CHECK:       ada.index_check
 -- CHECK:       ada.binop "-"
 -- CHECK:       ada.index
--- CHECK:       memref.store
+-- CHECK:       ada.write
 
 -- CHECK-NOT:   ada.index_check
 -- CHECK:       ada.index

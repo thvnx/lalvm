@@ -107,12 +107,11 @@ struct IndexOpLowering : OpConversionPattern<ada::IndexOp> {
 // FunctionOpLowering
 //===----------------------------------------------------------------------===//
 
-template <typename FuncOp>
-struct FunctionOpLowering : OpConversionPattern<FuncOp> {
-  using OpConversionPattern<FuncOp>::OpConversionPattern;
+struct FunctionOpLowering : OpConversionPattern<func::FuncOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(FuncOp op, typename OpConversionPattern<FuncOp>::OpAdaptor,
+  matchAndRewrite(func::FuncOp op, OpAdaptor,
                   ConversionPatternRewriter &rewriter) const override {
     const TypeConverter &converter = *this->getTypeConverter();
     auto type = op.getFunctionType();
@@ -136,11 +135,11 @@ struct FunctionOpLowering : OpConversionPattern<FuncOp> {
 // CallOpLowering
 //===----------------------------------------------------------------------===//
 
-struct CallOpLowering : OpConversionPattern<ada::CallOp> {
+struct CallOpLowering : OpConversionPattern<func::CallOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(ada::CallOp op, OpAdaptor adaptor,
+  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.modifyOpInPlace(op,
                              [&] { op->setOperands(adaptor.getOperands()); });
@@ -176,10 +175,9 @@ void LowerAdaReferencesPass::runOnOperation() {
   converter.addConversion([](Type type) { return type; });
   converter.addConversion([&](ada::RefType type) -> Type {
     auto qual = cast<ada::QualType>(type.getValueType());
-    auto base = ada::baseOfAdaType(module, qual.getAdaType());
-    if (!base)
+    auto element = ada::baseOfAdaType(module, qual);
+    if (!element)
       return {};
-    auto element = ada::QualType::get(&getContext(), qual.getMlirType(), base);
     return MemRefType::get({}, element);
   });
 
@@ -202,23 +200,17 @@ void LowerAdaReferencesPass::runOnOperation() {
              return converter.isLegal(&region);
            });
   });
-  target.addIllegalOp<ada::ObjectOp, ada::ReadOp, ada::WriteOp>();
-  target.addDynamicallyLegalOp<ada::SubpOp>([&](ada::SubpOp op) {
-    return converter.isSignatureLegal(op.getFunctionType()) &&
-           converter.isLegal(&op.getBody());
-  });
+  target.addIllegalOp<ada::ObjectOp, ada::ReadOp, ada::WriteOp, ada::SubpOp,
+                      ada::CallOp, ada::ReturnOp>();
   target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
     return converter.isSignatureLegal(op.getFunctionType()) &&
            converter.isLegal(&op.getBody());
   });
 
   RewritePatternSet patterns(&getContext());
-  // Keep ada.subp support during the ABI transition. Once LowerAdaCalls makes
-  // ada.subp illegal, only func.func conversion will be needed here.
   patterns.add<ObjectOpLowering, ReadOpLowering, WriteOpLowering,
-               IndexOpLowering, FunctionOpLowering<ada::SubpOp>,
-               FunctionOpLowering<func::FuncOp>, CallOpLowering>(converter,
-                                                                 &getContext());
+               IndexOpLowering, FunctionOpLowering, CallOpLowering>(
+      converter, &getContext());
   cf::populateCFStructuralTypeConversionsAndLegality(converter, patterns,
                                                      target);
   scf::populateSCFStructuralTypeConversionsAndLegality(converter, patterns,

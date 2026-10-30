@@ -9,7 +9,7 @@
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @test_boolean
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i1, @standard.boolean> = true
--- MLIR:         memref.store %[[C]], %{{.*}}[] : memref<!ada.qual<i1, @standard.boolean>>
+-- MLIR:         ada.object : !ada.ref<!ada.qual<i1, @standard.boolean>> <- %[[C]]
 -- MLIR:         ada.null
 -- MLIR-NEXT:    ada.return
 

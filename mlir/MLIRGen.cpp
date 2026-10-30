@@ -27,6 +27,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -246,6 +247,7 @@ private:
   // Canonical defining-name node -> the emitted ada.subp, for resolving calls
   // to the callee op (function type, procedure-vs-function).
   llvm::DenseMap<ada_base_node, mlir::ada::SubpOp> subpDecls;
+  llvm::DenseMap<mlir::Operation *, llvm::SmallVector<ada_node>> subpFormals;
 
   /// Return the canonical defining name for a defining-name node, collapsing
   /// spec/body and partial/full views. Falls back to the input on failure.
@@ -508,56 +510,94 @@ private:
     return it != declValues.end() ? it->second : mlir::Value{};
   }
 
-  /// Return the alloca pointer (memref<T>) for a variable expression without
-  /// emitting a load. Used to pass `in out` / `out` actual parameters by
-  /// reference. Ada requires the actual for such a formal to be a variable
-  /// (@rm{6-4-1}), so the resolved value is always a memref.
+  /// Resolve a writable actual once, retaining its object identity.
   mlir::Value resolveVarPtr(ada_node &expr) {
-    mlir::Value val = findVarValue(expr);
-    if (!val || !mlir::isa<mlir::MemRefType>(val.getType())) {
+    mlir::Value val;
+    if (ada_node_kind(&expr) == ada_call_expr) {
+      ada_call_expr_kind kind{};
+      if (ada_call_expr_p_kind(&expr, &kind) &&
+          kind == ADA_CALL_EXPR_KIND_ARRAY_INDEX)
+        val = indexedElementRef(expr);
+    } else {
+      val = findVarValue(expr);
+    }
+    if (!val || !mlir::isa<mlir::ada::RefType>(val.getType())) {
       mlir::emitError(loc(expr),
                       "actual for `in out`/`out` parameter must be a variable");
+      return nullptr;
+    }
+    auto decl = libadalang::referencedDecl(expr);
+    if (decl && ada_node_kind(&*decl) == ada_for_loop_var_decl) {
+      mlir::emitError(loc(expr), "loop parameter is not a writable actual");
       return nullptr;
     }
     return val;
   }
 
-  /// Whether reading `val` (a memref-backed variable) here precedes its first
-  /// write: no `memref.store` or by-reference `ada.call` user yet (IR is built
-  /// in source order, so only prior writes are present). Covers `out` params
-  /// and uninitialized object decls; `in out` params are caller-initialized.
+  /// Whether reading an object here precedes its first initialization or write.
+  /// IR is built in source order, so only prior uses are present.
   bool isReadBeforeFirstWrite(mlir::Value val) {
+    if (auto object = val.getDefiningOp<mlir::ada::ObjectOp>())
+      if (object.getInitial())
+        return false;
     if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(val)) {
       auto subp =
           mlir::dyn_cast<mlir::ada::SubpOp>(arg.getOwner()->getParentOp());
-      auto mode = subp ? subp.getArgAttrOfType<mlir::ada::AdaParamModeAttr>(
-                             arg.getArgNumber(), "ada.mode")
-                       : mlir::ada::AdaParamModeAttr();
-      if (!mode || mode.getValue() != mlir::ada::AdaParamMode::Out)
+      if (!subp || subp.formalNeedsInput(arg.getArgNumber()))
         return false;
     }
     return llvm::none_of(val.getUsers(), [](mlir::Operation *op) {
-      return mlir::isa<mlir::memref::StoreOp, mlir::ada::CallOp>(op);
+      return mlir::isa<mlir::ada::WriteOp, mlir::memref::StoreOp,
+                       mlir::ada::CallOp>(op);
     });
   }
 
-  /// Emit a variable reference. Resolves via Libadalang cross-reference to
-  /// the unique DefiningName node, then looks up the bound value.
-  /// For ObjectDecl variables (alloca-backed), emits a memref.load.
-  /// For `in`/default-in parameters (direct SSA values), returns the value
-  /// directly.
+  /// Read the nominal type when initialization is established, otherwise its
+  /// base.
+  mlir::Value readObject(mlir::Value reference, mlir::Location location,
+                         bool baseOnly = false) {
+    auto qual = mlir::cast<mlir::ada::QualType>(
+        mlir::cast<mlir::ada::RefType>(reference.getType()).getValueType());
+    bool initialized = false;
+    if (auto object = reference.getDefiningOp<mlir::ada::ObjectOp>())
+      initialized =
+          object.getInitial() && object.getInitial().getType() == qual;
+    if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(reference)) {
+      auto subp =
+          mlir::dyn_cast<mlir::ada::SubpOp>(arg.getOwner()->getParentOp());
+      initialized = subp && subp.getFormalMode(arg.getArgNumber()) ==
+                                mlir::ada::AdaParamMode::InOut;
+    }
+    for (mlir::Operation *user : reference.getUsers())
+      if (user->getBlock() == builder.getInsertionBlock() &&
+          mlir::isa<mlir::ada::WriteOp, mlir::ada::CallOp>(user))
+        initialized = true;
+    if (initialized && !baseOnly)
+      return mlir::ada::ReadOp::create(builder, location, qual, reference);
+    auto type = mlir::ada::baseOfAdaType(
+        builder.getInsertionBlock()->getParentOp(), qual);
+    if (!type) {
+      mlir::emitError(location, "unresolved object base type");
+      return {};
+    }
+    return mlir::ada::ReadOp::create(builder, location, type, reference);
+  }
+
+  /// Resolve a variable, reading its value when it denotes an object.
   mlir::Value mlirGenVariable(ada_node &expr) {
     if (mlir::Value val = findVarValue(expr)) {
-      if (auto memrefTy = mlir::dyn_cast<mlir::MemRefType>(val.getType())) {
+      if (mlir::isa<mlir::ada::RefType>(val.getType())) {
         if (isReadBeforeFirstWrite(val))
           mlir::emitWarning(loc(expr), "variable '")
               << libadalang::getName(&expr, false)
               << "' is read before first assignment";
+        return readObject(val, propagateAdaNameLoc(val, loc(expr)));
+      }
+      if (auto memref = mlir::dyn_cast<mlir::MemRefType>(val.getType()))
         return mlir::memref::LoadOp::create(builder,
                                             propagateAdaNameLoc(val, loc(expr)),
-                                            memrefTy.getElementType(), val);
-      }
-      return val; // direct SSA value (in/default-in parameter)
+                                            memref.getElementType(), val);
+      return val;
     }
 
     // Slow path: distinguish error kinds for better diagnostics.
@@ -1289,58 +1329,123 @@ private:
       return nullptr;
     }
 
-    // Evaluate arguments. Formals with a memref type (in out / out) receive the
-    // caller's alloca pointer directly; scalar formals (in) receive a value.
     auto funcTy = calleeSubp.getFunctionType();
-    llvm::SmallVector<mlir::Value> args;
+    unsigned count = funcTy.getNumInputs();
+    llvm::SmallVector<mlir::Value> args(count), snapshots(count), ranges(count);
+    llvm::SmallVector<int32_t> order;
     if (!ada_node_is_null(&suffix)) {
-      auto formalTypes = funcTy.getInputs();
-      int n = ada_node_children_count(&suffix);
-      for (int i = 0; i < n; ++i) {
-        ada_node assoc, r_expr;
-        ada_node_child(&suffix, i, &assoc);
-        ada_param_assoc_f_r_expr(&assoc, &r_expr);
-        if (mlir::isa<mlir::MemRefType>(formalTypes[i])) {
-          mlir::Value ptr = resolveVarPtr(r_expr);
-          if (!ptr)
+      ada_internal_param_actual_array bindings = nullptr;
+      if (!ada_assoc_list_p_zip_with_params(&suffix, false, &bindings) ||
+          !bindings) {
+        mlir::emitError(location, "failed to bind call associations");
+        return nullptr;
+      }
+      auto bindingsGuard = llvm::scope_exit(
+          [&] { ada_internal_param_actual_array_dec_ref(bindings); });
+      llvm::StringMap<unsigned> formalIndices;
+      for (auto [i, formal] : llvm::enumerate(subpFormals[calleeSubp]))
+        formalIndices[libadalang::getName(&formal)] = i;
+      llvm::DenseMap<ada_base_node, unsigned> actualFormals;
+      for (int b = 0; b < bindings->n; ++b) {
+        auto &binding = bindings->items[b];
+        auto formal = formalIndices.find(libadalang::getName(&binding.param));
+        if (formal != formalIndices.end())
+          actualFormals[binding.actual.node] = formal->second;
+      }
+      for (unsigned n = 0; n < ada_node_children_count(&suffix); ++n) {
+        ada_node assoc, expr;
+        ada_node_child(&suffix, n, &assoc);
+        ada_param_assoc_f_r_expr(&assoc, &expr);
+        auto formalIndex = actualFormals.find(expr.node);
+        if (formalIndex == actualFormals.end() || args[formalIndex->second]) {
+          mlir::emitError(loc(assoc),
+                          "failed to resolve formal for call association");
+          return nullptr;
+        }
+        unsigned i = formalIndex->second;
+        order.push_back(i);
+        mlir::Type formal = funcTy.getInput(i);
+        auto ref = mlir::dyn_cast<mlir::ada::RefType>(formal);
+        if (!ref) {
+          mlir::Value value = visit_expr(expr);
+          if (!value)
             return nullptr;
-          args.push_back(ptr);
-        } else {
-          mlir::Value val = visit_expr(r_expr);
-          if (!val)
+          args[i] = convertImplicitly(
+              value, mlir::cast<mlir::ada::QualType>(formal), loc(expr));
+          if (!args[i])
             return nullptr;
-          // Convert to the subtype of the formal (@rm{6-4-1}), at the actual.
-          if (auto formalTyped =
-                  mlir::dyn_cast<mlir::ada::QualType>(formalTypes[i])) {
-            val = convertImplicitly(val, formalTyped, loc(r_expr));
-            if (!val)
+          continue;
+        }
+        args[i] = resolveVarPtr(expr);
+        if (!args[i])
+          return nullptr;
+        bool inOut =
+            calleeSubp.getFormalMode(i) == mlir::ada::AdaParamMode::InOut;
+        if (calleeSubp.formalNeedsInput(i)) {
+          mlir::Value value = readObject(args[i], loc(expr), !inOut);
+          if (!value)
+            return nullptr;
+          auto nominal = mlir::cast<mlir::ada::QualType>(ref.getValueType());
+          if (inOut)
+            value = convertImplicitly(value, nominal, loc(expr));
+          else {
+            auto base = mlir::ada::baseOfAdaType(calleeSubp, nominal);
+            if (!base) {
+              mlir::emitError(loc(expr), "unresolved formal base type");
               return nullptr;
+            }
+            value = mlir::ada::requalify(builder, loc(expr), value, base);
           }
-          args.push_back(val);
+          if (!value)
+            return nullptr;
+          snapshots[i] = value;
+        }
+        auto actual = mlir::cast<mlir::ada::QualType>(
+            mlir::cast<mlir::ada::RefType>(args[i].getType()).getValueType());
+        auto actualType = mlir::ada::lookupAdaType(
+            builder.getInsertionBlock()->getParentOp(), actual.getAdaType());
+        if (actualType && actualType.hasDynamicRange()) {
+          ranges[i] = findDynamicRange(actual.getAdaType());
+          if (!ranges[i]) {
+            mlir::emitError(loc(expr), "missing dynamic actual subtype range");
+            return nullptr;
+          }
         }
       }
     }
-
+    if (order.size() != count) {
+      mlir::emitError(location, "omitted default arguments are not supported");
+      return nullptr;
+    }
+    llvm::SmallVector<mlir::Value> initialValues, copybackRanges;
+    llvm::SmallVector<int32_t> initialFormals, rangeFormals;
+    for (unsigned i = 0; i < count; ++i) {
+      if (snapshots[i]) {
+        initialValues.push_back(snapshots[i]);
+        initialFormals.push_back(i);
+      }
+      if (ranges[i]) {
+        copybackRanges.push_back(ranges[i]);
+        rangeFormals.push_back(i);
+      }
+    }
     auto calleeRef = mlir::FlatSymbolRefAttr::get(builder.getContext(),
                                                   resolveSymbol(defName));
 
-    if (calleeSubp.isFunction()) {
-      ada_node type_decl;
-      if (!ada_expr_p_expression_type(&call, &type_decl) ||
-          ada_node_is_null(&type_decl)) {
-        mlir::emitError(location,
-                        "failed to resolve return type of function call");
-        return nullptr;
-      }
-      mlir::ada::QualType retType = getAdaQualType(type_decl, location);
-      if (!retType)
-        return nullptr;
-      return mlir::ada::CallOp::create(builder, location, calleeRef, retType,
-                                       args);
-    }
-
-    return mlir::ada::CallOp::create(builder, location, calleeRef, mlir::Type{},
-                                     args);
+    mlir::Type resultType =
+        calleeSubp.isFunction() ? funcTy.getResult(0) : mlir::Type{};
+    auto result =
+        mlir::ada::CallOp::create(builder, location, calleeRef, resultType,
+                                  args, initialValues, copybackRanges);
+    if (!llvm::is_sorted(order))
+      result->setAttr("ada.actual_order", builder.getDenseI32ArrayAttr(order));
+    if (!initialFormals.empty())
+      result->setAttr("ada.initial_formals",
+                      builder.getDenseI32ArrayAttr(initialFormals));
+    if (!rangeFormals.empty())
+      result->setAttr("ada.range_formals",
+                      builder.getDenseI32ArrayAttr(rangeFormals));
+    return result;
   }
 
   /// Emit a function call used in expression context, returning its result.
@@ -1519,16 +1624,11 @@ private:
         builder, location, indexQual, mlir::ada::AdaBinaryOp::Minus, rawIndex,
         first, mlir::ada::AdaChecksAttr{});
 
-    // Element location: memref<!ada.qual<component, @c>, strided<[], offset:
-    // ?>>.
-    // @todo The StridedLayout is not used at the moment but will be required to
-    // support slices.
+    // Keep the selected component's identity through call lowering.
     auto eltQual = mlir::ada::QualType::get(
         builder.getContext(), layout.getComponentType(), info.getComponent());
 
-    auto strided = mlir::StridedLayoutAttr::get(
-        builder.getContext(), mlir::ShapedType::kDynamic, /*strides=*/{});
-    auto resultTy = mlir::MemRefType::get(/*shape=*/{}, eltQual, strided);
+    auto resultTy = mlir::ada::RefType::get(builder.getContext(), eltQual);
 
     return mlir::ada::IndexOp::create(builder, location, resultTy, arrayRef,
                                       offset);
@@ -1537,11 +1637,7 @@ private:
   /// Emit an array index result.
   mlir::Value mlirGenIndexValue(ada_node &index) {
     mlir::Value elt = indexedElementRef(index);
-    if (!elt)
-      return nullptr;
-    return mlir::memref::LoadOp::create(
-        builder, loc(index),
-        mlir::cast<mlir::MemRefType>(elt.getType()).getElementType(), elt);
+    return elt ? readObject(elt, loc(index)) : mlir::Value{};
   }
 
   /// Emit a scalar attribute reference (@rm{3-5}): `'First`/`'Last` on an
@@ -2398,12 +2494,11 @@ private:
     return true;
   }
 
-  /// Emit an object declaration (@rm{3-3-1}): for each identifier, an
-  /// `ada.alloca` (an SSA value for a constant), initialized from the
-  /// expression or the type's Default_Value aspect. The subtype indication
-  /// gives the object's nominal subtype (a range constraint in it gives each
-  /// object its own anonymous subtype, see emitAnonymousSubtype), so its
-  /// initializer and assignments are range checked.
+  /// Emit an object declaration (@rm{3-3-1}) with its explicit or default
+  /// initialization. The subtype indication gives the object's nominal subtype
+  /// (a range constraint in it gives each object its own anonymous subtype, see
+  /// emitAnonymousSubtype), so its initializer and assignments are range
+  /// checked.
   ///
   /// @todo Only a subtype indication is supported: no access definition, array
   /// type definition, single task or protected declaration, deferred constant
@@ -2504,17 +2599,20 @@ private:
             if (!init)
               return mlir::failure();
           }
-        auto allocaOp = mlir::ada::AllocaOp::create(builder, loc(id), objType);
-        setAdaNameLoc(mlir::Value(allocaOp), nameAttr);
-        mlir::Value ptr = allocaOp;
         if (init) {
-          // Convert to the object's subtype (@rm{3-3-1}).
           init = convertImplicitly(init, elemType, loc(id));
           if (!init)
             return mlir::failure();
-          auto storeOp =
-              mlir::memref::StoreOp::create(builder, loc(id), init, ptr);
-          setAdaNameLoc(storeOp, nameAttr);
+        }
+        mlir::Value ptr;
+        if (mlir::ada::isNumericMachineType(elemType.getMlirType())) {
+          ptr = mlir::ada::ObjectOp::create(
+              builder, loc(id),
+              mlir::ada::RefType::get(builder.getContext(), elemType), init);
+          setAdaNameLoc(ptr, nameAttr);
+        } else {
+          ptr = mlir::ada::AllocaOp::create(builder, loc(id), objType);
+          setAdaNameLoc(ptr, nameAttr);
         }
         declare(id, ptr);
       }
@@ -2708,22 +2806,10 @@ private:
 
     builder.setInsertionPointToStart(entryBlock);
 
-    // Bind parameters. `in` / default parameters are direct SSA values.
-    // `in out` / `out` parameters have memref<T> type and carry the caller's
-    // alloca pointer; stores to them are immediately visible at the call site.
-    // `out` parameters are additionally marked uninitialized.
+    // Bind source formals. Writable formals denote independent objects whose
+    // initial and final values are transferred by LowerAdaCalls.
     for (auto [entry, arg] : llvm::zip(*params, entryBlock->getArguments())) {
       arg.setLoc(mlir::NameLoc::get(getNameAttr(entry.id), loc(entry.id)));
-      // Record `out` / `in out` mode as an `ada.mode` arg attr (`in` is the
-      // implicit default); the uninitialized-read check and later passes read
-      // it back to tell the two by-reference modes apart.
-      if (entry.mode == ada_mode_out || entry.mode == ada_mode_in_out)
-        mlir::cast<mlir::ada::SubpOp>(op).setArgAttr(
-            arg.getArgNumber(), "ada.mode",
-            mlir::ada::AdaParamModeAttr::get(
-                builder.getContext(), entry.mode == ada_mode_out
-                                          ? mlir::ada::AdaParamMode::Out
-                                          : mlir::ada::AdaParamMode::InOut));
       declare(entry.id, arg);
     }
 
@@ -2798,7 +2884,8 @@ private:
         mlir::Operation *first = nullptr;
         for (mlir::Operation &o : *b)
           if (!mlir::isa<mlir::ada::NullOp, mlir::memref::LoadOp,
-                         mlir::memref::StoreOp>(o)) {
+                         mlir::memref::StoreOp, mlir::ada::ReadOp,
+                         mlir::ada::WriteOp>(o)) {
             first = &o;
             break;
           }
@@ -3600,6 +3687,13 @@ private:
 
     llvm::SmallVector<SubpParam, 4> result;
     for (int i = 0; i < params->n; i++) {
+      ada_node aliased;
+      ada_param_spec_f_has_aliased(&params->items[i], &aliased);
+      if (ada_node_kind(&aliased) == ada_aliased_present) {
+        mlir::emitError(loc(aliased),
+                        "explicitly aliased parameters are not supported");
+        return std::nullopt;
+      }
       ada_node mode_node, type_expr, ids;
       ada_param_spec_f_mode(&params->items[i], &mode_node);
       ada_param_spec_f_type_expr(&params->items[i], &type_expr);
@@ -3632,9 +3726,9 @@ private:
         return nullptr;
       bool writable =
           param.mode == ada_mode_in_out || param.mode == ada_mode_out;
-      argTypes.push_back(writable
-                             ? mlir::Type(mlir::MemRefType::get({}, paramType))
-                             : mlir::Type(paramType));
+      argTypes.push_back(writable ? mlir::Type(mlir::ada::RefType::get(
+                                        builder.getContext(), paramType))
+                                  : mlir::Type(paramType));
     }
 
     llvm::SmallVector<mlir::Type, 1> retTypes;
@@ -3662,6 +3756,19 @@ private:
     // visibility.
     if (!mlir::isa<mlir::ModuleOp>(subpOp->getParentOp()))
       subpOp.setPrivate();
+    for (auto [i, param] : llvm::enumerate(params)) {
+      subpFormals[subpOp].push_back(param.id);
+      if (param.mode == ada_mode_default)
+        continue;
+      auto mode = mlir::ada::AdaParamMode::In;
+      if (param.mode == ada_mode_out)
+        mode = mlir::ada::AdaParamMode::Out;
+      else if (param.mode == ada_mode_in_out)
+        mode = mlir::ada::AdaParamMode::InOut;
+      subpOp.setArgAttr(
+          i, "ada.mode",
+          mlir::ada::AdaParamModeAttr::get(builder.getContext(), mode));
+    }
     subpDecls[canon.node] = subpOp;
 
     return subpOp;
@@ -3724,23 +3831,28 @@ private:
       return mlir::failure();
     }
 
-    if (!mlir::isa<mlir::MemRefType>(ptr.getType())) {
+    if (!mlir::isa<mlir::MemRefType, mlir::ada::RefType>(ptr.getType())) {
       mlir::emitError(loc(dest_node), "cannot assign to '")
           << libadalang::getName(&dest_node, false) << "'";
       return mlir::failure();
     }
 
     // Convert to the subtype of the target (@rm{5-2}(11)).
-    auto memrefTy = mlir::cast<mlir::MemRefType>(ptr.getType());
-    if (auto elemType =
-            mlir::dyn_cast<mlir::ada::QualType>(memrefTy.getElementType())) {
+    mlir::Type element =
+        mlir::isa<mlir::ada::RefType>(ptr.getType())
+            ? mlir::cast<mlir::ada::RefType>(ptr.getType()).getValueType()
+            : mlir::cast<mlir::MemRefType>(ptr.getType()).getElementType();
+    if (auto elemType = mlir::dyn_cast<mlir::ada::QualType>(element)) {
       rhs = convertImplicitly(rhs, elemType, loc(assign_stmt));
       if (!rhs)
         return mlir::failure();
     }
 
-    mlir::memref::StoreOp::create(
-        builder, propagateAdaNameLoc(ptr, loc(dest_node)), rhs, ptr);
+    auto location = propagateAdaNameLoc(ptr, loc(dest_node));
+    if (mlir::isa<mlir::ada::RefType>(ptr.getType()))
+      mlir::ada::WriteOp::create(builder, location, rhs, ptr);
+    else
+      mlir::memref::StoreOp::create(builder, location, rhs, ptr);
     return mlir::success();
   }
 

@@ -1,12 +1,9 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
--- Verify the alloca-based IR at -O0 (the default): locals stay in memory, so
--- B's alloca and store are visible. -O1 runs mem2reg to promote them to SSA,
--- leaving just the constant (see test_boolean.adb).
+-- Verify the object and its initializer before reference lowering.
 -- CHECK-LABEL: ada.subp @test_boolean_pre_mem2reg
 -- CHECK:         %[[C:.*]] = ada.constant : !ada.qual<i1, @standard.boolean> = true
--- CHECK-NEXT:    %[[PTR:.*]] = ada.alloca : memref<!ada.qual<i1, @standard.boolean>>
--- CHECK-NEXT:    memref.store %[[C]], %[[PTR]][] : memref<!ada.qual<i1, @standard.boolean>>
+-- CHECK-NEXT:    %[[PTR:.*]] = ada.object : !ada.ref<!ada.qual<i1, @standard.boolean>> <- %[[C]]
 -- CHECK-NEXT:    ada.null
 -- CHECK-NEXT:    ada.return
 

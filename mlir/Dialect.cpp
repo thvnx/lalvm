@@ -357,6 +357,11 @@ bool TypeOp::hasDefaultValue() {
   return false;
 }
 
+bool TypeOp::hasDynamicRange() {
+  auto info = mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(getTypeInfoAttr());
+  return info && !info.staticBounds();
+}
+
 llvm::LogicalResult TypeOp::verify() {
   if (mlir::Attribute info = getTypeInfoAttr()) {
     if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr,
@@ -852,9 +857,7 @@ llvm::LogicalResult ConvertOp::verifySymbolUses(mlir::SymbolTableCollection &) {
   TypeOp typeOp = lookupAdaType(*this, target.getAdaType());
   if (!typeOp || !typeOp.getBaseAttr())
     return mlir::success();
-  auto info =
-      mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr());
-  if (info && !info.staticBounds())
+  if (typeOp.hasDynamicRange())
     return emitOpError() << "target subtype " << target.getAdaType()
                          << " has a dynamic bound but no range operand";
   return mlir::success();
@@ -1413,6 +1416,22 @@ unsigned SubpOp::getNumSourceFormals() {
   return count;
 }
 
+AdaParamMode SubpOp::getFormalMode(unsigned index) {
+  auto mode = getArgAttrOfType<AdaParamModeAttr>(index, "ada.mode");
+  return mode ? mode.getValue() : AdaParamMode::In;
+}
+
+bool SubpOp::formalNeedsInput(unsigned index) {
+  if (getFormalMode(index) != AdaParamMode::Out)
+    return true;
+  auto ref = mlir::dyn_cast<RefType>(getFunctionType().getInput(index));
+  if (!ref)
+    return false;
+  auto qual = mlir::cast<QualType>(ref.getValueType());
+  auto type = lookupAdaType(*this, qual.getAdaType());
+  return type && type.hasDefaultValue();
+}
+
 llvm::LogicalResult SubpOp::verify() {
   for (mlir::Type result : getFunctionType().getResults())
     if (mlir::isa<RefType>(result))
@@ -1518,6 +1537,12 @@ mlir::FlatSymbolRefAttr mlir::ada::baseOfAdaType(mlir::Operation *from,
   if (!typeOp)
     return {};
   return typeOp.getBaseAttr() ? typeOp.getBaseAttr() : sym;
+}
+
+QualType mlir::ada::baseOfAdaType(mlir::Operation *from, QualType type) {
+  auto base = baseOfAdaType(from, type.getAdaType());
+  return base ? QualType::get(type.getContext(), type.getMlirType(), base)
+              : QualType{};
 }
 
 TypeOp mlir::ada::rootOfAdaType(TypeOp typeOp) {
@@ -1650,9 +1675,8 @@ mlir::Location mlir::ada::attachAdaTypeRef(mlir::Location loc,
 // CallOp
 //===----------------------------------------------------------------------===//
 
-/// Callee resolution for `verifySymbolUses`'s best-effort
-/// procedure-vs-function check; MLIRGen resolves calls by node identity, not
-/// through this.
+/// Resolve a callee symbol for dialect verification and lowering. MLIRGen
+/// resolves source calls by Libadalang node identity instead.
 mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
                                       llvm::StringRef name) {
   return mlir::ada::lookupSymbolFrom(from, name);
@@ -1661,13 +1685,49 @@ mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
 llvm::LogicalResult CallOp::verify() {
   if (getResult() && mlir::isa<RefType>(getResult().getType()))
     return emitOpError("cannot return an object reference");
+  for (llvm::StringRef name :
+       {"ada.actual_order", "ada.initial_formals", "ada.range_formals"})
+    if (auto attr = (*this)->getAttr(name))
+      if (!mlir::isa<mlir::DenseI32ArrayAttr>(attr))
+        return emitOpError() << name << " must be a dense i32 array";
+  if (auto attrs = getArgAttrsAttr())
+    if (attrs.size() != getInputs().size())
+      return emitOpError("arg_attrs must match the logical arguments");
+  if (auto attrs = getResAttrsAttr())
+    if (attrs.size() != getNumResults())
+      return emitOpError("res_attrs must match the source results");
+  for (auto [name, count] :
+       {std::pair<llvm::StringRef, size_t>{"ada.initial_formals",
+                                           getInitialValues().size()},
+        {"ada.range_formals", getCopybackRanges().size()}}) {
+    auto indices = (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>(name);
+    if ((!indices && count) ||
+        (indices && static_cast<size_t>(indices.size()) != count))
+      return emitOpError() << name << " must map each operand to a formal";
+    if (!indices)
+      continue;
+    int32_t previous = -1;
+    for (int32_t index : indices.asArrayRef()) {
+      if (index <= previous || static_cast<size_t>(index) >= getInputs().size())
+        return emitOpError()
+               << name << " must contain increasing formal indices";
+      previous = index;
+    }
+  }
+  if (auto order =
+          (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>("ada.actual_order")) {
+    llvm::SmallVector<bool> seen(order.size(), false);
+    for (int32_t index : order.asArrayRef()) {
+      if (index < 0 || static_cast<size_t>(index) >= seen.size() || seen[index])
+        return emitOpError(
+            "ada.actual_order must be a permutation of source formals");
+      seen[index] = true;
+    }
+  }
   return mlir::success();
 }
 
 llvm::LogicalResult CallOp::verifySymbolUses(mlir::SymbolTableCollection &) {
-  // External callees (defined in other Ada units) are not in this module and
-  // will not be found; their signature is validated by Libadalang before
-  // MLIRGen runs. Link-time resolution handles the rest.
   auto subp = mlir::dyn_cast_or_null<SubpOp>(lookupCallee(*this, getCallee()));
   if (!subp)
     return mlir::success();
@@ -1678,6 +1738,76 @@ llvm::LogicalResult CallOp::verifySymbolUses(mlir::SymbolTableCollection &) {
   if (subp.isFunction() && !getResult())
     return emitOpError() << "callee '" << getCallee()
                          << "' is a function but call carries no result";
+  auto type = subp.getFunctionType();
+  if (getInputs().size() != type.getNumInputs())
+    return emitOpError("logical arguments must match the callee signature");
+  if (getResult() && getResult().getType() != type.getResult(0))
+    return emitOpError("result type must match the callee result");
+
+  unsigned sourceCount = subp.getNumSourceFormals();
+  if (auto order =
+          (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>("ada.actual_order"))
+    if (order.size() != sourceCount)
+      return emitOpError("ada.actual_order must cover all source formals");
+
+  auto initialIndices =
+      (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>("ada.initial_formals");
+  auto rangeIndices =
+      (*this)->getAttrOfType<mlir::DenseI32ArrayAttr>("ada.range_formals");
+  unsigned initialPos = 0, rangePos = 0;
+  for (unsigned i = 0; i < type.getNumInputs(); ++i) {
+    mlir::Type formal = type.getInput(i);
+    mlir::Type actual = getInputs()[i].getType();
+    auto mode = i < sourceCount ? subp.getFormalMode(i) : AdaParamMode::In;
+    bool writable = i < sourceCount && mode != AdaParamMode::In;
+    bool hasInitial = initialIndices && initialPos < initialIndices.size() &&
+                      initialIndices[initialPos] == static_cast<int32_t>(i);
+    bool hasRange = rangeIndices && rangePos < rangeIndices.size() &&
+                    rangeIndices[rangePos] == static_cast<int32_t>(i);
+    if (!writable) {
+      if (actual != formal)
+        return emitOpError(
+            "value and capture arguments must match their formal types");
+      if (hasInitial || hasRange)
+        return emitOpError(
+            "only writable source formals have snapshots or copyback ranges");
+      continue;
+    }
+    auto formalRef = mlir::dyn_cast<RefType>(formal);
+    auto actualRef = mlir::dyn_cast<RefType>(actual);
+    if (!formalRef || !actualRef)
+      return emitOpError(
+          "writable arguments and formals require ada.ref types");
+    auto formalQual = mlir::cast<QualType>(formalRef.getValueType());
+    auto actualQual = mlir::cast<QualType>(actualRef.getValueType());
+    auto base = baseOfAdaType(*this, formalQual);
+    if (!base || base != baseOfAdaType(*this, actualQual))
+      return emitOpError(
+          "writable actual and formal must share an Ada base and machine type");
+    if (hasInitial != subp.formalNeedsInput(i))
+      return emitOpError("missing or unexpected writable formal snapshot");
+    if (hasInitial) {
+      auto expected = mode == AdaParamMode::InOut ? formalQual : base;
+      if (getInitialValues()[initialPos++].getType() != expected)
+        return emitOpError(
+            "snapshot type does not match the formal input type");
+    }
+    auto actualType = lookupAdaType(*this, actualQual.getAdaType());
+    bool needsRange = actualType && actualType.hasDynamicRange();
+    if (hasRange != needsRange)
+      return emitOpError("missing or unexpected dynamic copyback range");
+    if (hasRange) {
+      auto range =
+          mlir::dyn_cast<RangeType>(getCopybackRanges()[rangePos++].getType());
+      if (!range || range.getConstrainedType() != actualQual.getAdaType() ||
+          range.getBoundType() != actualQual.getMlirType())
+        return emitOpError("copyback range must describe the actual subtype");
+    }
+  }
+  if (initialPos != getInitialValues().size() ||
+      rangePos != getCopybackRanges().size())
+    return emitOpError(
+        "snapshots and ranges must map to writable source formals");
   return mlir::success();
 }
 
@@ -1685,11 +1815,19 @@ llvm::LogicalResult CallOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 /// result) and a non-null type for function calls (one result).
 void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
                    mlir::FlatSymbolRefAttr callee, mlir::Type resultType,
-                   mlir::ValueRange operands) {
+                   mlir::ValueRange operands, mlir::ValueRange initialValues,
+                   mlir::ValueRange copybackRanges) {
   if (resultType)
     state.addTypes(resultType);
   state.addAttribute(getCalleeAttrName(state.name), callee);
   state.addOperands(operands);
+  state.addOperands(initialValues);
+  state.addOperands(copybackRanges);
+  state.addAttribute("operandSegmentSizes",
+                     builder.getDenseI32ArrayAttr(
+                         {static_cast<int32_t>(operands.size()),
+                          static_cast<int32_t>(initialValues.size()),
+                          static_cast<int32_t>(copybackRanges.size())}));
 }
 
 //===----------------------------------------------------------------------===//

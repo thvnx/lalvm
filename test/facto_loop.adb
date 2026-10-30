@@ -1,12 +1,13 @@
--- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- Iterative factorial via a nested function and a while loop (RM 5.5): the
 -- header tests `I <= X` and the body accumulates `Result * I`. Compare with the
 -- recursive `facto.adb`.
 
--- MLIR-LABEL: ada.subp @facto_loop
--- MLIR:         ada.subp private @facto_loop.f(%x: !ada.qual<i32, @standard.integer>)
+-- MLIR-LABEL: func.func @_ada_facto_loop
+-- MLIR:         call @facto_loop__f
+-- MLIR:         func.func private @facto_loop__f(%x: !ada.qual<i32, @standard.integer>)
 -- MLIR:           cf.br ^[[HDR:bb[0-9]+]](
 -- MLIR:         ^[[HDR]](
 -- MLIR:           ada.cmp "<=" %{{.*}}, %x : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
@@ -16,8 +17,7 @@
 -- MLIR:           ada.binop "*"
 -- MLIR:           cf.br ^[[HDR]](
 -- MLIR:         ^[[MERGE]]:
--- MLIR:           ada.return
--- MLIR:         ada.call @facto_loop.f
+-- MLIR:           return
 
 -- LLVM:      define internal i32 @facto_loop__f(
 -- LLVM:        phi i32

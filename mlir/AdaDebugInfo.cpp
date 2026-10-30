@@ -246,6 +246,20 @@ fallbackDIType(MLIRContext *ctx, mlir::Type mlirType,
   return {};
 }
 
+/// Resolve a source signature type, preserving Ada type identity when present.
+static LLVM::DITypeAttr
+sourceDIType(MLIRContext *ctx, Type type,
+             llvm::DenseMap<mlir::StringAttr, ada::TypeOp> &typeOpByName,
+             llvm::DenseMap<mlir::Type, ada::TypeOp> &typeOpCache) {
+  if (!type)
+    return {};
+  if (auto qual = dyn_cast<ada::QualType>(type)) {
+    auto typeOp = typeOpByName.lookup(qual.getAdaType().getAttr());
+    return typeOp ? makeDITypeAttr(ctx, typeOp) : LLVM::DITypeAttr{};
+  }
+  return fallbackDIType(ctx, type, typeOpCache);
+}
+
 static DictionaryAttr getSourceProfile(Operation *op) {
   auto profile =
       op->getLoc()->findInstanceOf<FusedLocWith<ada::DIProfileAttr>>();
@@ -394,21 +408,12 @@ struct AdaDebugInfoPass
         SmallVector<LLVM::DITypeAttr> types{returnType};
         if (auto profile = getSourceProfile(func)) {
           auto result = profile.getAs<TypeAttr>("result_type");
-          auto resultQual = result ? dyn_cast<ada::QualType>(result.getValue())
-                                   : ada::QualType{};
-          auto resultOp =
-              resultQual
-                  ? typeOpByName.lookup(resultQual.getAdaType().getAttr())
-                  : ada::TypeOp{};
-          types[0] =
-              resultOp ? makeDITypeAttr(ctx, resultOp) : LLVM::DITypeAttr{};
+          types[0] = sourceDIType(ctx, result ? result.getValue() : Type{},
+                                  typeOpByName, typeOpCache);
           for (Attribute attr : profile.getAs<ArrayAttr>("formals")) {
             auto formal = cast<DictionaryAttr>(attr);
-            auto qual =
-                cast<ada::QualType>(formal.getAs<TypeAttr>("type").getValue());
-            auto typeOp = typeOpByName.lookup(qual.getAdaType().getAttr());
-            types.push_back(typeOp ? makeDITypeAttr(ctx, typeOp)
-                                   : LLVM::DITypeAttr{});
+            Type type = formal.getAs<TypeAttr>("type").getValue();
+            types.push_back(sourceDIType(ctx, type, typeOpByName, typeOpCache));
           }
         } else {
           for (BlockArgument arg : func.getBody().front().getArguments()) {

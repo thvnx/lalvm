@@ -5,7 +5,7 @@
 
 -- Comparison operands, on the base type.
 
--- CHECK: %[[Y:.*]] = memref.load
+-- CHECK: %[[Y:.*]] = ada.read
 -- CHECK-NEXT: ada.cmp "=" %[[Y]], %i : (!ada.qual<i32, @comparison_operand.small>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 
 function Comparison_Operand (I : Integer) return Boolean is

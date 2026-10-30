@@ -1,10 +1,10 @@
 -- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s
 
--- An `in out` parameter is passed by reference, so it is described with
--- #dbg_declare on the incoming pointer, with a DILocalVariable arg: 1.
+-- Writable formals are described on their local object, with source numbering.
 
--- CHECK-LABEL: define internal void @{{.*}}increment(ptr
--- CHECK:         #dbg_declare(ptr %0,
+-- CHECK-LABEL: define internal i32 @{{.*}}increment(
+-- CHECK:         %[[OBJECT:.*]] = alloca i32
+-- CHECK:         #dbg_declare(ptr %[[OBJECT]],
 -- CHECK:         DILocalVariable(name: "x", arg: 1,
 
 function Param_In_Out return Integer is

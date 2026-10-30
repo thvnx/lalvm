@@ -15,11 +15,11 @@
 -- MLIR:         ada.binop "+"
 -- MLIR:         ada.return
 
--- LLVM-LABEL: define void @_ada_goto_forward(
+-- LLVM-LABEL: define i32 @_ada_goto_forward(
 -- LLVM:         br i1
 -- LLVM:         br label %[[DONE:[0-9]+]]
 -- LLVM:       [[DONE]]:
--- LLVM:         ret void
+-- LLVM:         ret i32
 
 procedure Goto_Forward (X : in out Integer) is
 begin

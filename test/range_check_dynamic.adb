@@ -13,7 +13,7 @@
 -- MLIR:         %[[R:.*]] = ada.range %[[LO]], %n : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_dynamic.s>
 -- MLIR:         ada.convert implicit %m, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_dynamic.s>
 
--- LOWERED-LABEL: ada.subp @_ada_range_check_dynamic
+-- LOWERED-LABEL: func.func @_ada_range_check_dynamic
 -- LOWERED:         %[[R:.*]] = ada.range %{{.*}}, %n
 -- LOWERED:         ada.range_check %m, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_dynamic.s>
 

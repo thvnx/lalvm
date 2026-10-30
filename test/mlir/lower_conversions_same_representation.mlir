@@ -14,19 +14,19 @@ module {
   // CHECK-LABEL: IR Dump After {{.*}}ada-lower-conversions
 
   // The check establishes the target subtype.
-  // CHECK-LABEL: ada.subp @_ada_to_constrained
+  // CHECK-LABEL: func.func @_ada_to_constrained
   // CHECK:         %[[LO:.*]] = ada.constant : !ada.qual<i32, @integer> = 1
   // CHECK:         %[[HI:.*]] = ada.constant : !ada.qual<i32, @integer> = 2147483647
   // CHECK:         %[[R:.*]] = ada.range %[[LO]], %[[HI]] : !ada.qual<i32, @integer> -> !ada.range<i32, @positive>
   // CHECK:         %[[C:.*]] = ada.range_check %arg0, %[[R]] : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
-  // CHECK:         ada.return %[[C]]
+  // CHECK:         return %[[C]]
   ada.subp @to_constrained(%v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @positive> {
     %r = ada.convert explicit %v : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
     ada.return %r : !ada.qual<i32, @positive>
   }
 
   // A source range not within the target's is checked too.
-  // CHECK-LABEL: ada.subp @_ada_to_narrower
+  // CHECK-LABEL: func.func @_ada_to_narrower
   // CHECK:         ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @natural> to !ada.qual<i32, @positive>
   ada.subp @to_narrower(%v: !ada.qual<i32, @natural>) -> !ada.qual<i32, @positive> {
     %r = ada.convert implicit %v : !ada.qual<i32, @natural> to !ada.qual<i32, @positive>
@@ -34,13 +34,13 @@ module {
   }
 
   // No check into a base type or a renaming.
-  // CHECK-LABEL: ada.subp @_ada_to_base
+  // CHECK-LABEL: func.func @_ada_to_base
   // CHECK:         ada.requalify %arg0 : !ada.qual<i32, @positive> to !ada.qual<i32, @integer>
   ada.subp @to_base(%v: !ada.qual<i32, @positive>) -> !ada.qual<i32, @integer> {
     %r = ada.convert implicit %v : !ada.qual<i32, @positive> to !ada.qual<i32, @integer>
     ada.return %r : !ada.qual<i32, @integer>
   }
-  // CHECK-LABEL: ada.subp @_ada_to_renaming
+  // CHECK-LABEL: func.func @_ada_to_renaming
   // CHECK:         ada.requalify %arg0 : !ada.qual<i32, @integer> to !ada.qual<i32, @int>
   ada.subp @to_renaming(%v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @int> {
     %r = ada.convert implicit %v : !ada.qual<i32, @integer> to !ada.qual<i32, @int>
@@ -48,7 +48,7 @@ module {
   }
 
   // No check either from a source range within the target's.
-  // CHECK-LABEL: ada.subp @_ada_to_wider
+  // CHECK-LABEL: func.func @_ada_to_wider
   // CHECK-NOT:     ada.range_check
   // CHECK:         ada.requalify %arg0 : !ada.qual<i32, @positive> to !ada.qual<i32, @natural>
   ada.subp @to_wider(%v: !ada.qual<i32, @positive>) -> !ada.qual<i32, @natural> {
@@ -57,7 +57,7 @@ module {
   }
 
   // Nor from a constant within the target's range.
-  // CHECK-LABEL: ada.subp @_ada_constant_in_range
+  // CHECK-LABEL: func.func @_ada_constant_in_range
   // CHECK-NOT:     ada.range_check
   // CHECK:         ada.requalify %{{.*}} : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
   ada.subp @constant_in_range() -> !ada.qual<i32, @positive> {
@@ -67,15 +67,15 @@ module {
   }
 
   // A conversion to the identical type is removed.
-  // CHECK-LABEL: ada.subp @_ada_identity
-  // CHECK-NEXT:    ada.return %arg0
+  // CHECK-LABEL: func.func @_ada_identity
+  // CHECK-NEXT:    return %arg0
   ada.subp @identity(%v: !ada.qual<i32, @positive>) -> !ada.qual<i32, @positive> {
     %r = ada.convert explicit %v : !ada.qual<i32, @positive> to !ada.qual<i32, @positive>
     ada.return %r : !ada.qual<i32, @positive>
   }
 
   // A dynamic bound: the check uses the descriptor the conversion carries.
-  // CHECK-LABEL: ada.subp @_ada_to_dynamic
+  // CHECK-LABEL: func.func @_ada_to_dynamic
   // CHECK:         %[[R:.*]] = ada.range %{{.*}}, %arg0
   // CHECK:         ada.range_check %arg1, %[[R]] : !ada.qual<i32, @integer> to !ada.qual<i32, @to_dynamic.s>
   ada.subp @to_dynamic(%n: !ada.qual<i32, @integer>, %v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @to_dynamic.s> {
@@ -91,7 +91,7 @@ module {
   // From a nested subprogram: closure conversion captures the descriptor as a
   // parameter, and the enclosing subprogram's type still resolves. The lifted
   // subprogram is moved to the end of the module.
-  // CHECK-LABEL: ada.subp private @outer__inner
+  // CHECK-LABEL: func.func private @outer__inner
   // CHECK-SAME:    %[[R:arg[0-9]+]]: !ada.range<i32, @outer.s>
   // CHECK:         ada.range_check %arg0, %[[R]] : !ada.qual<i32, @integer> to !ada.qual<i32, @outer.s>
   ada.subp @outer(%n: !ada.qual<i32, @integer>, %v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @outer.s> {

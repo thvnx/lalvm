@@ -10,14 +10,14 @@ module {
   ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
   ada.type @array : !ada.array<i32[i32 x 10]> = #ada.array_info<component @small, dim @integer range 1 to 10>
 
-  // LOWER-LABEL: ada.subp @_ada_element
+  // LOWER-LABEL: func.func @_ada_element
   // LOWER: %[[ARRAY:.*]] = ada.alloca
   // LOWER: %[[ELEMENT:.*]] = ada.index %[[ARRAY]][%arg0]
   // LOWER-SAME: -> memref<!ada.qual<i32, @integer>>
   // LOWER: %[[BASE:.*]] = ada.requalify %arg1 : !ada.qual<i32, @small> to !ada.qual<i32, @integer>
   // LOWER: memref.store %[[BASE]], %[[ELEMENT]][]
   // LOWER: %[[VALUE:.*]] = memref.load %[[ELEMENT]][]
-  // LOWER: ada.return %[[VALUE]]
+  // LOWER: return %[[VALUE]]
   // LLVM-LABEL: define i32 @_ada_element(
   // LLVM: getelementptr [10 x i32], ptr %{{.*}}, i32 0, i32 %0
   // LLVM: store i32 %1, ptr %[[PTR:.*]], align 4

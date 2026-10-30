@@ -11,28 +11,28 @@ module {
   ada.type @nonzero : i32 = #ada.int_info<range 5 to 10>
   ada.type @color : i8 = #ada.enum_info<"red" = 7, "green" = 9>
 
-  // LOWER-LABEL: ada.subp @_ada_subtype
+  // LOWER-LABEL: func.func @_ada_subtype
   // LOWER: %[[SLOT:.*]] = ada.alloca : memref<!ada.qual<i32, @integer>>
   // LOWER: %[[INITIAL:.*]] = ada.requalify %arg0 : !ada.qual<i32, @small> to !ada.qual<i32, @integer>
   // LOWER: memref.store %[[INITIAL]], %[[SLOT]][]
   // LOWER: %[[LOADED:.*]] = memref.load %[[SLOT]][]
   // LOWER: %[[NOMINAL:.*]] = ada.requalify %[[LOADED]] : !ada.qual<i32, @integer> to !ada.qual<i32, @small>
-  // LOWER: ada.return %[[NOMINAL]]
-  // PROMOTE-LABEL: ada.subp @_ada_subtype
-  // PROMOTE-NEXT: ada.return %arg0
+  // LOWER: return %[[NOMINAL]]
+  // PROMOTE-LABEL: func.func @_ada_subtype
+  // PROMOTE-NEXT: return %arg0
   ada.subp @subtype(%v: !ada.qual<i32, @small>) -> !ada.qual<i32, @small> {
     %r = ada.object : !ada.ref<!ada.qual<i32, @small>> <- %v : !ada.qual<i32, @small>
     %value = ada.read %r : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @small>
     ada.return %value : !ada.qual<i32, @small>
   }
 
-  // LOWER-LABEL: ada.subp @_ada_float_object
+  // LOWER-LABEL: func.func @_ada_float_object
   // LOWER: %[[FLOAT:.*]] = ada.alloca : memref<!ada.qual<f32, @float>>
   // LOWER-NEXT: memref.store %arg0, %[[FLOAT]][]
   // LOWER-NEXT: %[[VALUE:.*]] = memref.load %[[FLOAT]][]
-  // LOWER-NEXT: ada.return %[[VALUE]]
-  // PROMOTE-LABEL: ada.subp @_ada_float_object
-  // PROMOTE-NEXT: ada.return %arg0
+  // LOWER-NEXT: return %[[VALUE]]
+  // PROMOTE-LABEL: func.func @_ada_float_object
+  // PROMOTE-NEXT: return %arg0
   ada.subp @float_object(%v: !ada.qual<f32, @float>) -> !ada.qual<f32, @float> {
     %r = ada.object : !ada.ref<!ada.qual<f32, @float>>
     ada.write %v, %r : !ada.qual<f32, @float> -> !ada.ref<!ada.qual<f32, @float>>
@@ -41,27 +41,27 @@ module {
   }
 
   // Promotion supplies a base value, without asserting membership in @small.
-  // PROMOTE-LABEL: ada.subp @_ada_uninitialized
+  // PROMOTE-LABEL: func.func @_ada_uninitialized
   // PROMOTE: %[[ZERO:.*]] = ada.constant : !ada.qual<i32, @integer> = 0
-  // PROMOTE-NEXT: ada.return %[[ZERO]]
+  // PROMOTE-NEXT: return %[[ZERO]]
   ada.subp @uninitialized() -> !ada.qual<i32, @integer> {
     %r = ada.object : !ada.ref<!ada.qual<i32, @small>>
     %value = ada.read %r : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @integer>
     ada.return %value : !ada.qual<i32, @integer>
   }
 
-  // PROMOTE-LABEL: ada.subp @_ada_nonzero_default
+  // PROMOTE-LABEL: func.func @_ada_nonzero_default
   // PROMOTE: %[[FIRST:.*]] = ada.constant : !ada.qual<i32, @nonzero> = 5
-  // PROMOTE-NEXT: ada.return %[[FIRST]]
+  // PROMOTE-NEXT: return %[[FIRST]]
   ada.subp @nonzero_default() -> !ada.qual<i32, @nonzero> {
     %r = ada.object : !ada.ref<!ada.qual<i32, @nonzero>>
     %value = ada.read %r : !ada.ref<!ada.qual<i32, @nonzero>> -> !ada.qual<i32, @nonzero>
     ada.return %value : !ada.qual<i32, @nonzero>
   }
 
-  // PROMOTE-LABEL: ada.subp @_ada_enum_default
+  // PROMOTE-LABEL: func.func @_ada_enum_default
   // PROMOTE: %[[RED:.*]] = ada.constant : !ada.qual<i8, @color> = 7
-  // PROMOTE-NEXT: ada.return %[[RED]]
+  // PROMOTE-NEXT: return %[[RED]]
   ada.subp @enum_default() -> !ada.qual<i8, @color> {
     %r = ada.object : !ada.ref<!ada.qual<i8, @color>>
     %value = ada.read %r : !ada.ref<!ada.qual<i8, @color>> -> !ada.qual<i8, @color>

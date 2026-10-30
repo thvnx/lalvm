@@ -5,7 +5,7 @@
 
 -- Unary operand, on the base type.
 
--- CHECK: %[[Y:.*]] = memref.load
+-- CHECK: %[[Y:.*]] = ada.read
 -- CHECK-NEXT: ada.unop "-" %[[Y]] checks<overflow> : (!ada.qual<i32, @unary_operand.small>) -> !ada.qual<i32, @standard.integer>
 
 function Unary_Operand return Integer is

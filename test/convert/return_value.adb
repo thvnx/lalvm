@@ -9,9 +9,9 @@
 -- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @return_value.small>
 -- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @return_value.small> to !ada.qual<i32, @standard.integer>
 
--- LOWERED-LABEL: ada.subp @_ada_return_value(
+-- LOWERED-LABEL: func.func @_ada_return_value(
 -- LOWERED:         ada.requalify %{{.*}} : !ada.qual<i32, @return_value.small> to !ada.qual<i32, @standard.integer>
--- LOWERED-LABEL: ada.subp private @return_value__clamp(
+-- LOWERED-LABEL: func.func private @return_value__clamp(
 -- LOWERED:         ada.range_check %v, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @return_value.small>
 
 function Return_Value (X : Integer) return Integer is

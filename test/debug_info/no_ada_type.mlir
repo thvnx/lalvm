@@ -13,12 +13,12 @@
 // CHECK-DAG: warning: missing ada.type for variable 'f', skipping debug info
 
 module @no_ada_type {
-  ada.subp @no_ada_type(
+  func.func @no_ada_type(
       %x: !ada.qual<f32, @float> loc("x"),
       %y: memref<!ada.qual<f32, @float>> {ada.mode = #ada<mode out>} loc("y"),
       %z: memref<!ada.qual<f32, @float>> {ada.mode = #ada<mode out>} loc("z")) {
     %0 = ada.alloca : memref<!ada.qual<f32, @float>> loc("f")
     memref.store %x, %y[] : memref<!ada.qual<f32, @float>>
-    ada.return
+    return
   }
 }

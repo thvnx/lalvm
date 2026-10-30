@@ -5,7 +5,7 @@
 
 -- Arithmetic operands. A converted static divisor drops the Division_Check.
 
--- CHECK: %[[Y:.*]] = memref.load
+-- CHECK: %[[Y:.*]] = ada.read
 -- CHECK-NEXT: ada.binop "+" %[[Y]], %i checks<overflow> : (!ada.qual<i32, @arithmetic_operand.small>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- CHECK: %[[TWO:.*]] = ada.convert implicit %{{.*}} : !ada.qual<i512, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
 -- CHECK: ada.binop "/" %{{.*}}, %[[TWO]] : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>

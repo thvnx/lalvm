@@ -1,13 +1,13 @@
 -- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 -- Copyright (c) 2026 The LALVM Project
 
--- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR-LABEL: ada.subp @local_var_init_from_expr
+-- MLIR-LABEL: func.func @_ada_local_var_init_from_expr
 -- MLIR-SAME:    (%a: !ada.qual<i32, @standard.integer>, %b: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:         %[[X:.*]] = ada.binop "+" %a, %b checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR-NEXT:    ada.return %[[X]] : !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    return %[[X]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_local_var_init_from_expr(
 -- LLVM:         call { i32, i1 } @llvm.sadd.with.overflow.i32

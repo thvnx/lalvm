@@ -68,6 +68,9 @@ TypeOp lookupAdaType(mlir::Operation *from, mlir::FlatSymbolRefAttr sym);
 mlir::FlatSymbolRefAttr baseOfAdaType(mlir::Operation *from,
                                       mlir::FlatSymbolRefAttr sym);
 
+/// The qualified base type, preserving the machine type, or null.
+QualType baseOfAdaType(mlir::Operation *from, QualType type);
+
 /// The root of an Ada type, following `base` links, or null.
 TypeOp rootOfAdaType(TypeOp typeOp);
 TypeOp rootOfAdaType(mlir::Operation *from, mlir::FlatSymbolRefAttr sym);

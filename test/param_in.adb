@@ -8,7 +8,7 @@
 -- argument with no alloca and no load/store.
 
 -- MLIR-LABEL: ada.subp @param_in
--- MLIR:         ada.subp private @param_in.double(%x: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.subp private @param_in.double(%x: !ada.qual<i32, @standard.integer> {ada.mode = #ada<mode in>}) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NOT:       memref
 -- MLIR:           %[[R:.*]] = ada.binop "+" %x, %x checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR:           ada.return %[[R]] : !ada.qual<i32, @standard.integer>
