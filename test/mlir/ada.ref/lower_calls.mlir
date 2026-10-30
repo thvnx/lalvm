@@ -18,7 +18,7 @@ module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
 
   // An alias observes the write to the original object.
-  // LOWER-LABEL: ada.subp @set_and_read(
+  // LOWER-LABEL: ada.subp @_ada_set_and_read(
   // LOWER-SAME: %arg0: memref<!ada.qual<i32, @integer>>
   // LOWER-SAME: %arg1: memref<!ada.qual<i32, @integer>>
   // LOWER: memref.store %arg2, %arg0[]
@@ -36,11 +36,11 @@ module {
 
   // The binder uses the temporary Ada unit's signature and this implementation.
   // Both aliases and distinct objects start with the same value.
-  // LOWER-LABEL: ada.subp @verify
+  // LOWER-LABEL: ada.subp @_ada_verify
   // LOWER: %[[X:.*]] = ada.alloca
   // LOWER: %[[Y:.*]] = ada.alloca
-  // LOWER: ada.call @set_and_read(%[[X]], %[[X]], %{{.*}})
-  // LOWER: ada.call @set_and_read(%[[X]], %[[Y]], %{{.*}})
+  // LOWER: ada.call @_ada_set_and_read(%[[X]], %[[X]], %{{.*}})
+  // LOWER: ada.call @_ada_set_and_read(%[[X]], %[[Y]], %{{.*}})
   // LLVM-LABEL: define i32 @_ada_verify(
   // LLVM: %[[X:.*]] = alloca i32
   // LLVM: %[[Y:.*]] = alloca i32

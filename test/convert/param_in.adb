@@ -10,7 +10,7 @@
 -- CHECK: ada.call @param_in.f(
 
 -- LOWERED: ada.range_check %i, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>
--- LOWERED: ada.call @param_in.f(
+-- LOWERED: ada.call @param_in__f(
 
 function Param_In (I : Integer) return Integer is
    subtype Small is Integer range 1 .. 10;

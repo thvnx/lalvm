@@ -237,6 +237,7 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   // nested dialect view.
   mlir::PassManager adaLoweringPm(module.get()->getName());
   adaLoweringPm.addPass(mlir::ada::createClosureConversionPass());
+  adaLoweringPm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaConversionsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaReferencesPass());
   if (int error = runPassManager(adaLoweringPm, *module, timing))
@@ -253,9 +254,6 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
     // Attach Ada DICompileUnitAttr so DIScopeForLLVMFuncOpPass uses Ada
     // metadata.
     pm.addPass(mlir::ada::createDICompileUnitAdaPass());
-  // Hoist nested ada.type ops to module level and apply GNAT ABI name mangling
-  // to subprograms.
-  pm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
   // Lower Ada dialect ops to the LLVM dialect.
   pm.addPass(mlir::ada::createLowerToLLVMPass());
   if (debugInfo) {

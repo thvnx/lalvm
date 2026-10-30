@@ -8,7 +8,7 @@
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
 
-  // LOWER-LABEL: ada.subp @region
+  // LOWER-LABEL: ada.subp @_ada_region
   // LOWER: %[[SELECTED:.*]] = scf.if %arg0 -> (memref<!ada.qual<i32, @integer>>) {
   // LOWER: scf.yield %{{.*}} : memref<!ada.qual<i32, @integer>>
   // LOWER: } else {
@@ -30,7 +30,7 @@ module {
   }
 
   // Distinct dynamic instances may coexist: do not hoist the loop allocation.
-  // LOWER-LABEL: ada.subp @loop_instances
+  // LOWER-LABEL: ada.subp @_ada_loop_instances
   // LOWER: ada.alloca
   // LOWER: cf.br ^bb1
   // LOWER: ^bb1(%[[PREVIOUS:.*]]: memref<!ada.qual<i32, @integer>>):
