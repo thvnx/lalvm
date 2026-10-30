@@ -5,6 +5,7 @@
 #include "ada/Passes.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/Transforms/StructuralTypeConversions.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/SCF/Transforms/Patterns.h"
@@ -103,16 +104,17 @@ struct IndexOpLowering : OpConversionPattern<ada::IndexOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// SubpOpLowering
+// FunctionOpLowering
 //===----------------------------------------------------------------------===//
 
-struct SubpOpLowering : OpConversionPattern<ada::SubpOp> {
-  using OpConversionPattern::OpConversionPattern;
+template <typename FuncOp>
+struct FunctionOpLowering : OpConversionPattern<FuncOp> {
+  using OpConversionPattern<FuncOp>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(ada::SubpOp op, OpAdaptor,
+  matchAndRewrite(FuncOp op, typename OpConversionPattern<FuncOp>::OpAdaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    const TypeConverter &converter = *getTypeConverter();
+    const TypeConverter &converter = *this->getTypeConverter();
     auto type = op.getFunctionType();
     TypeConverter::SignatureConversion signature(type.getNumInputs());
     SmallVector<Type> results;
@@ -123,8 +125,8 @@ struct SubpOpLowering : OpConversionPattern<ada::SubpOp> {
             rewriter.convertRegionTypes(&op.getBody(), converter, &signature)))
       return failure();
     rewriter.modifyOpInPlace(op, [&] {
-      op.setType(FunctionType::get(getContext(), signature.getConvertedTypes(),
-                                   results));
+      op.setType(FunctionType::get(this->getContext(),
+                                   signature.getConvertedTypes(), results));
     });
     return success();
   }
@@ -155,7 +157,7 @@ struct LowerAdaReferencesPass
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerAdaReferencesPass)
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<ada::AdaDialect, memref::MemRefDialect,
+    registry.insert<ada::AdaDialect, func::FuncDialect, memref::MemRefDialect,
                     cf::ControlFlowDialect, scf::SCFDialect>();
   }
   void runOnOperation() final;
@@ -205,11 +207,18 @@ void LowerAdaReferencesPass::runOnOperation() {
     return converter.isSignatureLegal(op.getFunctionType()) &&
            converter.isLegal(&op.getBody());
   });
+  target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+    return converter.isSignatureLegal(op.getFunctionType()) &&
+           converter.isLegal(&op.getBody());
+  });
 
   RewritePatternSet patterns(&getContext());
+  // Keep ada.subp support during the ABI transition. Once LowerAdaCalls makes
+  // ada.subp illegal, only func.func conversion will be needed here.
   patterns.add<ObjectOpLowering, ReadOpLowering, WriteOpLowering,
-               IndexOpLowering, SubpOpLowering, CallOpLowering>(converter,
-                                                                &getContext());
+               IndexOpLowering, FunctionOpLowering<ada::SubpOp>,
+               FunctionOpLowering<func::FuncOp>, CallOpLowering>(converter,
+                                                                 &getContext());
   cf::populateCFStructuralTypeConversionsAndLegality(converter, patterns,
                                                      target);
   scf::populateSCFStructuralTypeConversionsAndLegality(converter, patterns,

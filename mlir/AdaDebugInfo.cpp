@@ -15,6 +15,10 @@
 //     NumberDecl: lowered to a scalar op (llvm.mlir.constant for a constant)
 //   - entry block args (parameters): NameLoc set by mlirGenSubpBody
 //
+// LowerAdaCalls preserves the source signature in DIProfileAttr. Writable
+// formals become local objects tagged with DIFormalAttr, which records their
+// source parameter position independently of the lowered ABI argument order.
+//
 // The Ada type of a value is the `ada.type` named by the DITypeRef that
 // LowerToLLVM fuses into its location (attachAdaTypeRef). Without one, it is
 // looked up by MLIR type among the surviving `ada.type` ops (keyed by
@@ -29,6 +33,10 @@
 //   scalar entry block arg with NameLoc  -> DW_TAG_formal_parameter + dbg.value
 //   ptr entry block arg with NameLoc     -> DW_TAG_formal_parameter +
 //   dbg.declare
+//
+// DIFormalAttr changes a named object's entry to DW_TAG_formal_parameter.
+// With DIProfileAttr, entry block arguments describe only source `in` formals;
+// writable formals are described by their local objects instead.
 //
 // When an llvm.alloca with NameLoc("x") exists in a function, scalar ops with
 // the same NameLoc("x") are suppressed to avoid duplicate debug entries.
@@ -238,6 +246,12 @@ fallbackDIType(MLIRContext *ctx, mlir::Type mlirType,
   return {};
 }
 
+static DictionaryAttr getSourceProfile(Operation *op) {
+  auto profile =
+      op->getLoc()->findInstanceOf<FusedLocWith<ada::DIProfileAttr>>();
+  return profile ? profile.getMetadata().getProfile() : DictionaryAttr{};
+}
+
 /// Extract the Ada-type-specific DI type from a FusedLoc carrying a
 /// DITypeRefAttr, using `typeOpByName` to resolve the sym_name.
 /// Returns null if the loc has no such metadata or the sym_name is not found.
@@ -346,10 +360,9 @@ struct AdaDebugInfoPass
     //     so their DISubprogram is marked local to the unit.
     //   - DISubroutineType, so DWARF emits the return type as the
     //     subprogram's DW_AT_type and records the full signature. Element 0 is
-    //     the return type (null = void/procedure), carried by LowerToLLVM as a
-    //     DITypeRef nested one level under the DISubprogram's FusedLoc; the
-    //     remaining elements are the parameter types, read from the entry
-    //     block-arg locations (the same metadata Pass 5 uses).
+    //     the return type (null = void/procedure), followed by the formal types
+    //     in source declaration order, recovered from DIProfileAttr. Without a
+    //     source profile, use the function and entry block argument DITypeRefs.
     module.walk([&](LLVM::LLVMFuncOp func) {
       auto fused = dyn_cast<FusedLoc>(func.getLoc());
       if (!fused)
@@ -367,8 +380,8 @@ struct AdaDebugInfoPass
       if (func.isPrivate())
         flags = flags | LLVM::DISubprogramFlags::LocalToUnit;
 
-      // Definitions only: parameter types come from the entry block args, so a
-      // bodyless declaration would yield a misleading param-less signature.
+      // Definitions only: without a source profile, parameter types come from
+      // entry block args, which are unavailable for bodyless declarations.
       LLVM::DISubroutineTypeAttr subType = sp.getType();
       if (!func.getBody().empty()) {
         // Element 0: return type, from the DITypeRef nested under the
@@ -377,13 +390,33 @@ struct AdaDebugInfoPass
         LLVM::DITypeAttr returnType =
             extractDITypeFromLoc(ctx, func.getLoc(), typeOpByName);
 
-        // Remaining elements: parameter types from entry block-arg locations.
+        // Prefer source types over the lowered ABI signature.
         SmallVector<LLVM::DITypeAttr> types{returnType};
-        for (BlockArgument arg : func.getBody().front().getArguments()) {
-          auto nl = arg.getLoc()->findInstanceOf<NameLoc>();
-          types.push_back(
-              nl ? extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName)
-                 : LLVM::DITypeAttr{});
+        if (auto profile = getSourceProfile(func)) {
+          auto result = profile.getAs<TypeAttr>("result_type");
+          auto resultQual = result ? dyn_cast<ada::QualType>(result.getValue())
+                                   : ada::QualType{};
+          auto resultOp =
+              resultQual
+                  ? typeOpByName.lookup(resultQual.getAdaType().getAttr())
+                  : ada::TypeOp{};
+          types[0] =
+              resultOp ? makeDITypeAttr(ctx, resultOp) : LLVM::DITypeAttr{};
+          for (Attribute attr : profile.getAs<ArrayAttr>("formals")) {
+            auto formal = cast<DictionaryAttr>(attr);
+            auto qual =
+                cast<ada::QualType>(formal.getAs<TypeAttr>("type").getValue());
+            auto typeOp = typeOpByName.lookup(qual.getAdaType().getAttr());
+            types.push_back(typeOp ? makeDITypeAttr(ctx, typeOp)
+                                   : LLVM::DITypeAttr{});
+          }
+        } else {
+          for (BlockArgument arg : func.getBody().front().getArguments()) {
+            auto nl = arg.getLoc()->findInstanceOf<NameLoc>();
+            types.push_back(
+                nl ? extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName)
+                   : LLVM::DITypeAttr{});
+          }
         }
         subType = LLVM::DISubroutineTypeAttr::get(
             ctx, llvm::dwarf::DW_CC_normal, types);
@@ -502,9 +535,14 @@ struct AdaDebugInfoPass
             << "', skipping debug info";
         continue;
       }
+      unsigned argNumber = 0;
+      // Writable formals keep their source position on the local object.
+      if (auto formal =
+              entry.innerLoc->findInstanceOf<FusedLocWith<ada::DIFormalAttr>>())
+        argNumber = formal.getMetadata().getIndex() + 1;
       auto varInfo = LLVM::DILocalVariableAttr::get(
-          entry.subprogram, entry.name, fileAttr, line,
-          /*arg=*/0, /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
+          entry.subprogram, entry.name, fileAttr, line, argNumber,
+          /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
 
       OpBuilder builder(entry.op);
       builder.setInsertionPointAfter(entry.op);
@@ -517,8 +555,9 @@ struct AdaDebugInfoPass
                                  entry.op->getResult(0), varInfo);
     }
 
-    // Pass 5: emit DW_TAG_formal_parameter intrinsics for llvm.func entry
-    // block args with NameLoc (Ada parameters).
+    // Pass 5: describe source `in` formals using DIProfileAttr's ABI input
+    // mapping. Writable formals were handled as local objects in Pass 4.
+    // Without a source profile, describe named entry block args directly.
     OpBuilder builder(ctx);
     module.walk([&](LLVM::LLVMFuncOp func) {
       if (func.getBody().empty())
@@ -529,6 +568,7 @@ struct AdaDebugInfoPass
 
       Block &entry = func.getBody().front();
       builder.setInsertionPointToStart(&entry);
+      auto profile = getSourceProfile(func);
 
       for (BlockArgument arg : entry.getArguments()) {
         auto nl = arg.getLoc()->findInstanceOf<NameLoc>();
@@ -537,6 +577,23 @@ struct AdaDebugInfoPass
 
         unsigned argIdx = arg.getArgNumber();
         unsigned argNum = argIdx + 1; // 1-based for parameters
+        if (profile) {
+          DictionaryAttr formal;
+          for (auto [index, attr] :
+               llvm::enumerate(profile.getAs<ArrayAttr>("formals"))) {
+            auto candidate = cast<DictionaryAttr>(attr);
+            auto input = candidate.getAs<IntegerAttr>("abi_input");
+            if (input && input.getInt() == argIdx) {
+              formal = candidate;
+              argNum = index + 1;
+              break;
+            }
+          }
+          if (!formal ||
+              formal.getAs<ada::AdaParamModeAttr>("mode").getValue() !=
+                  ada::AdaParamMode::In)
+            continue;
+        }
         auto [fileAttr, line] =
             getFileAndLine(ctx, nl.getChildLoc(), subprogram);
 
