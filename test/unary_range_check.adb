@@ -9,10 +9,10 @@
 -- checks the subtype's range (RM 5.2, 4.6).
 
 -- CHECK-LABEL: ada.subp @unary_range_check(
--- CHECK:         [[Y:%[0-9]+]] = memref.load %{{[0-9]+}}[] : memref<!ada.qual<i32, @unary_range_check.neg>>
+-- CHECK:         [[Y:%y_[0-9]+]] = memref.load %y[] : memref<!ada.qual<i32, @unary_range_check.neg>>
 -- CHECK-NEXT:    [[ABS:%[0-9]+]] = ada.unop "abs" [[Y]] checks<overflow> : (!ada.qual<i32, @unary_range_check.neg>) -> !ada.qual<i32, @standard.integer>
 -- CHECK-NEXT:    ada.convert implicit [[ABS]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @unary_range_check.neg>
--- CHECK:         [[Y2:%[0-9]+]] = memref.load %{{[0-9]+}}[] : memref<!ada.qual<i32, @unary_range_check.neg>>
+-- CHECK:         [[Y2:%y_[0-9]+]] = memref.load %y[] : memref<!ada.qual<i32, @unary_range_check.neg>>
 -- CHECK-NEXT:    [[NEG:%[0-9]+]] = ada.unop "-" [[Y2]] checks<overflow> : (!ada.qual<i32, @unary_range_check.neg>) -> !ada.qual<i32, @standard.integer>
 -- CHECK-NEXT:    ada.convert implicit [[NEG]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @unary_range_check.neg>
 

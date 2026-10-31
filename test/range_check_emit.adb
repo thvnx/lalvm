@@ -12,7 +12,7 @@
 -- checked.
 
 -- MLIR-LABEL: ada.subp @range_check_emit
--- MLIR:      ada.convert implicit %arg0 : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
+-- MLIR:      ada.convert implicit %x : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
 
 -- LOWERED-LABEL: ada.subp @range_check_emit
 -- LOWERED:   %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1

@@ -6,7 +6,7 @@
 -- parameter so it is not folded.
 
 -- MLIR-LABEL: ada.subp @logical_not
--- MLIR:         ada.unop "not" %arg0 : (!ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.unop "not" %x : (!ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
 
 -- LLVM-LABEL: define i1 @_ada_logical_not(
 -- LLVM:          xor i1 %0, true

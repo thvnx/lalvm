@@ -6,7 +6,7 @@
 
 -- Explicit type conversion.
 
--- CHECK: ada.convert explicit %arg0 : !ada.qual<i16, @standard.short_integer> to !ada.qual<i32, @standard.integer>
+-- CHECK: ada.convert explicit %x : !ada.qual<i16, @standard.short_integer> to !ada.qual<i32, @standard.integer>
 
 -- LOWERED-NOT: ada.range_check
 -- LOWERED:     arith.extsi %{{.*}} : i16 to i32

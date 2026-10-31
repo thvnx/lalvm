@@ -6,7 +6,7 @@
 -- for `mod 100` that is `99 - X`. The operand is a parameter of the nested
 -- `Flip` so the `not` is not folded.
 
--- MLIR: ada.unop "not" %arg0 : (!ada.qual<i8, @{{.*}}>) -> !ada.qual<i8, @{{.*}}>
+-- MLIR: ada.unop "not" %x : (!ada.qual<i8, @{{.*}}>) -> !ada.qual<i8, @{{.*}}>
 
 -- LLVM: sub i8 99, %0
 

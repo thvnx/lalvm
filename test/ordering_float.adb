@@ -7,10 +7,10 @@
 -- operand is NaN. Distinct operands keep the comparisons from folding.
 
 -- MLIR-LABEL: ada.subp @ordering_float
--- MLIR:         ada.cmp "<" %arg0, %arg1 : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.cmp "<=" %arg0, %arg1 : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.cmp ">" %arg0, %arg1 : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.cmp ">=" %arg0, %arg1 : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "<" %x, %y : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "<=" %x, %y : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp ">" %x, %y : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp ">=" %x, %y : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
 
 -- LLVM-LABEL: define i1 @_ada_ordering_float(
 -- LLVM-DAG:      fcmp olt float %0, %1

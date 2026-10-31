@@ -6,7 +6,7 @@
 -- (range only). `not` on `Tiny` (base `Small`, mod 100) is the one's complement
 -- `99 - X`, not rejected as non-modular. `X` is a parameter so it is not folded.
 
--- MLIR: ada.unop "not" %arg0 : (!ada.qual<i8, @{{.*}}tiny>) -> !ada.qual<i8, @{{.*}}small>
+-- MLIR: ada.unop "not" %x : (!ada.qual<i8, @{{.*}}tiny>) -> !ada.qual<i8, @{{.*}}small>
 
 -- LLVM: sub i8 99, %0
 

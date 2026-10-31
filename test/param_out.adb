@@ -9,9 +9,9 @@
 -- MLIR:         %[[N_PTR:.*]] = ada.alloca : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR-NOT:     memref.store {{.*}}, %[[N_PTR]]
 -- MLIR:         ada.decls {
--- MLIR:           ada.subp private @param_out.get_value(%arg0: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode out>})
--- MLIR-NOT:       memref.load %arg0
--- MLIR:           memref.store {{.*}}, %arg0[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:           ada.subp private @param_out.get_value(%x: memref<!ada.qual<i32, @standard.integer>> {ada.mode = #ada<mode out>})
+-- MLIR-NOT:       memref.load %x
+-- MLIR:           memref.store {{.*}}, %x[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:           ada.return
 -- MLIR:         ada.call @param_out.get_value(%[[N_PTR]]) : (memref<!ada.qual<i32, @standard.integer>>) -> ()
 -- MLIR:         %[[N:.*]] = memref.load %[[N_PTR]][] : memref<!ada.qual<i32, @standard.integer>>

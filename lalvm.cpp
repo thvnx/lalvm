@@ -580,6 +580,11 @@ int main(int argc, char **argv) {
     // scope), so the NameLocs and DI markers are visible without the explicit
     // --mlir-print-debuginfo / --mlir-print-local-scope flags.
     mlir::OpPrintingFlags flags;
+    // Prefer source names unless the printer option was explicitly supplied.
+    if (!llvm::cl::getRegisteredOptions()
+             .lookup("mlir-use-nameloc-as-prefix")
+             ->getNumOccurrences())
+      flags.printNameLocAsPrefix();
     if (debugInfo)
       flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/false)
           .useLocalScope();

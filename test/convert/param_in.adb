@@ -6,7 +6,7 @@
 
 -- Scalar `in` actual, converted at the call site.
 
--- CHECK: ada.convert implicit %arg0 : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>
+-- CHECK: ada.convert implicit %i : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>
 -- CHECK: ada.call @param_in.f(
 
 -- LOWERED: ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>

@@ -8,13 +8,13 @@
 -- 3.5.4(9)). Modular and floating point operands need no check.
 
 -- MLIR-LABEL: ada.subp private @unary_abs.on_integer(
--- MLIR:          ada.unop "abs" %arg{{[0-9]+}} checks<overflow> : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:          ada.unop "abs" %x checks<overflow> : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 -- MLIR-LABEL: ada.subp private @unary_abs.on_modular(
--- MLIR:          ada.unop "abs" %arg{{[0-9]+}} : (!ada.qual<i8, @unary_abs.byte>) -> !ada.qual<i8, @unary_abs.byte>
+-- MLIR:          ada.unop "abs" %x : (!ada.qual<i8, @unary_abs.byte>) -> !ada.qual<i8, @unary_abs.byte>
 
 -- MLIR-LABEL: ada.subp private @unary_abs.on_float(
--- MLIR:          ada.unop "abs" %arg{{[0-9]+}} : (!ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- MLIR:          ada.unop "abs" %x : (!ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define internal i32 @unary_abs__on_integer(
 -- LLVM-NEXT:     [[ISNEG:%[0-9]+]] = icmp slt i32 %0, 0

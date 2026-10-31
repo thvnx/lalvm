@@ -6,8 +6,8 @@
 
 -- MLIR: ada.type @standard.float : f32 = #ada.float_info<digits 6>
 -- MLIR-LABEL: ada.subp @float_type
--- MLIR-SAME:    (%arg0: !ada.qual<f32, @standard.float>, %arg1: !ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
--- MLIR:         %[[R:.*]] = ada.binop "+" %arg0, %arg1 : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- MLIR-SAME:    (%a: !ada.qual<f32, @standard.float>, %b: !ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- MLIR:         %[[R:.*]] = ada.binop "+" %a, %b : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define float @_ada_float_type(

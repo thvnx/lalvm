@@ -10,8 +10,8 @@
 -- MLIR-LABEL: ada.subp @range_check_dynamic
 -- MLIR:         %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
 -- The dynamic upper bound `N` is of the base type, so it feeds the range directly.
--- MLIR:         %[[R:.*]] = ada.range %[[LO]], %arg0 : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_dynamic.s>
--- MLIR:         ada.convert implicit %arg1, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_dynamic.s>
+-- MLIR:         %[[R:.*]] = ada.range %[[LO]], %n : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_dynamic.s>
+-- MLIR:         ada.convert implicit %m, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_dynamic.s>
 
 -- LOWERED-LABEL: ada.subp @range_check_dynamic
 -- LOWERED:         %[[R:.*]] = ada.range %{{.*}}, %arg0

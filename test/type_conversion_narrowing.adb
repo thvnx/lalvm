@@ -6,7 +6,7 @@
 
 -- Explicit narrowing type conversion: checked before truncating.
 
--- CHECK: ada.convert explicit %arg0 : !ada.qual<i32, @standard.integer> to !ada.qual<i16, @standard.short_integer>
+-- CHECK: ada.convert explicit %x : !ada.qual<i32, @standard.integer> to !ada.qual<i16, @standard.short_integer>
 
 -- LOWERED:      %[[C:.*]] = ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @standard.integer>
 -- LOWERED:      %[[U:.*]] = ada.unwrap %[[C]]

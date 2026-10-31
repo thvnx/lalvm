@@ -6,7 +6,7 @@
 -- Comparison operands, on the base type.
 
 -- CHECK: %[[Y:.*]] = memref.load
--- CHECK-NEXT: ada.cmp "=" %[[Y]], %arg0 : (!ada.qual<i32, @comparison_operand.small>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- CHECK-NEXT: ada.cmp "=" %[[Y]], %i : (!ada.qual<i32, @comparison_operand.small>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 
 function Comparison_Operand (I : Integer) return Boolean is
    subtype Small is Integer range 1 .. 10;

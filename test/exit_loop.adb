@@ -9,7 +9,7 @@
 -- MLIR-LABEL: ada.subp @exit_loop
 -- MLIR:         cf.br ^[[BODY:bb[0-9]+]](
 -- MLIR:       ^[[BODY]](
--- MLIR:         %[[C:.*]] = ada.cmp ">=" %{{.*}}, %arg0
+-- MLIR:         %[[C:.*]] = ada.cmp ">=" %{{.*}}, %n
 -- MLIR:         %[[I1:.*]] = ada.unwrap %[[C]]
 -- MLIR:         cf.cond_br %[[I1]], ^[[MERGE:bb[0-9]+]], ^[[CONT:bb[0-9]+]]
 -- MLIR:       ^[[CONT]]:

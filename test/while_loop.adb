@@ -7,7 +7,7 @@
 -- MLIR-LABEL: ada.subp @while_loop
 -- MLIR:         cf.br ^[[HDR:bb[0-9]+]](
 -- MLIR:       ^[[HDR]](
--- MLIR:         %[[C:.*]] = ada.cmp "<=" %{{.*}}, %arg0
+-- MLIR:         %[[C:.*]] = ada.cmp "<=" %{{.*}}, %n
 -- MLIR:         %[[I1:.*]] = ada.unwrap %[[C]]
 -- MLIR:         cf.cond_br %[[I1]], ^[[BODY:bb[0-9]+]], ^[[MERGE:bb[0-9]+]]
 -- MLIR:       ^[[BODY]]:

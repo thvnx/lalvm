@@ -8,9 +8,9 @@
 -- folded away (X /= X would fold to a constant during lowering).
 
 -- MLIR-LABEL: ada.subp @inequality
--- MLIR:         ada.cmp "/=" %arg0, %arg1 : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "/=" %x, %y : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
--- MLIR:         ada.cmp "/=" %arg0, %[[C]] : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "/=" %x, %[[C]] : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 
 -- LLVM-LABEL: define i1 @_ada_inequality(
 -- LLVM-DAG:      icmp ne i32 %0, %1

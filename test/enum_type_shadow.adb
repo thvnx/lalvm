@@ -21,11 +21,11 @@
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @enum_type_shadow
 -- MLIR:         ada.decls {
--- MLIR:           ada.subp private @enum_type_shadow.inner(%arg0: !ada.qual<i1, @standard.boolean>
+-- MLIR:           ada.subp private @enum_type_shadow.inner(%b: !ada.qual<i1, @standard.boolean>
 -- MLIR:             ada.constant : !ada.qual<i1, @enum_type_shadow.inner.boolean> = false
 -- MLIR:             ada.decls {
 -- MLIR:               ada.type @enum_type_shadow.inner.boolean : i1 = #ada.enum_info<"true" = 0, "false" = 1>
--- MLIR:               ada.subp private @enum_type_shadow.inner.inner(%arg1: !ada.qual<i1, @enum_type_shadow.inner.boolean>
+-- MLIR:               ada.subp private @enum_type_shadow.inner.inner(%b_0: !ada.qual<i1, @enum_type_shadow.inner.boolean>
 -- MLIR:                 ada.constant : !ada.qual<i1, @enum_type_shadow.inner.inner.boolean> = true
 -- MLIR:                 ada.type @enum_type_shadow.inner.inner.boolean : i1 = #ada.enum_info<"not_true" = 0, "true" = 1>
 -- MLIR:                 ada.constant : !ada.qual<i1, @enum_type_shadow.inner.boolean> = false

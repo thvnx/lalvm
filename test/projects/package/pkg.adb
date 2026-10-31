@@ -12,7 +12,7 @@
 -- CHECK-NEXT:    ada.subp @pkg.public_proc() {
 -- CHECK:           ada.return
 -- CHECK-NEXT:    }
--- CHECK-NEXT:    ada.subp @pkg.private_body(%arg0: !ada.qual<i1, @pkg.public_t>, %arg1: !ada.qual<i1, @pkg.private_t>) {
+-- CHECK-NEXT:    ada.subp @pkg.private_body(%x: !ada.qual<i1, @pkg.public_t>, %y: !ada.qual<i1, @pkg.private_t>) {
 -- CHECK:           ada.return
 -- CHECK-NEXT:    }
 -- CHECK-NEXT:  }

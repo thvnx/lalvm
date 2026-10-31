@@ -6,10 +6,10 @@
 -- slt/sle/sgt/sge. The comparisons are on parameters of nested functions, so
 -- they are not folded.
 
--- MLIR: ada.cmp "<" %arg0, %arg1 : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
--- MLIR: ada.cmp "<=" %arg0, %arg1 : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
--- MLIR: ada.cmp ">" %arg0, %arg1 : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
--- MLIR: ada.cmp ">=" %arg0, %arg1 : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR: ada.cmp "<" %x, %y : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR: ada.cmp "<=" %x, %y : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR: ada.cmp ">" %x, %y : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR: ada.cmp ">=" %x, %y : (!ada.qual<i8, @{{.*}}>, !ada.qual<i8, @{{.*}}>) -> !ada.qual<i1, @standard.boolean>
 
 -- LLVM-DAG: icmp ult i8 %0, %1
 -- LLVM-DAG: icmp ule i8 %0, %1

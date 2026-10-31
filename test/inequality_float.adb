@@ -8,9 +8,9 @@
 -- predicate would be wrong here (false for NaN), so this guards against it.
 
 -- MLIR-LABEL: ada.subp @inequality_float
--- MLIR:         ada.cmp "/=" %arg0, %arg1 : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "/=" %x, %y : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<f32, @standard.float> = 1.000000e+00
--- MLIR:         ada.cmp "/=" %arg0, %[[C]] : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "/=" %x, %[[C]] : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<i1, @standard.boolean>
 
 -- LLVM-LABEL: define i1 @_ada_inequality_float(
 -- LLVM-DAG:      fcmp une float %0, %1

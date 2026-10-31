@@ -9,16 +9,16 @@
 -- other than 2**width, `-X` is `m - X` for a nonzero `X` (RM 4.5.4(3)).
 
 -- MLIR-LABEL: ada.subp private @unary_minus.on_integer(
--- MLIR:          ada.unop "-" %arg{{[0-9]+}} checks<overflow> : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:          ada.unop "-" %x checks<overflow> : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 -- MLIR-LABEL: ada.subp private @unary_minus.on_modular(
--- MLIR:          ada.unop "-" %arg{{[0-9]+}} : (!ada.qual<i8, @unary_minus.byte>) -> !ada.qual<i8, @unary_minus.byte>
+-- MLIR:          ada.unop "-" %x : (!ada.qual<i8, @unary_minus.byte>) -> !ada.qual<i8, @unary_minus.byte>
 
 -- MLIR-LABEL: ada.subp private @unary_minus.on_mod10(
--- MLIR:          ada.unop "-" %arg{{[0-9]+}} : (!ada.qual<i8, @unary_minus.m10>) -> !ada.qual<i8, @unary_minus.m10>
+-- MLIR:          ada.unop "-" %x : (!ada.qual<i8, @unary_minus.m10>) -> !ada.qual<i8, @unary_minus.m10>
 
 -- MLIR-LABEL: ada.subp private @unary_minus.on_float(
--- MLIR:          ada.unop "-" %arg{{[0-9]+}} : (!ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- MLIR:          ada.unop "-" %x : (!ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define internal i32 @unary_minus__on_integer(
 -- LLVM-NEXT:     [[WO:%[0-9]+]] = call { i32, i1 } @llvm.ssub.with.overflow.i32(i32 0, i32 %0)

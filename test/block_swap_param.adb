@@ -5,11 +5,11 @@
 -- caller's storage, so they stay as `memref`/`ptr` and the swap propagates
 -- through pointer loads and stores (only the local Temp is promoted).
 -- MLIR-LABEL: ada.subp @block_swap_param(
--- MLIR:         %[[V0:.*]] = memref.load %arg1[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         %[[U0:.*]] = memref.load %arg0[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         memref.store %[[U0]], %arg1[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         memref.store %[[V0]], %arg0[] : memref<!ada.qual<i32, @standard.integer>>
--- MLIR:         %[[U1:.*]] = memref.load %arg0[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         %[[V0:.*]] = memref.load %v[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         %[[U0:.*]] = memref.load %u[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         memref.store %[[U0]], %v[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         memref.store %[[V0]], %u[] : memref<!ada.qual<i32, @standard.integer>>
+-- MLIR:         %[[U1:.*]] = memref.load %u[] : memref<!ada.qual<i32, @standard.integer>>
 -- MLIR:         ada.return %[[U1]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_block_swap_param(ptr %0, ptr %1)

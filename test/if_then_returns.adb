@@ -13,7 +13,7 @@
 -- MLIR:       ^[[ELSE]]:
 -- MLIR:         cf.br ^[[MERGE:bb[0-9]+]]
 -- MLIR:       ^[[MERGE]]:
--- MLIR:         ada.return %arg0 : !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.return %x : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_if_then_returns(
 -- LLVM:         br i1

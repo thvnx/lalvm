@@ -6,10 +6,10 @@
 -- recursive `facto.adb`.
 
 -- MLIR-LABEL: ada.subp @facto_loop
--- MLIR:         ada.subp private @facto_loop.f(%arg0: !ada.qual<i32, @standard.integer>)
+-- MLIR:         ada.subp private @facto_loop.f(%x: !ada.qual<i32, @standard.integer>)
 -- MLIR:           cf.br ^[[HDR:bb[0-9]+]](
 -- MLIR:         ^[[HDR]](
--- MLIR:           ada.cmp "<=" %{{.*}}, %arg0 : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:           ada.cmp "<=" %{{.*}}, %x : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 -- MLIR:           ada.unwrap %{{.*}} : !ada.qual<i1, @standard.boolean> to i1
 -- MLIR:           cf.cond_br %{{.*}}, ^[[BODY:bb[0-9]+]], ^[[MERGE:bb[0-9]+]]
 -- MLIR:         ^[[BODY]]:

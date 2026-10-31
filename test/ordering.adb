@@ -8,10 +8,10 @@
 -- comparisons from folding.
 
 -- MLIR-LABEL: ada.subp @ordering
--- MLIR:         ada.cmp "<" %arg0, %arg1 : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.cmp "<=" %arg0, %arg1 : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.cmp ">" %arg0, %arg1 : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.cmp ">=" %arg0, %arg1 : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "<" %x, %y : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "<=" %x, %y : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp ">" %x, %y : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp ">=" %x, %y : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 
 -- LLVM-LABEL: define i1 @_ada_ordering(
 -- LLVM-DAG:      icmp slt i32 %0, %1

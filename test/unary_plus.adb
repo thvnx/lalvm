@@ -7,13 +7,13 @@
 -- Unary `+` need no check, it is the identity operation.
 
 -- MLIR-LABEL: ada.subp private @unary_plus.on_integer(
--- MLIR:          ada.unop "+" %arg{{[0-9]+}} : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:          ada.unop "+" %x : (!ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
 -- MLIR-LABEL: ada.subp private @unary_plus.on_modular(
--- MLIR:          ada.unop "+" %arg{{[0-9]+}} : (!ada.qual<i8, @unary_plus.byte>) -> !ada.qual<i8, @unary_plus.byte>
+-- MLIR:          ada.unop "+" %x : (!ada.qual<i8, @unary_plus.byte>) -> !ada.qual<i8, @unary_plus.byte>
 
 -- MLIR-LABEL: ada.subp private @unary_plus.on_float(
--- MLIR:          ada.unop "+" %arg{{[0-9]+}} : (!ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- MLIR:          ada.unop "+" %x : (!ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define internal i32 @unary_plus__on_integer(
 -- LLVM-NEXT:     ret i32 %0

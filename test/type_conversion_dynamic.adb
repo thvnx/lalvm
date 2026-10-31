@@ -7,8 +7,8 @@
 -- Explicit type conversion to a dynamic subtype: checked against the range
 -- elaborated at the subtype declaration.
 
--- CHECK:      %[[R:.*]] = ada.range %{{.*}}, %arg0 : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @type_conversion_dynamic.s>
--- CHECK:      ada.convert explicit %arg1, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @type_conversion_dynamic.s>
+-- CHECK:      %[[R:.*]] = ada.range %{{.*}}, %n : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @type_conversion_dynamic.s>
+-- CHECK:      ada.convert explicit %x, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @type_conversion_dynamic.s>
 
 -- LOWERED:    %[[R:.*]] = ada.range %{{.*}}, %arg0
 -- LOWERED:    ada.range_check %arg1, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @type_conversion_dynamic.s>

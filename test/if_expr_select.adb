@@ -7,7 +7,7 @@
 -- At -O1, an if expression yielding values from outside it becomes a select
 -- on `!ada.qual` values, which lowers to an LLVM `select`.
 
--- MLIR: arith.select %{{.*}}, %arg1, %arg2 : !ada.qual<i32, @standard.integer>
+-- MLIR: arith.select %{{.*}}, %a, %b : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_if_expr_select(
 -- LLVM-NOT:     br

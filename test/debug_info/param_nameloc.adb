@@ -3,9 +3,9 @@
 
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
 -- MLIR-LABEL: ada.subp @param_nameloc(
--- MLIR-SAME:    %arg0: !ada.qual<i32, @standard.integer> loc("a"(
--- MLIR-SAME:    %arg1: !ada.qual<i32, @standard.integer> loc("b"(
--- MLIR-SAME:    %arg2: !ada.qual<i1, @standard.boolean> loc("c"(
+-- MLIR-SAME:    %a: !ada.qual<i32, @standard.integer> loc("a"(
+-- MLIR-SAME:    %b: !ada.qual<i32, @standard.integer> loc("b"(
+-- MLIR-SAME:    %c: !ada.qual<i1, @standard.boolean> loc("c"(
 
 -- LLVM: DILocalVariable(name: "c", arg: 3,
 

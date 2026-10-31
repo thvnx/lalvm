@@ -6,7 +6,7 @@
 
 -- Assignment.
 
--- CHECK: ada.convert implicit %arg0 : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @assignment.small>
+-- CHECK: ada.convert implicit %x : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @assignment.small>
 
 -- LOWERED: ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @assignment.small>
 

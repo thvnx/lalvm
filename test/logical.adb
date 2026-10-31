@@ -10,9 +10,9 @@
 -- not yet supported.) Distinct operands keep the ops from folding.
 
 -- MLIR-LABEL: ada.subp @logical
--- MLIR:         ada.binop "and" %arg0, %arg1 : (!ada.qual<i1, @standard.boolean>, !ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.binop "or" %arg0, %arg1 : (!ada.qual<i1, @standard.boolean>, !ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
--- MLIR:         ada.binop "xor" %arg0, %arg1 : (!ada.qual<i1, @standard.boolean>, !ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.binop "and" %x, %y : (!ada.qual<i1, @standard.boolean>, !ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.binop "or" %x, %y : (!ada.qual<i1, @standard.boolean>, !ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.binop "xor" %x, %y : (!ada.qual<i1, @standard.boolean>, !ada.qual<i1, @standard.boolean>) -> !ada.qual<i1, @standard.boolean>
 
 -- LLVM-LABEL: define i1 @_ada_logical(
 -- LLVM-DAG:      and i1 %0, %1

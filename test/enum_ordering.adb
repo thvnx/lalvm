@@ -7,9 +7,9 @@
 -- so the comparisons are not folded.
 
 -- MLIR-LABEL: ada.subp private @enum_cmp.cmp
--- MLIR-DAG: ada.cmp "<" %arg0, %arg1 : (!ada.qual<i4, @enum_cmp.day>
--- MLIR-DAG: ada.cmp ">=" %arg1, %arg0 : (!ada.qual<i4, @enum_cmp.day>
--- MLIR-DAG: ada.cmp "/=" %arg0, %arg1 : (!ada.qual<i4, @enum_cmp.day>
+-- MLIR-DAG: ada.cmp "<" %a, %b : (!ada.qual<i4, @enum_cmp.day>
+-- MLIR-DAG: ada.cmp ">=" %b, %a : (!ada.qual<i4, @enum_cmp.day>
+-- MLIR-DAG: ada.cmp "/=" %a, %b : (!ada.qual<i4, @enum_cmp.day>
 
 -- LLVM-LABEL: define internal i1 @enum_cmp__cmp(
 -- LLVM-DAG: icmp ult i4

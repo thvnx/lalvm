@@ -8,7 +8,7 @@
 -- no division check (no zero-divisor raise for reals).
 
 -- MLIR-LABEL: ada.subp @long_float_div
--- MLIR:         %[[R:.*]] = ada.binop "/" %arg0, %arg1 : (!ada.qual<f64, @standard.long_float>, !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
+-- MLIR:         %[[R:.*]] = ada.binop "/" %a, %b : (!ada.qual<f64, @standard.long_float>, !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<f64, @standard.long_float>
 
 -- LLVM-LABEL: define double @_ada_long_float_div(

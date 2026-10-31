@@ -15,7 +15,7 @@
 -- MLIR:         cf.br ^[[INNER:bb[0-9]+]]
 -- MLIR:       ^[[INNER]]:
 -- MLIR:         ada.binop "+"
--- MLIR:         %[[C:.*]] = ada.cmp ">=" %{{.*}}, %arg0
+-- MLIR:         %[[C:.*]] = ada.cmp ">=" %{{.*}}, %n
 -- MLIR:         %[[I1:.*]] = ada.unwrap %[[C]]
 -- MLIR:         cf.cond_br %[[I1]], ^[[OMERGE:bb[0-9]+]], ^[[ICONT:bb[0-9]+]]
 -- MLIR:       ^[[ICONT]]:

@@ -9,8 +9,8 @@
 -- affect evaluation order: (A + B) * C adds before multiplying.
 
 -- MLIR-LABEL: ada.subp @paren_expr
--- MLIR:         %[[SUM:.*]] = ada.binop "+" %arg0, %arg1 checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR-NEXT:    %[[R:.*]] = ada.binop "*" %[[SUM]], %arg2 checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         %[[SUM:.*]] = ada.binop "+" %a, %b checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR-NEXT:    %[[R:.*]] = ada.binop "*" %[[SUM]], %c checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_paren_expr(

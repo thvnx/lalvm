@@ -6,10 +6,10 @@
 -- tested in order until one is true. All branches return, so there is no merge.
 
 -- MLIR-LABEL: ada.subp @if_elsif
--- MLIR:         ada.cmp "=" %arg0, %{{.*}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "=" %x, %{{.*}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 -- MLIR:         ada.unwrap %{{.*}} : !ada.qual<i1, @standard.boolean> to i1
 -- MLIR:         cf.cond_br
--- MLIR:         ada.cmp "=" %arg0, %{{.*}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "=" %x, %{{.*}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 -- MLIR:         cf.cond_br
 
 -- LLVM-LABEL: define i32 @_ada_if_elsif(

@@ -5,8 +5,8 @@
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @long_float_mul
--- MLIR-SAME:    (%arg0: !ada.qual<f64, @standard.long_float>, %arg1: !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
--- MLIR:         %[[R:.*]] = ada.binop "*" %arg0, %arg1 : (!ada.qual<f64, @standard.long_float>, !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
+-- MLIR-SAME:    (%a: !ada.qual<f64, @standard.long_float>, %b: !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
+-- MLIR:         %[[R:.*]] = ada.binop "*" %a, %b : (!ada.qual<f64, @standard.long_float>, !ada.qual<f64, @standard.long_float>) -> !ada.qual<f64, @standard.long_float>
 -- MLIR-NEXT:    ada.return %[[R]] : !ada.qual<f64, @standard.long_float>
 
 -- LLVM-LABEL: define double @_ada_long_float_mul(

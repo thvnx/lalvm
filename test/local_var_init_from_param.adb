@@ -2,8 +2,8 @@
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @local_var_init_from_param
--- MLIR-SAME:    (%arg0: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
--- MLIR:         ada.return %arg0 : !ada.qual<i32, @standard.integer>
+-- MLIR-SAME:    (%n: !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.return %n : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_local_var_init_from_param(
 -- LLVM:         ret i32 %0
