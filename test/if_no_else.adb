@@ -8,7 +8,7 @@
 -- the merge block so the canonicalizer then turns the branch into a select.
 
 -- MLIR-LABEL: IR Dump After {{.*}}mem2reg
--- MLIR:         ada.cmp "=" %arg0, %{{.*}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
+-- MLIR:         ada.cmp "=" %x, %{{.*}} : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i1, @standard.boolean>
 -- MLIR:         ada.unwrap %{{.*}} : !ada.qual<i1, @standard.boolean> to i1
 -- MLIR:         cf.cond_br
 -- MLIR:         cf.br ^{{bb[0-9]+}}(

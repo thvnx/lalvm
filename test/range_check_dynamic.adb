@@ -14,8 +14,8 @@
 -- MLIR:         ada.convert implicit %m, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_dynamic.s>
 
 -- LOWERED-LABEL: ada.subp @range_check_dynamic
--- LOWERED:         %[[R:.*]] = ada.range %{{.*}}, %arg0
--- LOWERED:         ada.range_check %arg1, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_dynamic.s>
+-- LOWERED:         %[[R:.*]] = ada.range %{{.*}}, %n
+-- LOWERED:         ada.range_check %m, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_dynamic.s>
 
 -- LLVM-LABEL: define i32 @_ada_range_check_dynamic(
 -- LLVM:         icmp slt

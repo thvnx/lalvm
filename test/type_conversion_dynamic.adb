@@ -10,8 +10,8 @@
 -- CHECK:      %[[R:.*]] = ada.range %{{.*}}, %n : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @type_conversion_dynamic.s>
 -- CHECK:      ada.convert explicit %x, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @type_conversion_dynamic.s>
 
--- LOWERED:    %[[R:.*]] = ada.range %{{.*}}, %arg0
--- LOWERED:    ada.range_check %arg1, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @type_conversion_dynamic.s>
+-- LOWERED:    %[[R:.*]] = ada.range %{{.*}}, %n
+-- LOWERED:    ada.range_check %x, %[[R]] : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @type_conversion_dynamic.s>
 
 function Type_Conversion_Dynamic (N, X : Integer) return Integer is
    subtype S is Integer range 1 .. N;

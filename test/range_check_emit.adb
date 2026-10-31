@@ -18,7 +18,7 @@
 -- LOWERED:   %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
 -- LOWERED:   %[[HI:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 10
 -- LOWERED:   ada.range %[[LO]], %[[HI]] : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @range_check_emit.small>
--- LOWERED:   ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
+-- LOWERED:   ada.range_check %x, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_emit.small>
 
 -- LLVM-LABEL: define i32 @_ada_range_check_emit(
 -- LLVM:      icmp slt i32 %0, 1

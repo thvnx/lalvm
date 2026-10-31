@@ -8,7 +8,7 @@
 
 -- CHECK: ada.convert implicit %x : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @static_constraint.small>
 
--- LOWERED: ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @static_constraint.small>
+-- LOWERED: ada.range_check %x, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @static_constraint.small>
 
 procedure Static_Constraint (X : Integer) is
    subtype Small is Integer range 1 .. 10;

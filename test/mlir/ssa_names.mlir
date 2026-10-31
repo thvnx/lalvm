@@ -4,6 +4,8 @@
 // RUN: %lalvm --emit=mlir %s | %FileCheck %s
 // RUN: %lalvm --emit=mlir -g %s | %FileCheck %s
 // RUN: %lalvm --emit=mlir --mlir-use-nameloc-as-prefix=false %s | %FileCheck %s --check-prefix=NUMBERED
+// RUN: %lalvm --emit=llvm --mlir-print-ir-before=ada-closure-conversion %s -o /dev/null 2>&1 | %FileCheck %s
+// RUN: %lalvm --emit=llvm --mlir-print-ir-before=ada-closure-conversion --mlir-use-nameloc-as-prefix=false %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=NUMBERED
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>

@@ -9,7 +9,7 @@
 -- CHECK: ada.convert implicit %i : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>
 -- CHECK: ada.call @param_in.f(
 
--- LOWERED: ada.range_check %arg0, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>
+-- LOWERED: ada.range_check %i, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @param_in.small>
 -- LOWERED: ada.call @param_in.f(
 
 function Param_In (I : Integer) return Integer is

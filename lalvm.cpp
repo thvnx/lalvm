@@ -476,6 +476,12 @@ int main(int argc, char **argv) {
   cl::HideUnrelatedOptions(lalvmCategory);
   cl::ParseCommandLineOptions(argc, argv, "Ada to LLVM Compiler\n");
 
+  // Prefer source names in all MLIR output unless explicitly disabled.
+  auto *nameLocOption = static_cast<cl::opt<bool> *>(
+      cl::getRegisteredOptions().lookup("mlir-use-nameloc-as-prefix"));
+  if (nameLocOption && !nameLocOption->getNumOccurrences())
+    nameLocOption->setValue(true);
+
   // Under -g, the IR dumps (--mlir-print-ir-before/after) show the debug info
   // like --emit=mlir does.
   if (debugInfo)
@@ -580,11 +586,6 @@ int main(int argc, char **argv) {
     // scope), so the NameLocs and DI markers are visible without the explicit
     // --mlir-print-debuginfo / --mlir-print-local-scope flags.
     mlir::OpPrintingFlags flags;
-    // Prefer source names unless the printer option was explicitly supplied.
-    if (!llvm::cl::getRegisteredOptions()
-             .lookup("mlir-use-nameloc-as-prefix")
-             ->getNumOccurrences())
-      flags.printNameLocAsPrefix();
     if (debugInfo)
       flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/false)
           .useLocalScope();

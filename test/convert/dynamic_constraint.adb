@@ -12,7 +12,7 @@
 -- CHECK: ada.attr "last"
 -- CHECK: ada.convert implicit %{{.*}} : !ada.qual<i32, @dynamic_constraint.s> to !ada.qual<i32, @standard.integer>
 
--- LOWERED: ada.range_check %arg1, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @dynamic_constraint.s>
+-- LOWERED: ada.range_check %m, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @dynamic_constraint.s>
 
 function Dynamic_Constraint (N, M : Integer) return Integer is
    subtype S is Integer range 1 .. N;
