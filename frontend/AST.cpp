@@ -89,6 +89,31 @@ static std::string declRef(ada_node decl, ada_node *from) {
          std::to_string(r.start.column);
 }
 
+/// Print `formal=<name>` on a named or positional actual (@rm{6-4-1}).
+static void printFormal(llvm::raw_ostream &os, ada_node *node) {
+  ada_node_array params = nullptr;
+  if (ada_node_kind(node) != ada_param_assoc ||
+      !ada_basic_assoc_p_get_params(node, /*imprecise_fallback=*/0, &params) ||
+      !params)
+    return;
+  // Attribute formals have no text and print nothing.
+  const char *separator = " formal=";
+  for (int i = 0; i < params->n; ++i) {
+    if (ada_node_is_null(&params->items[i]))
+      continue;
+    ada_text name;
+    ada_node_text(&params->items[i], &name);
+    if (name.length > 0) {
+      os << separator;
+      separator = ",";
+      fprint_text(llvm::WithColor(os, llvm::raw_ostream::BLUE).get(), name,
+                  /*with_quotes=*/false);
+    }
+    ada_destroy_text(&name);
+  }
+  ada_node_array_dec_ref(params);
+}
+
 /// Whether the AST dump skips `node`.
 static bool is_hidden(ada_node *node) {
   // Absent optional children and empty lists carry no information in a dump
@@ -169,6 +194,7 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node,
         << " expected=" << declRef(expected, node);
   if (failed || (unresolved && isReference && !printed))
     WithColor(os, raw_ostream::RED).get() << " <resolution failed>";
+  printFormal(os, node);
   // Value of a static expression (@rm{4-9}), the position for an enumeration.
   // @todo Print static real values too, once Libadalang can evaluate them.
   if (libadalang::isStaticExpr(*node)) {
