@@ -2091,17 +2091,30 @@ private:
   /// @todo FixedTypeInfoAttr, RecordTypeInfoAttr, etc.
   mlir::LogicalResult mlirGenTypeDecl(ada_node &type_decl,
                                       bool external = false) {
+    mlir::LogicalResult result = mlir::success();
     if (ada_node_kind(&type_decl) == ada_subtype_decl)
-      return mlirGenSubtypeDecl(type_decl, external);
+      result = mlirGenSubtypeDecl(type_decl, external);
     // Universal types (@rm{3-4-1}) and numeric types
     // (@rm{3-5-4}, @rm{3-5-6}, @rm{3-5-7}).
-    if (libadalang::isUniversalTypeDecl(type_decl) ||
-        libadalang::isNumericTypeDecl(type_decl))
-      return mlirGenNumericTypeDecl(type_decl, external);
+    else if (libadalang::isUniversalTypeDecl(type_decl) ||
+             libadalang::isNumericTypeDecl(type_decl))
+      result = mlirGenNumericTypeDecl(type_decl, external);
     // Array types (@rm{3-6}).
-    if (libadalang::isArrayTypeDecl(type_decl))
-      return mlirGenArrayTypeDecl(type_decl, external);
-    return mlirGenEnumTypeDecl(type_decl, external);
+    else if (libadalang::isArrayTypeDecl(type_decl))
+      result = mlirGenArrayTypeDecl(type_decl, external);
+    else
+      result = mlirGenEnumTypeDecl(type_decl, external);
+    if (mlir::failed(result))
+      return result;
+
+    auto typeOp = typeDecls.lookup(type_decl.node);
+    if (typeOp && mlir::ada::isNumericMachineType(typeOp.getMlirType()) &&
+        !typeOp.hasDefaultValue()) {
+      ada_node value;
+      if (defaultValueExpr(type_decl, value))
+        typeOp.setHasDefaultValueAttr(builder.getUnitAttr());
+    }
+    return mlir::success();
   }
 
   /// Emit a universal or numeric type declaration as an `ada.type` carrying
