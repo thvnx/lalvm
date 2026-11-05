@@ -283,7 +283,10 @@ void TypeOp::build(mlir::OpBuilder &odsBuilder, mlir::OperationState &odsState,
     odsState.addAttribute(getBaseAttrName(odsState.name), base);
 }
 
-/// Assembly format: `@sym_name (base @ref)? : mlir_type = type_info_attr`
+/// Assembly format:
+/// @code
+/// @sym_name (base @ref)? : mlir_type (= type_info_attr)? attr-dict
+/// @endcode
 mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
                                 mlir::OperationState &result) {
   mlir::StringAttr symName;
@@ -312,6 +315,14 @@ mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
       return mlir::failure();
   }
 
+  auto attrsLoc = parser.getCurrentLocation();
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return mlir::failure();
+  if (failed(verifyInherentAttrs(result.name, result.attributes, [&]() {
+        return parser.emitError(attrsLoc)
+               << "'" << result.name.getStringRef() << "' op ";
+      })))
+    return mlir::failure();
   return mlir::success();
 }
 
@@ -328,10 +339,22 @@ void TypeOp::print(mlir::OpAsmPrinter &p) {
     p << " = ";
     p.printAttribute(typeInfo);
   }
+  p.printOptionalAttrDict((*this)->getAttrs(),
+                          {"sym_name", "mlir_type", "type_info", "base"});
 }
 
 bool TypeOp::isAnonymous() {
   return bareName(getSymName()).starts_with(kAnonymousTypePrefix);
+}
+
+bool TypeOp::hasDefaultValue() {
+  for (TypeOp type = *this; type;) {
+    if (type.getHasDefaultValueAttr())
+      return true;
+    auto base = type.getBaseAttr();
+    type = base ? lookupAdaType(type, base) : TypeOp{};
+  }
+  return false;
 }
 
 llvm::LogicalResult TypeOp::verify() {
