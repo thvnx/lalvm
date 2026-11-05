@@ -5,8 +5,8 @@ LALVM is a prototype Ada-to-LLVM compiler using AdaCore's
 [MLIR](https://mlir.llvm.org/) as an intermediate representation, and
 [LLVM](https://llvm.org/) for the backend.
 
-This README covers building and day-to-day use. See the [documentation
-section](#documentation) below for more content.
+This README covers building and day-to-day use. See the
+[developer documentation](docs/development.md) for testing and development tools.
 
 ## Disclaimer
 
@@ -174,11 +174,3 @@ cc main.o b_main.o build/lib/libgnatstub.a -o main
 
 Note that `--bind` composes with `--emit`. For example, `--emit=llvm` dumps the
 bind module as LLVM IR.
-
-## Documentation
-
-- [Architecture and pipeline](docs/architecture.md)
-- [Symbol naming and debug info](docs/abi.md)
-- [Feature status](docs/status.md)
-- [Development](docs/development.md)
-- [API reference (Doxygen)](https://thvnx.github.io/lalvm/)
