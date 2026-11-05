@@ -499,9 +499,9 @@ def AttrOp : Ada_Op<"attr", [Pure,
 // BinOp
 //===----------------------------------------------------------------------===//
 
-// No side-effect but a run-time check can raise, so it is only speculatable
-// when no checks.
-def BinOp : Ada_Op<"binop", [NoMemoryEffect,
+// Run-time checks remain observable even when the result is unused.
+def BinOp : Ada_Op<"binop", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
     DeclareOpInterfaceMethods<ConditionallySpeculatable>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Ada predefined binary arithmetic operation";
@@ -572,8 +572,9 @@ def CmpOp : Ada_Op<"cmp", [Pure,
 // UnOp
 //===----------------------------------------------------------------------===//
 
-// Same as `ada.binop`: only speculatable without checks.
-def UnOp : Ada_Op<"unop", [NoMemoryEffect,
+// Same as `ada.binop`: checked operations cannot be discarded or speculated.
+def UnOp : Ada_Op<"unop", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
     DeclareOpInterfaceMethods<ConditionallySpeculatable>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Ada predefined unary operation";

@@ -858,6 +858,15 @@ speculatabilityOf(std::optional<AdaChecks> checks) {
                                           : mlir::Speculation::Speculatable;
 }
 
+// Model a possible raise as a write to preserve unused checks and their order
+// relative to other effects. Unchecked operations have no memory effects.
+static void checkEffects(
+    std::optional<AdaChecks> checks,
+    llvm::SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  if (checks && *checks != AdaChecks{})
+    effects.emplace_back(mlir::MemoryEffects::Write::get());
+}
+
 //===----------------------------------------------------------------------===//
 // BinOp
 //===----------------------------------------------------------------------===//
@@ -878,6 +887,11 @@ llvm::LogicalResult BinOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 
 mlir::Speculation::Speculatability BinOp::getSpeculatability() {
   return speculatabilityOf(getChecks());
+}
+
+void BinOp::getEffects(
+    llvm::SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  checkEffects(getChecks(), effects);
 }
 
 //===----------------------------------------------------------------------===//
@@ -931,6 +945,11 @@ llvm::LogicalResult UnOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 
 mlir::Speculation::Speculatability UnOp::getSpeculatability() {
   return speculatabilityOf(getChecks());
+}
+
+void UnOp::getEffects(
+    llvm::SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  checkEffects(getChecks(), effects);
 }
 
 //===----------------------------------------------------------------------===//
