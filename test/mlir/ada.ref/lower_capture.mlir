@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Copyright (c) 2026 The LALVM Project
 
+// RUN: %lalvm --emit=mlir -O1 %s | %FileCheck %s --check-prefix=EARLY
 // RUN: %lalvm --emit=llvm %s | %FileCheck %s
 // RUN: %lalvm --emit=llvm -O1 %s | %FileCheck %s
 // RUN: %lalvm --emit=llvm -g %s | %FileCheck %s --check-prefix=DI
@@ -10,6 +11,15 @@ module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
   ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
 
+  // Early promotion must preserve an object used by a nested subprogram.
+  // EARLY-LABEL: ada.subp @outer(
+  // EARLY-SAME: %[[INPUT:[^: ]+]]: !ada.qual<i32, @small>
+  // EARLY: %[[OBJECT:.*]] = ada.object : !ada.ref<!ada.qual<i32, @small>>
+  // EARLY: ada.subp private @outer.inner()
+  // EARLY: ada.write %[[INPUT]], %[[OBJECT]]
+  // EARLY: ada.call @outer.inner()
+  // EARLY: %[[VALUE:.*]] = ada.read %[[OBJECT]]
+  // EARLY: ada.return %[[VALUE]]
   // CHECK-LABEL: define i32 @_ada_outer(
   // CHECK: %[[X:.*]] = alloca i32
   // CHECK: call void @outer__inner(i32 %0, ptr %[[X]])

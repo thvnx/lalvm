@@ -22,6 +22,7 @@
 #include "mlir/Interfaces/FoldInterfaces.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Interfaces/MemorySlotInterfaces.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -410,9 +411,78 @@ llvm::LogicalResult TypeOp::verify() {
   return mlir::success();
 }
 
+// Provide a value for reads reached before any write. Return zero unless known
+// type metadata excludes it, then use the integer range's lower bound or the
+// first enumeration literal's representation value.
+static mlir::Value createDefaultObjectValue(mlir::Operation *op,
+                                            QualType typedType,
+                                            mlir::OpBuilder &builder) {
+  auto machineType = typedType.getMlirType();
+  mlir::Attribute value = builder.getZeroAttr(machineType);
+  if (auto integerType = mlir::dyn_cast<mlir::IntegerType>(machineType)) {
+    auto typeOp = lookupAdaType(op, typedType.getAdaType());
+    if (typeOp) {
+      auto info = typeOp.getTypeInfoAttr();
+      if (auto integer = mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(info)) {
+        if (auto bounds = integer.staticBounds()) {
+          llvm::APSInt zero(llvm::APInt(1, 0));
+          if (!inStaticRange(zero, bounds->first, bounds->second))
+            value = builder.getIntegerAttr(
+                integerType, bounds->first.extOrTrunc(integerType.getWidth()));
+        }
+      } else if (auto enumeration =
+                     mlir::dyn_cast_or_null<EnumTypeInfoAttr>(info)) {
+        auto values = enumeration.getValues();
+        if (!values.empty() && !llvm::is_contained(values, int64_t{0}))
+          value = builder.getIntegerAttr(integerType, values.front());
+      }
+    }
+  }
+  return ConstantOp::create(builder, op->getLoc(), typedType, value);
+}
+
 //===----------------------------------------------------------------------===//
 // ObjectOp
 //===----------------------------------------------------------------------===//
+
+// Promote only entry block objects whose base type can be resolved.
+llvm::SmallVector<mlir::MemorySlot> ObjectOp::getPromotableSlots() {
+  if (!getOperation()->getBlock()->isEntryBlock())
+    return {};
+  auto qual =
+      mlir::cast<QualType>(mlir::cast<RefType>(getType()).getValueType());
+  auto base = baseOfAdaType(*this, qual.getAdaType());
+  if (!base)
+    return {};
+  return {{getResult(), QualType::get(getContext(), qual.getMlirType(), base)}};
+}
+
+mlir::Value ObjectOp::getDefaultValue(const mlir::MemorySlot &slot,
+                                      mlir::OpBuilder &builder) {
+  if (auto initial = getInitial()) {
+    // The initializer need not dominate the start of the entry block.
+    mlir::OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointAfter(*this);
+    return requalify(builder, unnamedLoc(getLoc()), initial, slot.elemType);
+  }
+  return createDefaultObjectValue(*this, mlir::cast<QualType>(slot.elemType),
+                                  builder);
+}
+
+void ObjectOp::handleBlockArgument(const mlir::MemorySlot &slot,
+                                   mlir::BlockArgument argument,
+                                   mlir::OpBuilder &builder) {}
+
+std::optional<mlir::PromotableAllocationOpInterface>
+ObjectOp::handlePromotionComplete(const mlir::MemorySlot &slot,
+                                  mlir::Value defaultValue,
+                                  mlir::OpBuilder &builder) {
+  // Only remove defaults created for promotion, never the original initializer.
+  if (defaultValue && defaultValue != getInitial() && defaultValue.use_empty())
+    defaultValue.getDefiningOp()->erase();
+  erase();
+  return std::nullopt;
+}
 
 llvm::LogicalResult ObjectOp::verify() {
   auto function = (*this)->getParentOfType<mlir::FunctionOpInterface>();
@@ -452,6 +522,68 @@ llvm::LogicalResult ReadOp::verifySymbolUses(mlir::SymbolTableCollection &) {
   return mlir::success();
 }
 
+bool ReadOp::loadsFrom(const mlir::MemorySlot &slot) {
+  return getReference() == slot.ptr;
+}
+
+bool ReadOp::storesTo(const mlir::MemorySlot &slot) { return false; }
+
+mlir::Value ReadOp::getStored(const mlir::MemorySlot &slot,
+                              mlir::OpBuilder &builder, mlir::Value reachingDef,
+                              const mlir::DataLayout &dataLayout) {
+  llvm_unreachable("a read does not store a value");
+}
+
+bool ReadOp::canUsesBeRemoved(
+    const mlir::MemorySlot &slot,
+    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
+    llvm::SmallVectorImpl<mlir::OpOperand *> &newBlockingUses,
+    const mlir::DataLayout &dataLayout) {
+  return blockingUses.size() == 1 &&
+         (*blockingUses.begin())->get() == slot.ptr &&
+         getReference() == slot.ptr;
+}
+
+mlir::DeletionKind ReadOp::removeBlockingUses(
+    const mlir::MemorySlot &slot,
+    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
+    mlir::OpBuilder &builder, mlir::Value reachingDefinition,
+    const mlir::DataLayout &dataLayout) {
+  getResult().replaceAllUsesWith(
+      requalify(builder, getLoc(), reachingDefinition, getType()));
+  return mlir::DeletionKind::Delete;
+}
+
+namespace {
+// Forward the last write in this block without crossing possible memory
+// effects.
+struct ForwardObjectWrite : public mlir::OpRewritePattern<ReadOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  llvm::LogicalResult
+  matchAndRewrite(ReadOp op, mlir::PatternRewriter &rewriter) const override {
+    for (auto *previous = op->getPrevNode(); previous;
+         previous = previous->getPrevNode()) {
+      if (auto write = mlir::dyn_cast<WriteOp>(previous)) {
+        if (write.getReference() != op.getReference())
+          break;
+        rewriter.replaceOp(op, requalify(rewriter, op.getLoc(),
+                                         write.getValue(), op.getType()));
+        return mlir::success();
+      }
+      if (!mlir::isMemoryEffectFree(previous))
+        break;
+    }
+    return mlir::failure();
+  }
+};
+} // namespace
+
+void ReadOp::getCanonicalizationPatterns(mlir::RewritePatternSet &results,
+                                         mlir::MLIRContext *context) {
+  results.add<ForwardObjectWrite>(context);
+}
+
 //===----------------------------------------------------------------------===//
 // WriteOp
 //===----------------------------------------------------------------------===//
@@ -462,6 +594,80 @@ llvm::LogicalResult WriteOp::verify() {
     return emitOpError("value must have the object's nominal type ")
            << valueType;
   return mlir::success();
+}
+
+bool WriteOp::loadsFrom(const mlir::MemorySlot &slot) { return false; }
+
+bool WriteOp::storesTo(const mlir::MemorySlot &slot) {
+  return getReference() == slot.ptr;
+}
+
+mlir::Value WriteOp::getStored(const mlir::MemorySlot &slot,
+                               mlir::OpBuilder &builder,
+                               mlir::Value reachingDef,
+                               const mlir::DataLayout &dataLayout) {
+  return requalify(builder, unnamedLoc(getLoc()), getValue(), slot.elemType);
+}
+
+bool WriteOp::canUsesBeRemoved(
+    const mlir::MemorySlot &slot,
+    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
+    llvm::SmallVectorImpl<mlir::OpOperand *> &newBlockingUses,
+    const mlir::DataLayout &dataLayout) {
+  return blockingUses.size() == 1 &&
+         (*blockingUses.begin())->get() == slot.ptr &&
+         getReference() == slot.ptr;
+}
+
+mlir::DeletionKind WriteOp::removeBlockingUses(
+    const mlir::MemorySlot &slot,
+    const llvm::SmallPtrSetImpl<mlir::OpOperand *> &blockingUses,
+    mlir::OpBuilder &builder, mlir::Value reachingDefinition,
+    const mlir::DataLayout &dataLayout) {
+  return mlir::DeletionKind::Delete;
+}
+
+namespace {
+// Remove writes overwritten or restored from a read without intervening
+// effects.
+struct SimplifyObjectWrite : public mlir::OpRewritePattern<WriteOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  llvm::LogicalResult
+  matchAndRewrite(WriteOp op, mlir::PatternRewriter &rewriter) const override {
+    for (auto *next = op->getNextNode(); next; next = next->getNextNode()) {
+      if (auto write = mlir::dyn_cast<WriteOp>(next)) {
+        if (write.getReference() == op.getReference()) {
+          rewriter.eraseOp(op);
+          return mlir::success();
+        }
+      }
+      // A later write might not execute if an intervening operation raises.
+      if (!mlir::isPure(next))
+        break;
+    }
+
+    auto read = op.getValue().getDefiningOp<ReadOp>();
+    if (!read || read.getReference() != op.getReference() ||
+        read->getBlock() != op->getBlock())
+      return mlir::failure();
+    for (auto *previous = op->getPrevNode(); previous;
+         previous = previous->getPrevNode()) {
+      if (previous == read.getOperation()) {
+        rewriter.eraseOp(op);
+        return mlir::success();
+      }
+      if (!mlir::isMemoryEffectFree(previous))
+        break;
+    }
+    return mlir::failure();
+  }
+};
+} // namespace
+
+void WriteOp::getCanonicalizationPatterns(mlir::RewritePatternSet &results,
+                                          mlir::MLIRContext *context) {
+  results.add<SimplifyObjectWrite>(context);
 }
 
 //===----------------------------------------------------------------------===//
@@ -485,13 +691,10 @@ llvm::SmallVector<mlir::MemorySlot> AllocaOp::getPromotableSlots() {
   return {mlir::MemorySlot{getResult(), elemType}};
 }
 
-// PromotableAllocationOpInterface: provide a zero value of the slot type for
-// uses that are reached before any write (uninitialized variable reads).
 mlir::Value AllocaOp::getDefaultValue(const mlir::MemorySlot &slot,
                                       mlir::OpBuilder &builder) {
-  auto typedType = mlir::cast<QualType>(slot.elemType);
-  return ConstantOp::create(builder, getLoc(), typedType,
-                            builder.getZeroAttr(typedType.getMlirType()));
+  return createDefaultObjectValue(*this, mlir::cast<QualType>(slot.elemType),
+                                  builder);
 }
 
 // PromotableAllocationOpInterface: called when mem2reg introduces a block
@@ -502,7 +705,7 @@ void AllocaOp::handleBlockArgument(const mlir::MemorySlot &slot,
                                    mlir::OpBuilder &builder) {}
 
 // PromotableAllocationOpInterface: called after promotion is complete. Erases
-// the alloca and the default zero value if it was never used.
+// the alloca and the default value if it was never used.
 std::optional<mlir::PromotableAllocationOpInterface>
 AllocaOp::handlePromotionComplete(const mlir::MemorySlot &slot,
                                   mlir::Value defaultValue,

@@ -181,7 +181,8 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
 //===----------------------------------------------------------------------===//
 
 // Introduces object identity independently of its storage representation.
-def ObjectOp : Ada_Op<"object"> {
+def ObjectOp : Ada_Op<"object", [
+    DeclareOpInterfaceMethods<PromotableAllocationOpInterface>]> {
   let summary = "Declare an Ada object";
   let description = [{
     Declares an Ada object (@rm{3-3}) and returns its reference. Storage
@@ -209,6 +210,7 @@ def ObjectOp : Ada_Op<"object"> {
 
 // Retrieves the current value of a referenced object.
 def ReadOp : Ada_Op<"read", [
+    DeclareOpInterfaceMethods<PromotableMemOpInterface>,
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Read an Ada object";
   let description = [{
@@ -224,6 +226,7 @@ def ReadOp : Ada_Op<"read", [
       "$reference attr-dict `:` qualified(type($reference)) `->` "
       "qualified(type($result))";
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -231,7 +234,8 @@ def ReadOp : Ada_Op<"read", [
 //===----------------------------------------------------------------------===//
 
 // Updates the current value of a referenced object.
-def WriteOp : Ada_Op<"write"> {
+def WriteOp : Ada_Op<"write", [
+    DeclareOpInterfaceMethods<PromotableMemOpInterface>]> {
   let summary = "Write an Ada object";
   let description = [{
     Assigns a value of the nominal qualified type to a referenced object
@@ -247,6 +251,7 @@ def WriteOp : Ada_Op<"write"> {
       "$value `,` $reference attr-dict `:` qualified(type($value)) `->` "
       "qualified(type($reference))";
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
