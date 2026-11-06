@@ -179,13 +179,7 @@ static TypeOrigin typeOrigin(llvm::Module &llvmModule, llvm::DICompileUnit *cu,
     if (fn && fn->getSubprogram())
       origin.scope = fn->getSubprogram();
   }
-  mlir::Location loc = typeOp.getLoc();
-  while (auto fused = mlir::dyn_cast<mlir::FusedLoc>(loc)) {
-    if (fused.getLocations().empty())
-      break;
-    loc = fused.getLocations().front();
-  }
-  if (auto flc = mlir::dyn_cast<mlir::FileLineColRange>(loc)) {
+  if (auto flc = typeOp.getLoc()->findInstanceOf<mlir::FileLineColRange>()) {
     origin.filePath = flc.getFilename().getValue();
     origin.line = flc.getStartLine();
   }

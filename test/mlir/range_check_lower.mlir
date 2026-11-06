@@ -12,6 +12,7 @@
 // RUN: %lalvm --emit=llvm %s | %FileCheck %s
 
 module {
+  // CHECK: private constant [10 x i8] c"check.adb\00"
   // CHECK-LABEL: define i32 @_ada_check
   ada.subp @check(%v: !ada.qual<i32, @integer>, %lo: !ada.qual<i32, @integer>,
                   %hi: !ada.qual<i32, @integer>) -> !ada.qual<i32, @positive> {
@@ -22,10 +23,10 @@ module {
     // CHECK:      icmp sgt i32 %0, %[[HI]]
     // CHECK:      or i1
     // CHECK:      br i1
-    // CHECK:      call void @__gnat_rcheck_CE_Range_Check(ptr {{.*}}, i32 {{.*}})
+    // CHECK:      call void @__gnat_rcheck_CE_Range_Check(ptr {{.*}}, i32 42)
     // CHECK:      unreachable
     // CHECK:      ret i32 %0
-    %c = ada.range_check %v, %r : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
+    %c = ada.range_check %v, %r : !ada.qual<i32, @integer> to !ada.qual<i32, @positive> loc(fused[unknown, "checked"("check.adb":42:3)])
     ada.return %c : !ada.qual<i32, @positive>
   }
 }

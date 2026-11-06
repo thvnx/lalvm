@@ -239,17 +239,15 @@ fallbackDIType(MLIRContext *ctx, mlir::Type mlirType,
 }
 
 /// Extract the Ada-type-specific DI type from a FusedLoc carrying a
-/// FlatSymbolRefAttr, using `typeOpByName` to resolve the sym_name.
+/// DITypeRefAttr, using `typeOpByName` to resolve the sym_name.
 /// Returns null if the loc has no such metadata or the sym_name is not found.
 static LLVM::DITypeAttr extractDITypeFromLoc(
     MLIRContext *ctx, Location loc,
     llvm::DenseMap<mlir::StringAttr, ada::TypeOp> &typeOpByName) {
-  auto fl = dyn_cast<FusedLoc>(loc);
+  auto fl = loc->findInstanceOf<FusedLocWith<ada::DITypeRefAttr>>();
   if (!fl)
     return {};
-  auto typeRef = dyn_cast_or_null<ada::DITypeRefAttr>(fl.getMetadata());
-  if (!typeRef)
-    return {};
+  auto typeRef = fl.getMetadata();
   auto it = typeOpByName.find(typeRef.getSym().getAttr());
   if (it == typeOpByName.end())
     return {};
@@ -259,11 +257,7 @@ static LLVM::DITypeAttr extractDITypeFromLoc(
 static std::pair<LLVM::DIFileAttr, unsigned>
 getFileAndLine(MLIRContext *ctx, Location loc,
                LLVM::DISubprogramAttr subprogram) {
-  // Unwrap FusedLoc carrying Ada type metadata (from attachAdaTypeRef).
-  if (auto fl = dyn_cast<FusedLoc>(loc))
-    if (!fl.getLocations().empty())
-      return getFileAndLine(ctx, fl.getLocations()[0], subprogram);
-  if (auto flc = dyn_cast<FileLineColRange>(loc)) {
+  if (auto flc = loc->findInstanceOf<FileLineColRange>()) {
     StringRef filePath = flc.getFilename().getValue();
     return {LLVM::DIFileAttr::get(ctx, llvm::sys::path::filename(filePath),
                                   llvm::sys::path::parent_path(filePath)),
@@ -380,15 +374,13 @@ struct AdaDebugInfoPass
         // Element 0: return type, from the DITypeRef nested under the
         // function's FusedLoc. Null for procedures (no nested DITypeRef) =
         // void return.
-        LLVM::DITypeAttr returnType;
-        if (!fused.getLocations().empty())
-          returnType =
-              extractDITypeFromLoc(ctx, fused.getLocations()[0], typeOpByName);
+        LLVM::DITypeAttr returnType =
+            extractDITypeFromLoc(ctx, func.getLoc(), typeOpByName);
 
         // Remaining elements: parameter types from entry block-arg locations.
         SmallVector<LLVM::DITypeAttr> types{returnType};
         for (BlockArgument arg : func.getBody().front().getArguments()) {
-          auto nl = dyn_cast<NameLoc>(arg.getLoc());
+          auto nl = arg.getLoc()->findInstanceOf<NameLoc>();
           types.push_back(
               nl ? extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName)
                  : LLVM::DITypeAttr{});
@@ -449,7 +441,7 @@ struct AdaDebugInfoPass
     using FuncNamePair = std::pair<Operation *, StringAttr>;
     llvm::DenseSet<FuncNamePair> allocaNames;
     module.walk([&](LLVM::AllocaOp op) {
-      auto nl = dyn_cast<NameLoc>(op.getLoc());
+      auto nl = op.getLoc()->findInstanceOf<NameLoc>();
       if (!nl)
         return;
       auto func = op->getParentOfType<LLVM::LLVMFuncOp>();
@@ -468,7 +460,7 @@ struct AdaDebugInfoPass
     llvm::SmallVector<DebugEntry> entries;
 
     module.walk([&](Operation *op) {
-      auto nl = dyn_cast<NameLoc>(op->getLoc());
+      auto nl = op->getLoc()->findInstanceOf<NameLoc>();
       if (!nl)
         return;
 
@@ -539,7 +531,7 @@ struct AdaDebugInfoPass
       builder.setInsertionPointToStart(&entry);
 
       for (BlockArgument arg : entry.getArguments()) {
-        auto nl = dyn_cast<NameLoc>(arg.getLoc());
+        auto nl = arg.getLoc()->findInstanceOf<NameLoc>();
         if (!nl)
           continue;
 
@@ -735,7 +727,7 @@ struct DICompileUnitAdaPass
     MLIRContext *ctx = &getContext();
 
     StringRef filePath;
-    if (auto loc = dyn_cast<FileLineColRange>(module.getLoc()))
+    if (auto loc = module.getLoc()->findInstanceOf<FileLineColRange>())
       filePath = loc.getFilename().getValue();
 
     auto fileAttr =

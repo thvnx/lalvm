@@ -165,9 +165,9 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
   mlir::Block *raise = rewriter.createBlock(cont);
   llvm::StringRef fileName;
   unsigned line = 0;
-  if (auto flc = mlir::dyn_cast<mlir::FileLineColLoc>(loc)) {
+  if (auto flc = loc->findInstanceOf<mlir::FileLineColRange>()) {
     fileName = llvm::sys::path::filename(flc.getFilename().getValue());
-    line = flc.getLine();
+    line = flc.getStartLine();
   }
   mlir::Value file = emitFileNamePtr(rewriter, loc, module, fileName);
   mlir::Value lineVal = LLVM::ConstantOp::create(
