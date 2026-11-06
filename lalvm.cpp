@@ -231,8 +231,8 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   // dialect; load it before creating them.
   context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 
-  // Lift and hoist subprograms before choosing their ABI. Expand conversions
-  // and lower references before memory promotion and LLVM lowering. Keep
+  // Lift and hoist subprograms before choosing their ABI. Promote semantic
+  // objects before storage conversion and LLVM lowering. Keep
   // --emit=mlir as the nested dialect view.
   mlir::PassManager adaLoweringPm(module.get()->getName());
   adaLoweringPm.addPass(mlir::ada::createClosureConversionPass());
@@ -240,6 +240,10 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   adaLoweringPm.addPass(mlir::ada::createLowerAdaCallsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaIndexingPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaConversionsPass());
+  if (optLevel >= 1) {
+    adaLoweringPm.addPass(mlir::createMem2Reg());
+    adaLoweringPm.addPass(mlir::createCanonicalizerPass());
+  }
   adaLoweringPm.addPass(mlir::ada::createLowerAdaReferencesPass());
   if (int error = runPassManager(adaLoweringPm, *module, timing))
     return error;

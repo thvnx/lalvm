@@ -34,7 +34,7 @@ struct ObjectOpLowering : OpConversionPattern<ada::ObjectOp> {
     auto qual =
         cast<ada::QualType>(cast<ada::RefType>(op.getType()).getValueType());
     Location loc = ada::attachAdaTypeRef(op.getLoc(), qual.getAdaType());
-    Value slot = ada::AllocaOp::create(rewriter, loc, slotType);
+    Value slot = memref::AllocaOp::create(rewriter, loc, slotType);
     if (Value initial = adaptor.getInitial()) {
       initial = ada::requalify(rewriter, ada::unnamedLoc(op.getLoc()), initial,
                                slotType.getElementType());

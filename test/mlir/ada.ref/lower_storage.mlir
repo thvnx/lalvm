@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The LALVM Project
 
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-references %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWER --implicit-check-not=ada.object --implicit-check-not=ada.read --implicit-check-not=ada.write --implicit-check-not=!ada.ref --implicit-check-not=unrealized_conversion_cast
-// RUN: %lalvm --emit=llvm -O1 --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=PROMOTE --implicit-check-not=ada.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
+// RUN: %lalvm --emit=llvm -O1 --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=PROMOTE --implicit-check-not=ada.alloca --implicit-check-not=memref.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
@@ -12,7 +12,7 @@ module {
   ada.type @color : i8 = #ada.enum_info<"red" = 7, "green" = 9>
 
   // LOWER-LABEL: func.func @_ada_subtype
-  // LOWER: %[[SLOT:.*]] = ada.alloca : memref<!ada.qual<i32, @integer>>
+  // LOWER: %[[SLOT:.*]] = memref.alloca() : memref<!ada.qual<i32, @integer>>
   // LOWER: %[[INITIAL:.*]] = ada.requalify %arg0 : !ada.qual<i32, @small> to !ada.qual<i32, @integer>
   // LOWER: memref.store %[[INITIAL]], %[[SLOT]][]
   // LOWER: %[[LOADED:.*]] = memref.load %[[SLOT]][]
@@ -27,7 +27,7 @@ module {
   }
 
   // LOWER-LABEL: func.func @_ada_float_object
-  // LOWER: %[[FLOAT:.*]] = ada.alloca : memref<!ada.qual<f32, @float>>
+  // LOWER: %[[FLOAT:.*]] = memref.alloca() : memref<!ada.qual<f32, @float>>
   // LOWER-NEXT: memref.store %arg0, %[[FLOAT]][]
   // LOWER-NEXT: %[[VALUE:.*]] = memref.load %[[FLOAT]][]
   // LOWER-NEXT: return %[[VALUE]]

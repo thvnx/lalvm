@@ -1004,16 +1004,20 @@ struct RequalifyOpLowering : public OpConversionPattern<ada::RequalifyOp> {
 
 // OpConversionPattern: needs getTypeConverter()->convertType() to map the
 // ada.qual element type to its LLVM equivalent.
-struct AllocaAdaTypedLowering : public OpConversionPattern<ada::AllocaOp> {
-  using OpConversionPattern<ada::AllocaOp>::OpConversionPattern;
+template <typename OpTy>
+struct AllocaAdaTypedLowering : OpConversionPattern<OpTy> {
+  using OpConversionPattern<OpTy>::OpConversionPattern;
+  using OpAdaptor = typename OpConversionPattern<OpTy>::OpAdaptor;
 
   LogicalResult
-  matchAndRewrite(ada::AllocaOp op, OpAdaptor,
+  matchAndRewrite(OpTy op, OpAdaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto typedElem = mlir::cast<ada::QualType>(
-        mlir::cast<mlir::MemRefType>(op.getResult().getType())
-            .getElementType());
-    auto llvmElem = getTypeConverter()->convertType(typedElem.getMlirType());
+    auto type = cast<MemRefType>(op->getResult(0).getType());
+    auto typedElem = dyn_cast<ada::QualType>(type.getElementType());
+    if (!typedElem || type.getRank() != 0)
+      return failure();
+    auto llvmElem =
+        this->getTypeConverter()->convertType(typedElem.getMlirType());
     if (!llvmElem)
       return failure();
     // Keep the nominal type already recorded by reference lowering.
@@ -1176,9 +1180,10 @@ void AdaToLLVMLoweringPass::runOnOperation() {
                InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
                IndexOpLowering, RequalifyOpLowering>(typeConverter,
                                                      &getContext());
-  patterns
-      .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
-          typeConverter, &getContext(), PatternBenefit(2));
+  patterns.add<AllocaAdaTypedLowering<ada::AllocaOp>,
+               AllocaAdaTypedLowering<memref::AllocaOp>, LoadAdaTypedLowering,
+               StoreAdaTypedLowering>(typeConverter, &getContext(),
+                                      PatternBenefit(2));
 
   // We want to completely lower to LLVM, so we use a `FullConversion`. This
   // ensures that only legal operations will remain after the conversion.

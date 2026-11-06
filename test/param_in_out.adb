@@ -3,6 +3,7 @@
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=ada-lower-references %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=SSA --implicit-check-not=ada.object --implicit-check-not=memref.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
 
 -- An in out formal receives a saved value and returns its final value.
 
@@ -24,6 +25,13 @@
 -- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32
 -- LLVM:          store i32
 -- LLVM:          ret i32
+
+-- SSA-LABEL: func.func @_ada_param_in_out(
+-- SSA: call @param_in_out__increment
+-- SSA: return
+-- SSA-LABEL: func.func private @param_in_out__increment(
+-- SSA: ada.binop "+" %arg0,
+-- SSA: return
 
 function Param_In_Out return Integer is
    procedure Increment (X : in out Integer);

@@ -10,7 +10,7 @@
 // available on each llvm.func.
 //
 // Objects are identified by their NameLoc, set by MLIRGen on:
-//   - ada.alloca (ObjectDecl): lowered to llvm.alloca
+//   - ada.object (ObjectDecl): lowered to llvm.alloca
 //   - the initial value of a constant ObjectDecl, and the ada.constant of a
 //     NumberDecl: lowered to a scalar op (llvm.mlir.constant for a constant)
 //   - entry block args (parameters): NameLoc set by mlirGenSubpBody

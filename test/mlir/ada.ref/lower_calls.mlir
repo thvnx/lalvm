@@ -11,8 +11,8 @@ module {
   // Formal objects remain independent even when their actuals alias.
   // LOWER-LABEL: func.func @_ada_set_and_read(
   // LOWER-SAME: %arg0: !ada.qual<i32, @integer>, %arg1: !ada.qual<i32, @integer>, %arg2: !ada.qual<i32, @integer>) -> (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>, !ada.qual<i32, @integer>)
-  // LOWER: %[[X:.*]] = ada.alloca
-  // LOWER: %[[Y:.*]] = ada.alloca
+  // LOWER: %[[X:.*]] = memref.alloca()
+  // LOWER: %[[Y:.*]] = memref.alloca()
   // LOWER: memref.store %arg2, %[[X]][]
   // LOWER: %[[VALUE:.*]] = memref.load %[[Y]][]
   // LOWER: return %[[VALUE]],

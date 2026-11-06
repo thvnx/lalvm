@@ -3,8 +3,8 @@
 
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-references %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWER --implicit-check-not=!ada.ref --implicit-check-not=unrealized_conversion_cast
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-indexing %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=INDEXING --implicit-check-not=memref.reinterpret_cast
-// RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM --implicit-check-not=unrealized_conversion_cast
-// RUN: %lalvm --emit=llvm -O1 %s | %FileCheck %s --check-prefix=LLVM
+// RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefixes=LLVM,NOOPT --implicit-check-not=unrealized_conversion_cast
+// RUN: %lalvm --emit=llvm -O1 %s | %FileCheck %s --check-prefixes=LLVM,OPT
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
@@ -31,8 +31,9 @@ module {
   // LLVM: %[[OFFSET:.*]] = sub i64 %[[INDEX]], 1
   // LLVM: getelementptr [10 x i32], ptr %{{.*}}, i32 0, i64 %[[OFFSET]]
   // LLVM: store i32 %1, ptr %[[PTR:.*]], align 4
-  // LLVM: %[[VALUE:.*]] = load i32, ptr %[[PTR]], align 4
-  // LLVM: ret i32 %[[VALUE]]
+  // NOOPT: %[[VALUE:.*]] = load i32, ptr %[[PTR]], align 4
+  // NOOPT: ret i32 %[[VALUE]]
+  // OPT: ret i32 %1
   ada.subp @element(%index: !ada.qual<i32, @integer>, %v: !ada.qual<i32, @small>) -> !ada.qual<i32, @integer> {
     %array = ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
     %element = ada.index %array[%index] : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
