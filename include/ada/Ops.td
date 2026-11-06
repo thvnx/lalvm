@@ -538,8 +538,9 @@ def IndexCheckOp : Ada_InRangeCheckOp<"index_check"> {
   let summary = "Ada Index_Check against an array index range";
   let description = [{
     Index_Check (@rm{4-1-1}, @rm{11-5}): an index of an indexed component
-    checked against the array's index range. The result carries the index
-    subtype and the machine value is forwarded unchanged.
+    checked against the array's index range. The result carries the range's
+    subtype and shares the input's base and machine representation. The Ada
+    index value is unchanged, without storage normalization.
 
     ```mlir
     %c = ada.index_check %i, %r
