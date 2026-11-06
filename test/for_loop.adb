@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR --implicit-check-not=ada.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
+-- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR --implicit-check-not=memref.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 -- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s --check-prefix=DI
 -- RUN: %lalvm -g -O1 --emit=llvm %s | %FileCheck %s --check-prefix=DI

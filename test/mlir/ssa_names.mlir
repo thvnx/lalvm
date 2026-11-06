@@ -16,12 +16,12 @@ module {
     // CHECK: %zero = ada.constant
     // NUMBERED: %0 = ada.constant
     %zero = ada.constant : !ada.qual<i32, @integer> = 0 loc("zero")
-    // CHECK: %x = ada.alloca
-    %slot = ada.alloca : memref<!ada.qual<i32, @integer>> loc("x")
-    memref.store %arg, %slot[] : memref<!ada.qual<i32, @integer>>
+    // CHECK: %x = ada.object
+    %slot = ada.object : !ada.ref<!ada.qual<i32, @integer>> loc("x")
+    ada.write %arg, %slot : !ada.qual<i32, @integer> -> !ada.ref<!ada.qual<i32, @integer>>
     // Names apply across dialects and collisions are disambiguated.
-    // CHECK: %[[LOADED:x_[0-9]+]] = memref.load %x[]
-    %loaded = memref.load %slot[] : memref<!ada.qual<i32, @integer>> loc("x")
+    // CHECK: %[[LOADED:x_[0-9]+]] = ada.read %x
+    %loaded = ada.read %slot : !ada.ref<!ada.qual<i32, @integer>> -> !ada.qual<i32, @integer> loc("x")
     // Nested NameLoc metadata also provides a name.
     // CHECK: %sum = ada.binop "+" %[[LOADED]], %zero
     %sum = ada.binop "+" %loaded, %zero : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer> loc(fused["sum"])

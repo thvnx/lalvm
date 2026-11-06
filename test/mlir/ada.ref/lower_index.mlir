@@ -12,7 +12,7 @@ module {
   ada.type @array : !ada.array<i32[i32 x 10]> = #ada.array_info<component @small, dim @integer range 1 to 10>
 
   // LOWER-LABEL: func.func @_ada_element
-  // LOWER: %[[ARRAY:.*]] = ada.alloca
+  // LOWER: %[[ARRAY:.*]] = memref.alloca()
   // LOWER: %[[ELEMENT:.*]] = ada.index %[[ARRAY]][%{{[^ ]+}}] offset %{{[^ ]+}}
   // LOWER-SAME: -> memref<!ada.qual<i32, @integer>>
   // INDEXING-LABEL: func.func @_ada_element(
@@ -35,8 +35,8 @@ module {
   // NOOPT: ret i32 %[[VALUE]]
   // OPT: ret i32 %1
   ada.subp @element(%index: !ada.qual<i32, @integer>, %v: !ada.qual<i32, @small>) -> !ada.qual<i32, @integer> {
-    %array = ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
-    %element = ada.index %array[%index] : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
+    %array = ada.object : !ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
+    %element = ada.index %array[%index] : (!ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
     ada.write %v, %element : !ada.qual<i32, @small> -> !ada.ref<!ada.qual<i32, @small>>
     %value = ada.read %element : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @integer>
     ada.return %value : !ada.qual<i32, @integer>
@@ -48,8 +48,8 @@ module {
   // LLVM-LABEL: define void @_ada_unused(
   // LLVM: call void @__gnat_rcheck_CE_Index_Check
   ada.subp @unused(%index: !ada.qual<i32, @integer>) {
-    %array = ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
-    %element = ada.index %array[%index] : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
+    %array = ada.object : !ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
+    %element = ada.index %array[%index] : (!ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
     ada.return
   }
 }

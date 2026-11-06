@@ -17,7 +17,7 @@ module @no_ada_type {
       %x: !ada.qual<f32, @float> loc("x"),
       %y: memref<!ada.qual<f32, @float>> {ada.mode = #ada<mode out>} loc("y"),
       %z: memref<!ada.qual<f32, @float>> {ada.mode = #ada<mode out>} loc("z")) {
-    %0 = ada.alloca : memref<!ada.qual<f32, @float>> loc("f")
+    %0 = memref.alloca() : memref<!ada.qual<f32, @float>> loc("f")
     memref.store %x, %y[] : memref<!ada.qual<f32, @float>>
     return
   }

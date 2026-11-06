@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The LALVM Project
 
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-references %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWER --implicit-check-not=ada.object --implicit-check-not=ada.read --implicit-check-not=ada.write --implicit-check-not=!ada.ref --implicit-check-not=unrealized_conversion_cast
-// RUN: %lalvm --emit=llvm -O1 --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=PROMOTE --implicit-check-not=ada.alloca --implicit-check-not=memref.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
+// RUN: %lalvm --emit=llvm -O1 --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=PROMOTE --implicit-check-not=memref.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>

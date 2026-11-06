@@ -2,11 +2,11 @@
 
 // RUN: %lalvm --emit=mlir %s | %FileCheck %s
 
-// CHECK: ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @arr>>
+// CHECK: memref.alloca() : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @arr>>
 
 module {
-  ada.subp @f() {
-    %0 = ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @arr>>
-    ada.return
+  func.func @f() {
+    %0 = memref.alloca() : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @arr>>
+    return
   }
 }

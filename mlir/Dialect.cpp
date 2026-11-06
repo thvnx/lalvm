@@ -722,52 +722,6 @@ void WriteOp::getCanonicalizationPatterns(mlir::RewritePatternSet &results,
 }
 
 //===----------------------------------------------------------------------===//
-// AllocaOp
-//===----------------------------------------------------------------------===//
-
-llvm::LogicalResult AllocaOp::verify() {
-  auto memrefType = mlir::cast<mlir::MemRefType>(getResult().getType());
-  if (!mlir::isa<QualType>(memrefType.getElementType()))
-    return emitOpError("result element type must be ada.qual");
-  return mlir::success();
-}
-
-// PromotableAllocationOpInterface: declare the single memory slot owned by
-// this alloca. Only entry-block allocas are eligible for mem2reg promotion.
-llvm::SmallVector<mlir::MemorySlot> AllocaOp::getPromotableSlots() {
-  if (!getOperation()->getBlock()->isEntryBlock())
-    return {};
-  auto elemType =
-      mlir::cast<mlir::MemRefType>(getResult().getType()).getElementType();
-  return {mlir::MemorySlot{getResult(), elemType}};
-}
-
-mlir::Value AllocaOp::getDefaultValue(const mlir::MemorySlot &slot,
-                                      mlir::OpBuilder &builder) {
-  return createDefaultObjectValue(*this, mlir::cast<QualType>(slot.elemType),
-                                  builder);
-}
-
-// PromotableAllocationOpInterface: called when mem2reg introduces a block
-// argument at a join point. The argument already has the right type and
-// directly replaces slot uses, so no extra insertion is needed.
-void AllocaOp::handleBlockArgument(const mlir::MemorySlot &slot,
-                                   mlir::BlockArgument argument,
-                                   mlir::OpBuilder &builder) {}
-
-// PromotableAllocationOpInterface: called after promotion is complete. Erases
-// the alloca and the default value if it was never used.
-std::optional<mlir::PromotableAllocationOpInterface>
-AllocaOp::handlePromotionComplete(const mlir::MemorySlot &slot,
-                                  mlir::Value defaultValue,
-                                  mlir::OpBuilder &builder) {
-  if (defaultValue && defaultValue.use_empty())
-    defaultValue.getDefiningOp()->erase();
-  erase();
-  return std::nullopt;
-}
-
-//===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
 

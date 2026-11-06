@@ -6,8 +6,8 @@
 
 module {
   ada.subp @f(%off: !ada.qual<i32, @standard.integer>) {
-    %arr = ada.alloca : memref<!ada.qual<i32, @arr>>
-    %elt = ada.index %arr[%off] : (memref<!ada.qual<i32, @arr>>, !ada.qual<i32, @standard.integer>) -> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
+    %arr = ada.object : !ada.ref<!ada.qual<i32, @arr>>
+    %elt = ada.index %arr[%off] : (!ada.ref<!ada.qual<i32, @arr>>, !ada.qual<i32, @standard.integer>) -> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
     ada.return
   }
 }

@@ -266,47 +266,6 @@ def WriteOp : Ada_Op<"write", [
 }
 
 //===----------------------------------------------------------------------===//
-// AllocaOp
-//===----------------------------------------------------------------------===//
-
-// Allocates stack storage for a single Ada typed variable.
-//
-// We cannot use memref.alloca for this purpose because
-// memref::AllocaOp::getPromotableSlots() gates on isSupportedElementType(),
-// which is hardcoded in mlir/lib/IR/Builders.cpp to a fixed set of built-in
-// types (FloatType, IndexType, IntegerType, RankedTensorType, VectorType).
-// ada.qual matches none of them, so every memref<!ada.qual<T>> alloca is
-// silently skipped by mem2reg with no error or warning. An external interface
-// model cannot be attached because memref::AllocaOp already owns the
-// interface, and attachInterface fails on a duplicate.
-//
-// This op reimplements the interface without the isSupportedElementType gate,
-// letting mem2reg promote ada.qual allocas. Other memref operations
-// (memref.load, memref.store) work with !ada.qual<T> element types without
-// modification and are still used alongside this op.
-def AllocaOp : Ada_Op<"alloca", [
-    // Declares the stack-allocation effect (matching memref.alloca) so a dead
-    // alloca becomes trivially removable once a DCE/canonicalizer pass runs.
-    MemoryEffects<[MemAlloc<AutomaticAllocationScopeResource>]>,
-    DeclareOpInterfaceMethods<PromotableAllocationOpInterface>
-  ]> {
-  let summary = "Ada typed local variable stack allocation";
-  let description = [{
-    Allocates stack storage for a single Ada typed scalar variable. The result
-    is a `memref` whose element type is `!ada.qual<T, @sym>`, preserving Ada
-    type identity through the alloca/load/store sequence until mem2reg promotes
-    the slot to an SSA value.
-
-    ```mlir
-    ada.alloca : memref<!ada.qual<i32, @integer>>
-    ```
-  }];
-  let results = (outs AnyMemRef:$result);
-  let assemblyFormat = "attr-dict `:` type($result)";
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
