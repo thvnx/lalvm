@@ -19,9 +19,8 @@
 // captures. A static link would be required only for indirect calls through an
 // access-to-subprogram value, which is not yet supported.
 //
-// It must run before `mem2reg`: captured objects retain their references so
-// nested writes affect the same objects. Once lifted, those references escape
-// through calls and prevent promotion.
+// Captured references block promotion so nested writes affect the same object.
+// Lifted references escape through calls and continue to prevent promotion.
 //
 //===----------------------------------------------------------------------===//
 

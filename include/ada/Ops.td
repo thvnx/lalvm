@@ -195,10 +195,10 @@ def ObjectOp : Ada_Op<"object", [
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Declare an Ada object";
   let description = [{
-    Declares an Ada object (@rm{3-3}) and returns its reference. Storage
-    duration and elaboration follow the declaration's context. The optional
-    initializer supplies its initial value. Without an initializer, any
-    required initialization must be represented explicitly.
+    Declares a fresh object (@rm{3-3}) each time it executes. Its reference
+    preserves identity independently of storage. Lifetime follows the
+    declaration's context. The optional initializer has the nominal or base
+    type. Required initialization and checks are explicit.
 
     ```mlir
     %x = ada.object : !ada.ref<!ada.qual<i32, @integer>>
@@ -224,7 +224,8 @@ def ReadOp : Ada_Op<"read", [
     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "Read an Ada object";
   let description = [{
-    Reads a value of the specified type from a referenced object.
+    Reads the object's current value with its nominal or base type. A base
+    result does not assert membership in the nominal subtype.
 
     ```mlir
     %v = ada.read %x : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @integer>
@@ -249,7 +250,7 @@ def WriteOp : Ada_Op<"write", [
   let summary = "Write an Ada object";
   let description = [{
     Assigns a value of the nominal qualified type to a referenced object
-    (@rm{5-2}).
+    (@rm{5-2}). References to the same object observe its writes.
 
     ```mlir
     ada.write %v, %x : !ada.qual<i32, @small> -> !ada.ref<!ada.qual<i32, @small>>

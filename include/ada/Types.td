@@ -48,7 +48,8 @@ def Ada_QualType : Ada_Type<"Qual", "qual", [MemRefElementTypeInterface]> {
 //===----------------------------------------------------------------------===//
 
 // Identifies an Ada object independently of its storage representation.
-// `valueType` is the object's type.
+// `valueType` is its nominal Ada type. Copying a reference preserves identity
+// and does not extend the object's lifetime.
 def Ada_RefType : Ada_Type<"Ref", "ref"> {
   let summary = "Reference to an Ada object";
   let parameters = (ins "::mlir::Type":$valueType);
