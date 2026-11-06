@@ -73,9 +73,11 @@ llvm::LogicalResult
 RefType::verify(llvm::function_ref<mlir::InFlightDiagnostic()> emitError,
                 mlir::Type valueType) {
   auto qual = mlir::dyn_cast<QualType>(valueType);
-  if (!qual || !isNumericMachineType(qual.getMlirType()))
-    return emitError() << "ada.ref requires a scalar ada.qual value type, got "
-                       << valueType;
+  if (!qual || (!isNumericMachineType(qual.getMlirType()) &&
+                !mlir::isa<ArrayType>(qual.getMlirType())))
+    return emitError()
+           << "ada.ref requires a scalar or array ada.qual value type, got "
+           << valueType;
   return mlir::success();
 }
 
@@ -473,12 +475,14 @@ static mlir::Value createDefaultObjectValue(mlir::Operation *op,
 // ObjectOp
 //===----------------------------------------------------------------------===//
 
-// Promote only entry block objects whose base type can be resolved.
+// Promote only entry block scalars with a resolved base type.
 llvm::SmallVector<mlir::MemorySlot> ObjectOp::getPromotableSlots() {
   if (!getOperation()->getBlock()->isEntryBlock())
     return {};
   auto qual =
       mlir::cast<QualType>(mlir::cast<RefType>(getType()).getValueType());
+  if (!isNumericMachineType(qual.getMlirType()))
+    return {};
   auto base = baseOfAdaType(*this, qual.getAdaType());
   if (!base)
     return {};
