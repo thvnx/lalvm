@@ -28,6 +28,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/Support/Path.h"
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -410,14 +411,40 @@ struct IndexOpLowering : public OpConversionPattern<ada::IndexOp> {
     if (!llvmArrayTy)
       return failure();
 
+    auto arrayType = ada::rootOfAdaType(op, arrayQual.getAdaType());
+    auto info = arrayType ? dyn_cast_or_null<ada::ArrayTypeInfoAttr>(
+                                arrayType.getTypeInfoAttr())
+                          : ada::ArrayTypeInfoAttr{};
+    if (!info || !info.staticLower(0))
+      return rewriter.notifyMatchFailure(op,
+                                         "missing static array lower bound");
+
+    // Keep the Ada index unchanged until storage addressing. Widen before
+    // subtracting so the full offset range fits even for narrow index types.
+    auto indexQual = cast<ada::QualType>(op.getIndex().getType());
+    auto indexType = cast<IntegerType>(adaptor.getIndex().getType());
+    auto offsetType =
+        rewriter.getIntegerType(std::max(64u, indexType.getWidth() + 1));
+    Value index;
+    if (isUnsignedOrderQualType(op, indexQual))
+      index = LLVM::ZExtOp::create(rewriter, op.getLoc(), offsetType,
+                                   adaptor.getIndex());
+    else
+      index = LLVM::SExtOp::create(rewriter, op.getLoc(), offsetType,
+                                   adaptor.getIndex());
+    auto lower = ada::boundValue(info.staticLower(0));
+    Value first = LLVM::ConstantOp::create(
+        rewriter, op.getLoc(), offsetType,
+        rewriter.getIntegerAttr(offsetType,
+                                lower.extOrTrunc(offsetType.getWidth())));
+    Value offset = LLVM::SubOp::create(rewriter, op.getLoc(), index, first);
+
     // getelementptr [N x T], ptr %base, 0, %off: the static 0 steps over the
-    // single [N x T], the dynamic offset selects the element. The offset is the
-    // zero-based one MLIRGen normalized ('First already subtracted), lowered to
-    // its machine integer, so no bound is involved here.
+    // single [N x T], the normalized offset selects the element.
     auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
         op, ptrTy, llvmArrayTy, adaptor.getArray(),
-        llvm::ArrayRef<LLVM::GEPArg>{0, adaptor.getIndex()});
+        llvm::ArrayRef<LLVM::GEPArg>{0, offset});
     return success();
   }
 };

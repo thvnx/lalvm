@@ -1520,9 +1520,7 @@ private:
                           location);
   }
 
-  /// Helper returning the indexed element memref for an indexing operation
-  /// (load and store). It normalizes the index and emits an ada.index
-  /// operation.
+  /// Return the component reference selected by an Ada index value.
   mlir::Value indexedElementRef(ada_node &index) {
     auto location = loc(index);
 
@@ -1584,8 +1582,7 @@ private:
     if (!rawIndex)
       return nullptr;
 
-    // The anonymous index subtype (see mlirGenArrayTypeDecl), and its base
-    // type, where the offset is computed.
+    // The anonymous index subtype (see mlirGenArrayTypeDecl) and its base.
     mlir::FlatSymbolRefAttr indexSym = info.getIndexTypes()[0];
     auto indexOp = mlir::cast<mlir::ada::TypeOp>(
         mlir::ada::lookupSymbolFrom(typeOp, indexSym.getValue()));
@@ -1605,24 +1602,12 @@ private:
     llvm::APSInt hi = mlir::ada::boundValue(info.staticUpper(0));
     if (!staticIndex || warnOutOfSubtypeRange(staticIndex.value(), lo, hi,
                                               indexSym.getValue(), location)) {
-      // The check yields the index (anonymous) subtype, from which the offset
-      // is computed.
+      // The check yields the array's anonymous index subtype.
       mlir::Value range = mlir::ada::getOrCreateStaticRange(
           builder, location, indexSym, indexQual, lo, hi);
       rawIndex = mlir::ada::IndexCheckOp::create(builder, location, subQual,
                                                  rawIndex, range);
     }
-
-    auto intType = mlir::cast<mlir::IntegerType>(indexQual.getMlirType());
-    mlir::Value first = emitIntConstant(
-        llvm::APInt(intType.getWidth(), info.staticLower(0).getInt(),
-                    /*isSigned=*/true),
-        indexQual, location);
-    // Convert the offset into a zero-based one for MemRef load/store
-    // operations.
-    mlir::Value offset = mlir::ada::BinOp::create(
-        builder, location, indexQual, mlir::ada::AdaBinaryOp::Minus, rawIndex,
-        first, mlir::ada::AdaChecksAttr{});
 
     // Keep the selected component's identity through call lowering.
     auto eltQual = mlir::ada::QualType::get(
@@ -1631,7 +1616,7 @@ private:
     auto resultTy = mlir::ada::RefType::get(builder.getContext(), eltQual);
 
     return mlir::ada::IndexOp::create(builder, location, resultTy, arrayRef,
-                                      offset);
+                                      rawIndex);
   }
 
   /// Emit an array index result.

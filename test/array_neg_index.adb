@@ -1,13 +1,12 @@
--- Indexing an array with a negative 'First: the zero-based offset is `index -
--- 'First`, so 'First (-5 here) is emitted as a signed constant and subtracted.
--- Exercises the signed-offset path; a wrong sign would emit a huge unsigned
--- 'First instead of -5.
+-- Indexing retains the Ada index. Storage lowering subtracts the lower bound.
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
+-- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- CHECK: %[[FIRST:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = -5
--- CHECK: %[[OFF:.*]] = ada.binop "-" %{{.*}}, %[[FIRST]]
--- CHECK: ada.index %{{.*}}[%[[OFF]]] : (memref<!ada.qual<!ada.array<i32[i32 x 11]>, @array_neg_index.vec>>, !ada.qual<i32, @standard.integer>) -> !ada.ref<!ada.qual<i32, @standard.integer>>
+-- CHECK: %[[INDEX:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 2
+-- CHECK-NOT: ada.binop "-"
+-- CHECK: ada.index %{{.*}}[%[[INDEX]]] : (memref<!ada.qual<!ada.array<i32[i32 x 11]>, @array_neg_index.vec>>, !ada.qual<i32, @standard.integer>) -> !ada.ref<!ada.qual<i32, @standard.integer>>
+-- LLVM: getelementptr [11 x i32], ptr %{{.*}}, i32 0, i64 7
 
 procedure Array_Neg_Index is
    type Vec is array (-5 .. 5) of Integer;

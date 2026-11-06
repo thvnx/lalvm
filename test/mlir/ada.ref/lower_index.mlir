@@ -19,13 +19,15 @@ module {
   // LOWER: %[[VALUE:.*]] = memref.load %[[ELEMENT]][]
   // LOWER: return %[[VALUE]]
   // LLVM-LABEL: define i32 @_ada_element(
-  // LLVM: getelementptr [10 x i32], ptr %{{.*}}, i32 0, i32 %0
+  // LLVM: %[[INDEX:.*]] = sext i32 %0 to i64
+  // LLVM: %[[OFFSET:.*]] = sub i64 %[[INDEX]], 1
+  // LLVM: getelementptr [10 x i32], ptr %{{.*}}, i32 0, i64 %[[OFFSET]]
   // LLVM: store i32 %1, ptr %[[PTR:.*]], align 4
   // LLVM: %[[VALUE:.*]] = load i32, ptr %[[PTR]], align 4
   // LLVM: ret i32 %[[VALUE]]
-  ada.subp @element(%offset: !ada.qual<i32, @integer>, %v: !ada.qual<i32, @small>) -> !ada.qual<i32, @integer> {
+  ada.subp @element(%index: !ada.qual<i32, @integer>, %v: !ada.qual<i32, @small>) -> !ada.qual<i32, @integer> {
     %array = ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
-    %element = ada.index %array[%offset] : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
+    %element = ada.index %array[%index] : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
     ada.write %v, %element : !ada.qual<i32, @small> -> !ada.ref<!ada.qual<i32, @small>>
     %value = ada.read %element : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @integer>
     ada.return %value : !ada.qual<i32, @integer>

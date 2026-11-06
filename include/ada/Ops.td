@@ -419,24 +419,27 @@ def RequalifyOp : Ada_Op<"requalify", [Pure,
 //===----------------------------------------------------------------------===//
 
 // Maps an array object's location to the location of one of its elements
-// (@rm{3-6}). `index` is the zero-based layout offset (`ada_index - 'First`,
-// normalized by MLIRGen from the array's `array_info`), so neither this op nor
-// its lowering carries the lower bound. An indexed read loads from the result,
-// an indexed write stores into it.
+// (@rm{4-1-1}). `index` is the Ada index value. The actual array's bounds
+// determine the selected component. Storage normalization belongs to lowering.
+// An indexed read loads from the result, an indexed write stores into it.
 def IndexOp : Ada_Op<"index", [Pure]> {
   let summary = "Location (index) of an !ada.array element";
   let description = [{
     Maps an array object's location to the location of one of its elements
-    (@rm{3-6}). `index` is the zero-based layout offset (`ada_index - 'First`,
-    normalized by MLIRGen from the array's `array_info`), so neither this op
-    nor its lowering carries the lower bound. An indexed read loads from the
-    result, an indexed write stores into it.
+    (@rm{4-1-1}). `index` is the Ada index value, before subtracting the
+    array's lower bound. For supported constrained arrays, `array_info` on the
+    array type supplies the actual bounds. Lowering normalizes the index for
+    storage addressing. Required index checks are explicit `ada.index_check`
+    operations. The component reference preserves its nominal Ada type and
+    object identity for reads, writes, and writable actual parameters. Reference
+    lowering changes its representation to a memref without changing the
+    meaning of the index.
 
     ```mlir
-    %elt = ada.index %arr[%off]
+    %elt = ada.index %arr[%i]
         : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @arr>>,
            !ada.qual<i32, @standard.integer>)
-       -> memref<!ada.qual<i32, @standard.integer>, strided<[], offset: ?>>
+       -> !ada.ref<!ada.qual<i32, @standard.integer>>
     ```
   }];
   let arguments = (ins AnyMemRef:$array, Ada_QualType:$index);

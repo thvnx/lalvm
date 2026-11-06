@@ -12,7 +12,7 @@
 -- MLIR: ada.write %{{.*}}, %[[ELT]] : !ada.qual<i32, @standard.integer> -> !ada.ref<!ada.qual<i32, @standard.integer>>
 
 -- LLVM: %[[ARR:.*]] = alloca [10 x i32]
--- LLVM: %[[ELT:.*]] = getelementptr [10 x i32], ptr %[[ARR]], i32 0, i32 2
+-- LLVM: %[[ELT:.*]] = getelementptr [10 x i32], ptr %[[ARR]], i32 0, i64 2
 -- LLVM: store i32 {{.*}}, ptr %[[ELT]]
 
 procedure Array_Write is
