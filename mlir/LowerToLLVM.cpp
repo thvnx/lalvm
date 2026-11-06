@@ -384,8 +384,7 @@ struct IndexOpLowering : OpConversionPattern<ada::IndexOp> {
                   ConversionPatternRewriter &rewriter) const override {
     if (!adaptor.getOffset())
       return rewriter.notifyMatchFailure(op, "index offset is not normalized");
-    auto arrayQual = cast<ada::QualType>(
-        cast<MemRefType>(op.getArray().getType()).getElementType());
+    auto arrayQual = ada::objectValueType(op.getArray().getType());
     Type type = getTypeConverter()->convertType(arrayQual.getMlirType());
     if (!type)
       return failure();

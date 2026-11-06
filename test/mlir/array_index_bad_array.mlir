@@ -1,9 +1,8 @@
-// The array operand must be a memref of a qual-wrapped !ada.array. Here it is a
-// scalar cell (a qual of i32), so the verifier rejects it.
+// A scalar object cannot be indexed.
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: {{.*}}memref of ada.qual<!ada.array>
+// CHECK: error: {{.*}}array object must have an ada.array value type
 
 module {
   ada.subp @f(%off: !ada.qual<i32, @standard.integer>) {

@@ -88,6 +88,9 @@ IntegerTypeInfoAttr intTypeInfoOfAdaType(mlir::Operation *from,
 /// Whether ordering uses unsigned integer comparisons.
 bool isUnsignedOrderQualType(mlir::Operation *from, QualType qual);
 
+/// The Ada value type of an object representation, or null.
+QualType objectValueType(mlir::Type type);
+
 /// Whether `type` is an integer or float machine type.
 bool isNumericMachineType(mlir::Type type);
 

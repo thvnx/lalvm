@@ -868,17 +868,15 @@ llvm::LogicalResult ConvertOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult IndexOp::verify() {
-  auto arrayType = mlir::cast<mlir::MemRefType>(getArray().getType());
   auto indexType = mlir::cast<ada::QualType>(getIndex().getType());
   auto resultType = getResult().getType();
 
-  // The array operand is a memref of a qual-wrapped !ada.array.
-  auto arrayQual = mlir::dyn_cast<QualType>(arrayType.getElementType());
+  auto arrayQual = objectValueType(getArray().getType());
   if (!arrayQual)
-    return emitOpError("array element type must be ada.qual");
+    return emitOpError("array operand must identify an Ada object");
   auto layout = mlir::dyn_cast<ada::ArrayType>(arrayQual.getMlirType());
   if (!layout)
-    return emitOpError("array must be a memref of ada.qual<!ada.array>");
+    return emitOpError("array object must have an ada.array value type");
 
   // The index is an integer-machine qual.
   if (!mlir::isa<mlir::IntegerType>(indexType.getMlirType()))
@@ -1609,6 +1607,14 @@ bool mlir::ada::isUnsignedOrderQualType(mlir::Operation *from, QualType qual) {
           mlir::dyn_cast_or_null<ada::EnumTypeInfoAttr>(root.getTypeInfoAttr()))
     return llvm::none_of(enumInfo.getValues(), [](int64_t v) { return v < 0; });
   return false;
+}
+
+mlir::ada::QualType mlir::ada::objectValueType(mlir::Type type) {
+  if (auto ref = mlir::dyn_cast<RefType>(type))
+    return mlir::dyn_cast<QualType>(ref.getValueType());
+  if (auto memref = mlir::dyn_cast<mlir::MemRefType>(type))
+    return mlir::dyn_cast<QualType>(memref.getElementType());
+  return {};
 }
 
 llvm::APSInt mlir::ada::boundValue(mlir::IntegerAttr bound) {

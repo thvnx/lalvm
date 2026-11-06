@@ -1534,15 +1534,9 @@ private:
       return nullptr;
     }
 
-    // Check that the referenced name is a memref of a qual-wrapped !ada.array.
     mlir::Value arrayRef = findVarValue(name);
-    auto arrayMemref =
-        arrayRef ? mlir::dyn_cast<mlir::MemRefType>(arrayRef.getType())
-                 : mlir::MemRefType{};
-    auto arrayQual =
-        arrayMemref
-            ? mlir::dyn_cast<mlir::ada::QualType>(arrayMemref.getElementType())
-            : mlir::ada::QualType{};
+    auto arrayQual = arrayRef ? mlir::ada::objectValueType(arrayRef.getType())
+                              : mlir::ada::QualType{};
     auto layout =
         arrayQual
             ? mlir::dyn_cast<mlir::ada::ArrayType>(arrayQual.getMlirType())

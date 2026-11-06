@@ -13,6 +13,18 @@ using namespace mlir;
 
 namespace {
 
+// Bounds of the currently supported static array objects.
+static ada::ArrayTypeInfoAttr staticArrayInfo(ada::IndexOp op) {
+  auto qual = ada::objectValueType(op.getArray().getType());
+  auto type = qual ? ada::rootOfAdaType(op, qual.getAdaType()) : ada::TypeOp{};
+  auto info =
+      type ? dyn_cast_or_null<ada::ArrayTypeInfoAttr>(type.getTypeInfoAttr())
+           : ada::ArrayTypeInfoAttr{};
+  return info && info.staticLower(0) && info.staticUpper(0)
+             ? info
+             : ada::ArrayTypeInfoAttr{};
+}
+
 struct IndexOpLowering : OpRewritePattern<ada::IndexOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -20,14 +32,8 @@ struct IndexOpLowering : OpRewritePattern<ada::IndexOp> {
                                 PatternRewriter &rewriter) const override {
     if (op.getOffset())
       return failure();
-    auto arrayQual = cast<ada::QualType>(
-        cast<MemRefType>(op.getArray().getType()).getElementType());
-    auto layout = cast<ada::ArrayType>(arrayQual.getMlirType());
-    auto arrayType = ada::rootOfAdaType(op, arrayQual.getAdaType());
-    auto info = arrayType ? dyn_cast_or_null<ada::ArrayTypeInfoAttr>(
-                                arrayType.getTypeInfoAttr())
-                          : ada::ArrayTypeInfoAttr{};
-    if (!info || !info.staticLower(0) || !info.staticUpper(0))
+    auto info = staticArrayInfo(op);
+    if (!info)
       return rewriter.notifyMatchFailure(op, "missing static array bounds");
     Location loc = op.getLoc();
     Value index = op.getIndex();
@@ -61,7 +67,8 @@ struct IndexOpLowering : OpRewritePattern<ada::IndexOp> {
       auto base = ada::baseOfAdaType(op, indexSym);
       if (!base)
         return rewriter.notifyMatchFailure(op, "unresolved index base type");
-      auto machine = layout.getIndexTypes()[0];
+      auto subtype = ada::lookupAdaType(op, indexSym);
+      auto machine = subtype.getMlirType();
       auto baseQual = ada::QualType::get(getContext(), machine, base);
       auto checkedQual = ada::QualType::get(getContext(), machine, indexSym);
       Value range = ada::getOrCreateStaticRange(rewriter, loc, indexSym,

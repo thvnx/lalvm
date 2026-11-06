@@ -431,7 +431,8 @@ def IndexOp : Ada_Op<"index"> {
     array type supplies the actual bounds. Lowering normalizes the index for
     storage addressing. Indexing lowering checks the Ada index, then supplies
     an optional normalized `offset` for addressing. The reference preserves
-    component type and identity through reference lowering.
+    component type and identity through reference lowering. Bounds belong to
+    the actual array object. The current representation uses a memref.
 
     ```mlir
     %elt = ada.index %arr[%i]
@@ -440,7 +441,7 @@ def IndexOp : Ada_Op<"index"> {
        -> !ada.ref<!ada.qual<i32, @standard.integer>>
     ```
   }];
-  let arguments = (ins AnyMemRef:$array, Ada_QualType:$index,
+  let arguments = (ins AnyType:$array, Ada_QualType:$index,
                        Optional<AnyInteger>:$offset);
   let results = (outs AnyTypeOf<[AnyMemRef, Ada_RefType]>:$result);
   let assemblyFormat = "$array `[` $index `]` (`offset` $offset^)? attr-dict `:` "
