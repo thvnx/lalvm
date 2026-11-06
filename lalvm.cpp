@@ -238,6 +238,7 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   adaLoweringPm.addPass(mlir::ada::createClosureConversionPass());
   adaLoweringPm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaCallsPass());
+  adaLoweringPm.addPass(mlir::ada::createLowerAdaIndexingPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaConversionsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaReferencesPass());
   if (int error = runPassManager(adaLoweringPm, *module, timing))
@@ -461,6 +462,7 @@ int main(int argc, char **argv) {
   mlir::registerPass(mlir::ada::createClosureConversionPass);
   mlir::registerPass(mlir::ada::createLowerAdaConversionsPass);
   mlir::registerPass(mlir::ada::createLowerAdaCallsPass);
+  mlir::registerPass(mlir::ada::createLowerAdaIndexingPass);
   mlir::registerPass(mlir::ada::createLowerAdaReferencesPass);
   mlir::registerPass(mlir::ada::createHoistNestedSymbolOperationsPass);
   mlir::registerPass(mlir::ada::createLowerToLLVMPass);

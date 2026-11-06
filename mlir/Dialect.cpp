@@ -1598,6 +1598,19 @@ bool mlir::ada::inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
          llvm::APSInt::compareValues(value, hi) <= 0;
 }
 
+bool mlir::ada::isUnsignedOrderQualType(mlir::Operation *from, QualType qual) {
+  ada::TypeOp root = ada::rootOfAdaType(from, qual.getAdaType());
+  if (!root)
+    return false;
+  if (auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
+          root.getTypeInfoAttr()))
+    return static_cast<bool>(intInfo.getModulus());
+  if (auto enumInfo =
+          mlir::dyn_cast_or_null<ada::EnumTypeInfoAttr>(root.getTypeInfoAttr()))
+    return llvm::none_of(enumInfo.getValues(), [](int64_t v) { return v < 0; });
+  return false;
+}
+
 llvm::APSInt mlir::ada::boundValue(mlir::IntegerAttr bound) {
   return llvm::APSInt(bound.getValue(), /*isUnsigned=*/false);
 }

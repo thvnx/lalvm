@@ -422,18 +422,16 @@ def RequalifyOp : Ada_Op<"requalify", [Pure,
 // (@rm{4-1-1}). `index` is the Ada index value. The actual array's bounds
 // determine the selected component. Storage normalization belongs to lowering.
 // An indexed read loads from the result, an indexed write stores into it.
-def IndexOp : Ada_Op<"index", [Pure]> {
+def IndexOp : Ada_Op<"index"> {
   let summary = "Location (index) of an !ada.array element";
   let description = [{
     Maps an array object's location to the location of one of its elements
     (@rm{4-1-1}). `index` is the Ada index value, before subtracting the
     array's lower bound. For supported constrained arrays, `array_info` on the
     array type supplies the actual bounds. Lowering normalizes the index for
-    storage addressing. Required index checks are explicit `ada.index_check`
-    operations. The component reference preserves its nominal Ada type and
-    object identity for reads, writes, and writable actual parameters. Reference
-    lowering changes its representation to a memref without changing the
-    meaning of the index.
+    storage addressing. Indexing lowering checks the Ada index, then supplies
+    an optional normalized `offset` for addressing. The reference preserves
+    component type and identity through reference lowering.
 
     ```mlir
     %elt = ada.index %arr[%i]
@@ -442,9 +440,10 @@ def IndexOp : Ada_Op<"index", [Pure]> {
        -> !ada.ref<!ada.qual<i32, @standard.integer>>
     ```
   }];
-  let arguments = (ins AnyMemRef:$array, Ada_QualType:$index);
+  let arguments = (ins AnyMemRef:$array, Ada_QualType:$index,
+                       Optional<AnyInteger>:$offset);
   let results = (outs AnyTypeOf<[AnyMemRef, Ada_RefType]>:$result);
-  let assemblyFormat = "$array `[` $index `]` attr-dict `:` "
+  let assemblyFormat = "$array `[` $index `]` (`offset` $offset^)? attr-dict `:` "
                        "functional-type(operands, results)";
   let hasVerifier = 1;
 }

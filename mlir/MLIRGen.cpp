@@ -1616,7 +1616,7 @@ private:
     auto resultTy = mlir::ada::RefType::get(builder.getContext(), eltQual);
 
     return mlir::ada::IndexOp::create(builder, location, resultTy, arrayRef,
-                                      rawIndex);
+                                      rawIndex, mlir::Value{});
   }
 
   /// Emit an array index result.

@@ -132,6 +132,7 @@ add_llvm_executable(lalvm
   mlir/Dialect.cpp
   mlir/ClosureConversion.cpp
   mlir/LowerAdaCalls.cpp
+  mlir/LowerAdaIndexing.cpp
   mlir/LowerAdaConversions.cpp
   mlir/LowerAdaReferences.cpp
   mlir/HoistNestedSymbolOperations.cpp

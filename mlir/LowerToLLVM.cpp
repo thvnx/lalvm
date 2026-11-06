@@ -28,7 +28,6 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/Support/Path.h"
-#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -91,23 +90,6 @@ static mlir::Value extractField(mlir::ConversionPatternRewriter &rewriter,
 /// @rm{3-5-4}), so values are unsigned.
 static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
   return static_cast<bool>(ada::modulusOfAdaType(from, qual.getAdaType()));
-}
-
-/// Whether ordering comparisons on the Ada type named by `qual` are unsigned.
-/// Signed integers order as signed, modular types (@rm{3-5-4}) as unsigned.
-/// Enumerations order by code (@rm{13-4}): unsigned unless a code is negative.
-/// The kind lives on the root type (a subtype records only its range).
-static bool isUnsignedOrderQualType(mlir::Operation *from, ada::QualType qual) {
-  ada::TypeOp root = ada::rootOfAdaType(from, qual.getAdaType());
-  if (!root)
-    return false;
-  if (auto intInfo = mlir::dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
-          root.getTypeInfoAttr()))
-    return static_cast<bool>(intInfo.getModulus());
-  if (auto enumInfo =
-          mlir::dyn_cast_or_null<ada::EnumTypeInfoAttr>(root.getTypeInfoAttr()))
-    return llvm::none_of(enumInfo.getValues(), [](int64_t v) { return v < 0; });
-  return false;
 }
 
 /// Address of a private, NUL-terminated constant holding `fileName`, for the
@@ -394,60 +376,26 @@ struct CallOpLowering : public OpConversionPattern<func::CallOp> {
   }
 };
 
-// OpConversionPattern: an array element address is a Get Element Pointer (GEP)
-// into the !llvm.array storage.
-struct IndexOpLowering : public OpConversionPattern<ada::IndexOp> {
-  using OpConversionPattern<ada::IndexOp>::OpConversionPattern;
+struct IndexOpLowering : OpConversionPattern<ada::IndexOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ada::IndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    // The array operand is the ada.alloca lowered to a ptr to [N x T] (see
-    // AllocaAdaTypedLowering). Recover [N x T] from its !ada.array layout: the
-    // type converter nests one llvm.array per dimension.
-    auto arrayQual = mlir::cast<ada::QualType>(
-        mlir::cast<mlir::MemRefType>(op.getArray().getType()).getElementType());
-    auto llvmArrayTy = getTypeConverter()->convertType(arrayQual.getMlirType());
-    if (!llvmArrayTy)
+    if (!adaptor.getOffset())
+      return rewriter.notifyMatchFailure(op, "index offset is not normalized");
+    auto arrayQual = cast<ada::QualType>(
+        cast<MemRefType>(op.getArray().getType()).getElementType());
+    Type type = getTypeConverter()->convertType(arrayQual.getMlirType());
+    if (!type)
       return failure();
-
-    auto arrayType = ada::rootOfAdaType(op, arrayQual.getAdaType());
-    auto info = arrayType ? dyn_cast_or_null<ada::ArrayTypeInfoAttr>(
-                                arrayType.getTypeInfoAttr())
-                          : ada::ArrayTypeInfoAttr{};
-    if (!info || !info.staticLower(0))
-      return rewriter.notifyMatchFailure(op,
-                                         "missing static array lower bound");
-
-    // Keep the Ada index unchanged until storage addressing. Widen before
-    // subtracting so the full offset range fits even for narrow index types.
-    auto indexQual = cast<ada::QualType>(op.getIndex().getType());
-    auto indexType = cast<IntegerType>(adaptor.getIndex().getType());
-    auto offsetType =
-        rewriter.getIntegerType(std::max(64u, indexType.getWidth() + 1));
-    Value index;
-    if (isUnsignedOrderQualType(op, indexQual))
-      index = LLVM::ZExtOp::create(rewriter, op.getLoc(), offsetType,
-                                   adaptor.getIndex());
-    else
-      index = LLVM::SExtOp::create(rewriter, op.getLoc(), offsetType,
-                                   adaptor.getIndex());
-    auto lower = ada::boundValue(info.staticLower(0));
-    Value first = LLVM::ConstantOp::create(
-        rewriter, op.getLoc(), offsetType,
-        rewriter.getIntegerAttr(offsetType,
-                                lower.extOrTrunc(offsetType.getWidth())));
-    Value offset = LLVM::SubOp::create(rewriter, op.getLoc(), index, first);
-
-    // getelementptr [N x T], ptr %base, 0, %off: the static 0 steps over the
-    // single [N x T], the normalized offset selects the element.
-    auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
     rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, ptrTy, llvmArrayTy, adaptor.getArray(),
-        llvm::ArrayRef<LLVM::GEPArg>{0, offset});
+        op, LLVM::LLVMPointerType::get(rewriter.getContext()), type,
+        adaptor.getArray(), ArrayRef<LLVM::GEPArg>{0, adaptor.getOffset()});
     return success();
   }
 };
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -852,7 +800,7 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
     // `isUnsignedOrderQualType`.
     bool uns = false;
     if (auto qual = mlir::dyn_cast<ada::QualType>(op.getLhs().getType()))
-      uns = isUnsignedOrderQualType(op, qual);
+      uns = ada::isUnsignedOrderQualType(op, qual);
 
     // Map each relational operator to its integer and float predicate.
     //

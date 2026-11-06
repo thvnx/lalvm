@@ -97,8 +97,8 @@ struct IndexOpLowering : OpConversionPattern<ada::IndexOp> {
     Type type = getTypeConverter()->convertType(op.getType());
     if (!type)
       return rewriter.notifyMatchFailure(op, "unresolved component base type");
-    rewriter.replaceOpWithNewOp<ada::IndexOp>(op, type, adaptor.getArray(),
-                                              adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<ada::IndexOp>(
+        op, type, adaptor.getArray(), adaptor.getIndex(), adaptor.getOffset());
     return success();
   }
 };

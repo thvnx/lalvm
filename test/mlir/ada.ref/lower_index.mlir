@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The LALVM Project
 
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-references %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWER --implicit-check-not=!ada.ref --implicit-check-not=unrealized_conversion_cast
-// RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+// RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-indexing %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=INDEXING --implicit-check-not=memref.reinterpret_cast
+// RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM --implicit-check-not=unrealized_conversion_cast
 // RUN: %lalvm --emit=llvm -O1 %s | %FileCheck %s --check-prefix=LLVM
 
 module {
@@ -12,8 +13,15 @@ module {
 
   // LOWER-LABEL: func.func @_ada_element
   // LOWER: %[[ARRAY:.*]] = ada.alloca
-  // LOWER: %[[ELEMENT:.*]] = ada.index %[[ARRAY]][%arg0]
+  // LOWER: %[[ELEMENT:.*]] = ada.index %[[ARRAY]][%{{[^ ]+}}] offset %{{[^ ]+}}
   // LOWER-SAME: -> memref<!ada.qual<i32, @integer>>
+  // INDEXING-LABEL: func.func @_ada_element(
+  // INDEXING: %[[CHECKED:.*]] = ada.index_check %arg0,
+  // INDEXING: %[[RAW:.*]] = ada.unwrap %[[CHECKED]]
+  // INDEXING: arith.extsi %[[RAW]] : i32 to i64
+  // INDEXING: %[[OFFSET:.*]] = arith.subi
+  // INDEXING: ada.index %{{.*}}[%[[CHECKED]]] offset %[[OFFSET]]
+  // INDEXING-SAME: -> !ada.ref<!ada.qual<i32, @small>>
   // LOWER: %[[BASE:.*]] = ada.requalify %arg1 : !ada.qual<i32, @small> to !ada.qual<i32, @integer>
   // LOWER: memref.store %[[BASE]], %[[ELEMENT]][]
   // LOWER: %[[VALUE:.*]] = memref.load %[[ELEMENT]][]
@@ -31,5 +39,16 @@ module {
     ada.write %v, %element : !ada.qual<i32, @small> -> !ada.ref<!ada.qual<i32, @small>>
     %value = ada.read %element : !ada.ref<!ada.qual<i32, @small>> -> !ada.qual<i32, @integer>
     ada.return %value : !ada.qual<i32, @integer>
+  }
+
+  // An unused selection still checks its index.
+  // INDEXING-LABEL: func.func @_ada_unused(
+  // INDEXING: ada.index_check
+  // LLVM-LABEL: define void @_ada_unused(
+  // LLVM: call void @__gnat_rcheck_CE_Index_Check
+  ada.subp @unused(%index: !ada.qual<i32, @integer>) {
+    %array = ada.alloca : memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
+    %element = ada.index %array[%index] : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
+    ada.return
   }
 }

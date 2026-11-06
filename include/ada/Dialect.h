@@ -85,6 +85,9 @@ mlir::IntegerAttr modulusOfAdaType(mlir::Operation *from,
 IntegerTypeInfoAttr intTypeInfoOfAdaType(mlir::Operation *from,
                                          mlir::FlatSymbolRefAttr sym);
 
+/// Whether ordering uses unsigned integer comparisons.
+bool isUnsignedOrderQualType(mlir::Operation *from, QualType qual);
+
 /// Whether `type` is an integer or float machine type.
 bool isNumericMachineType(mlir::Type type);
 

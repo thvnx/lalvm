@@ -24,6 +24,9 @@ std::unique_ptr<mlir::Pass> createLowerAdaConversionsPass();
 /// Create a pass lowering Ada subprograms and calls to the value ABI.
 std::unique_ptr<mlir::Pass> createLowerAdaCallsPass();
 
+/// Check Ada indices and normalize storage offsets.
+std::unique_ptr<mlir::Pass> createLowerAdaIndexingPass();
+
 /// Create a pass lowering Ada object references and accesses to local storage.
 std::unique_ptr<mlir::Pass> createLowerAdaReferencesPass();
 
