@@ -2,6 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm --emit=llvm %s 2>&1 | %FileCheck %s
+-- RUN: %lalvm --emit=llvm -O1 %s 2>&1 | %FileCheck %s
 
 -- A static index outside the array's bounds is legal but fails the index check:
 -- warn and raise at run time.

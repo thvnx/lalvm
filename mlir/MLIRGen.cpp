@@ -1572,9 +1572,6 @@ private:
     auto info =
         mlir::cast<mlir::ada::ArrayTypeInfoAttr>(typeOp.getTypeInfoAttr());
 
-    // Index check (@rm{4-1-1}(7)): the index must lie within the array's
-    // bounds, recorded in `array_info`. A static index in range needs no check
-    // but one out of range warns and raises at run time.
     ada_node assoc = {}, indexExpr = {};
     ada_node_child(&suffix, 0, &assoc);
     ada_param_assoc_f_r_expr(&assoc, &indexExpr);
@@ -1582,32 +1579,13 @@ private:
     if (!rawIndex)
       return nullptr;
 
-    // The anonymous index subtype (see mlirGenArrayTypeDecl) and its base.
-    mlir::FlatSymbolRefAttr indexSym = info.getIndexTypes()[0];
-    auto indexOp = mlir::cast<mlir::ada::TypeOp>(
-        mlir::ada::lookupSymbolFrom(typeOp, indexSym.getValue()));
-    mlir::Type machine = layout.getIndexTypes()[0];
-    auto subQual =
-        mlir::ada::QualType::get(builder.getContext(), machine, indexSym);
-    auto indexQual = mlir::ada::QualType::get(builder.getContext(), machine,
-                                              indexOp.getBaseAttr());
-
-    std::optional<llvm::APSInt> staticIndex;
+    // Diagnose static indices. Lowering emits runtime checks.
     if (auto cst = rawIndex.getDefiningOp<mlir::ada::ConstantOp>())
-      staticIndex = cst.getIntValue();
-    // The index is a value of the index type, whatever its subtype: its
-    // conversion to that type changes nothing (@rm{4-1-1}(7)).
-
-    llvm::APSInt lo = mlir::ada::boundValue(info.staticLower(0));
-    llvm::APSInt hi = mlir::ada::boundValue(info.staticUpper(0));
-    if (!staticIndex || warnOutOfSubtypeRange(staticIndex.value(), lo, hi,
-                                              indexSym.getValue(), location)) {
-      // The check yields the array's anonymous index subtype.
-      mlir::Value range = mlir::ada::getOrCreateStaticRange(
-          builder, location, indexSym, indexQual, lo, hi);
-      rawIndex = mlir::ada::IndexCheckOp::create(builder, location, subQual,
-                                                 rawIndex, range);
-    }
+      if (auto value = cst.getIntValue())
+        warnOutOfSubtypeRange(*value,
+                              mlir::ada::boundValue(info.staticLower(0)),
+                              mlir::ada::boundValue(info.staticUpper(0)),
+                              info.getIndexTypes()[0].getValue(), location);
 
     // Keep the selected component's identity through call lowering.
     auto eltQual = mlir::ada::QualType::get(
