@@ -181,16 +181,18 @@ void LowerAdaReferencesPass::runOnOperation() {
     return MemRefType::get({}, element);
   });
 
-  // Keep nominal Ada types on named arguments before their storage types
-  // change.
+  // Keep nominal types on named block arguments.
   module.walk([&](Operation *op) {
     for (Region &region : op->getRegions())
       for (Block &block : region)
-        for (BlockArgument arg : block.getArguments())
+        for (BlockArgument arg : block.getArguments()) {
+          auto qual = dyn_cast<ada::QualType>(arg.getType());
           if (auto ref = dyn_cast<ada::RefType>(arg.getType()))
-            arg.setLoc(ada::attachAdaTypeRef(
-                arg.getLoc(),
-                cast<ada::QualType>(ref.getValueType()).getAdaType()));
+            qual = cast<ada::QualType>(ref.getValueType());
+          if (qual &&
+              !arg.getLoc()->findInstanceOf<FusedLocWith<ada::DITypeRefAttr>>())
+            arg.setLoc(ada::attachAdaTypeRef(arg.getLoc(), qual.getAdaType()));
+        }
   });
 
   ConversionTarget target(getContext());

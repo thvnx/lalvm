@@ -8,7 +8,7 @@
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
--- MLIR: %[[ELT:.*]] = ada.index %{{.*}}[%{{.*}}] : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array_read.vec>>, !ada.qual<i32, @standard.integer>) -> !ada.ref<!ada.qual<i32, @standard.integer>>
+-- MLIR: %[[ELT:.*]] = ada.index %{{.*}}[%{{.*}}] : (!ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array_read.vec>>, !ada.qual<i32, @standard.integer>) -> !ada.ref<!ada.qual<i32, @standard.integer>>
 -- MLIR: ada.read %[[ELT]] : !ada.ref<!ada.qual<i32, @standard.integer>> -> !ada.qual<i32, @standard.integer>
 
 -- LLVM: %[[ARR:.*]] = alloca [10 x i32]

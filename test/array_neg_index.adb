@@ -5,7 +5,7 @@
 
 -- CHECK: %[[INDEX:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 2
 -- CHECK-NOT: ada.binop "-"
--- CHECK: ada.index %{{.*}}[%[[INDEX]]] : (memref<!ada.qual<!ada.array<i32[i32 x 11]>, @array_neg_index.vec>>, !ada.qual<i32, @standard.integer>) -> !ada.ref<!ada.qual<i32, @standard.integer>>
+-- CHECK: ada.index %{{.*}}[%[[INDEX]]] : (!ada.ref<!ada.qual<!ada.array<i32[i32 x 11]>, @array_neg_index.vec>>, !ada.qual<i32, @standard.integer>) -> !ada.ref<!ada.qual<i32, @standard.integer>>
 -- LLVM: getelementptr [11 x i32], ptr %{{.*}}, i32 0, i64 7
 
 procedure Array_Neg_Index is

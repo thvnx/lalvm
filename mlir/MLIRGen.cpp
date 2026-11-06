@@ -2515,7 +2515,6 @@ private:
 
       auto elemType =
           mlir::cast<mlir::ada::QualType>(memrefType.getElementType());
-      mlir::MemRefType objType = memrefType;
       if (bounds) {
         mlir::ada::TypeOp sub = emitAnonymousSubtype(
             id, typeDecl.value(), bounds->first, bounds->second, loc(id));
@@ -2524,7 +2523,6 @@ private:
         elemType = mlir::ada::QualType::get(
             builder.getContext(), sub.getMlirType(),
             mlir::FlatSymbolRefAttr::get(sub.getSymNameAttr()));
-        objType = mlir::MemRefType::get({}, elemType);
       }
 
       mlir::Value init;
@@ -2561,16 +2559,10 @@ private:
           if (!init)
             return mlir::failure();
         }
-        mlir::Value ptr;
-        if (mlir::ada::isNumericMachineType(elemType.getMlirType())) {
-          ptr = mlir::ada::ObjectOp::create(
-              builder, loc(id),
-              mlir::ada::RefType::get(builder.getContext(), elemType), init);
-          setAdaNameLoc(ptr, nameAttr);
-        } else {
-          ptr = mlir::ada::AllocaOp::create(builder, loc(id), objType);
-          setAdaNameLoc(ptr, nameAttr);
-        }
+        mlir::Value ptr = mlir::ada::ObjectOp::create(
+            builder, loc(id),
+            mlir::ada::RefType::get(builder.getContext(), elemType), init);
+        setAdaNameLoc(ptr, nameAttr);
         declare(id, ptr);
       }
     }
@@ -3234,11 +3226,9 @@ private:
   }
 
   /// Emit a `for` loop over an explicit discrete range (@rm{5-5}), forward or
-  /// reverse. The loop parameter is a read-only local (an `alloca` bound in
-  /// `declValues`, promoted to a phi by mem2reg). The CFG tests for the last
-  /// iteration before stepping, so the induction step never crosses the bound
-  /// and needs no `Overflow_Check`; an empty range runs zero iterations.
-  /// `exit` uses `loopStack`, as for the other loop forms.
+  /// reverse. Its readonly parameter is an SSA block argument. The final value
+  /// is tested before stepping, so the step cannot overflow. Empty ranges
+  /// execute no iterations.
   ///
   /// @todo Support the currently diagnosed forms: container iteration, iterator
   ///       filters, a range given by a type or subtype name, and non-integer
@@ -3343,8 +3333,7 @@ private:
     mlir::Block *bodyBlock = builder.createBlock(stepBlock);
     mlir::Block *initBlock = builder.createBlock(bodyBlock);
 
-    // Entry: evaluate the bounds, allocate the loop parameter, and guard the
-    // empty range.
+    // Evaluate bounds once and guard the empty range.
     builder.setInsertionPointToEnd(entryBlock);
     ada_node lowNode, highNode;
     ada_bin_op_f_left(&rangeOp, &lowNode);
@@ -3373,10 +3362,9 @@ private:
       return mlir::failure();
 
     auto nameAttr = getNameAttr(id);
-    mlir::Value paramPtr = mlir::ada::AllocaOp::create(
-        builder, loc(id), mlir::MemRefType::get({}, paramType));
-    setAdaNameLoc(paramPtr, nameAttr);
-    declare(id, paramPtr);
+    auto paramVal = bodyBlock->addArgument(paramType, loc(id));
+    setAdaNameLoc(mlir::Value(paramVal), nameAttr);
+    declare(id, paramVal);
 
     mlir::Value guardI1 = cmpI1(mlir::ada::AdaRelationalOp::Lte, lo, hi);
     if (!guardI1)
@@ -3384,12 +3372,10 @@ private:
     mlir::cf::CondBranchOp::create(builder, loc(loopNode), guardI1, initBlock,
                                    mergeBlock);
 
-    // Init: set the parameter to `hi` (reverse) or `lo`, then enter the body.
+    // Enter with the first iteration's value.
     builder.setInsertionPointToEnd(initBlock);
-    auto initStore = mlir::memref::StoreOp::create(
-        builder, loc(id), isReverse ? hi : lo, paramPtr);
-    setAdaNameLoc(initStore, nameAttr);
-    mlir::cf::BranchOp::create(builder, loc(loopNode), bodyBlock);
+    mlir::cf::BranchOp::create(builder, loc(loopNode), bodyBlock,
+                               mlir::ValueRange{isReverse ? hi : lo});
 
     // Body, with the loop on `loopStack` for `exit`. Its fall-through runs the
     // pre-step bound test: exit at the far bound, else step.
@@ -3402,8 +3388,6 @@ private:
       return mlir::failure();
 
     if (!currentBlockTerminated()) {
-      mlir::Value paramVal = mlir::memref::LoadOp::create(
-          builder, loc(loopNode), paramType, paramPtr);
       mlir::Value atEndI1 =
           cmpI1(mlir::ada::AdaRelationalOp::Eq, paramVal, isReverse ? lo : hi);
       if (!atEndI1)
@@ -3411,9 +3395,7 @@ private:
       mlir::cf::CondBranchOp::create(builder, loc(loopNode), atEndI1,
                                      mergeBlock, stepBlock);
 
-      // Step: add or subtract 1 (unchecked; the bound test above rules out
-      // overflow), then back to the body. `paramVal` dominates the step block
-      // (its only predecessor is the bound test), so no reload is needed.
+      // The bound test makes the step safe without an overflow check.
       builder.setInsertionPointToEnd(stepBlock);
       auto intType = mlir::cast<mlir::IntegerType>(paramType.getMlirType());
       mlir::Value one = emitIntConstant(llvm::APInt(intType.getWidth(), 1),
@@ -3423,10 +3405,8 @@ private:
                                    isReverse ? mlir::ada::AdaBinaryOp::Minus
                                              : mlir::ada::AdaBinaryOp::Plus,
                                    paramVal, one, mlir::ada::AdaChecksAttr{});
-      auto stepStore =
-          mlir::memref::StoreOp::create(builder, loc(loopNode), next, paramPtr);
-      setAdaNameLoc(stepStore, nameAttr);
-      mlir::cf::BranchOp::create(builder, loc(loopNode), bodyBlock);
+      mlir::cf::BranchOp::create(builder, loc(loopNode), bodyBlock,
+                                 mlir::ValueRange{next});
     } else {
       // The body never falls through (e.g. it always returns): no step or
       // back-edge is reachable.

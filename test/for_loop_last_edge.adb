@@ -14,7 +14,7 @@
 -- CHECK:         cf.cond_br %{{.*}}, ^[[INIT:bb[0-9]+]], ^[[MERGE:bb[0-9]+]]
 -- CHECK:       ^[[INIT]]:
 -- CHECK:         cf.br ^[[BODY:bb[0-9]+]]
--- CHECK:       ^[[BODY]]:
+-- CHECK:       ^[[BODY]](%{{[^: ]+}}: !ada.qual<i32, @standard.integer>):
 -- CHECK:         ada.binop "+" %{{.*}}, %{{.*}} checks<overflow>
 -- CHECK:         ada.cmp "=" %{{.*}}, %{{.*}}
 -- CHECK:         cf.cond_br %{{.*}}, ^[[MERGE]], ^[[STEP:bb[0-9]+]]

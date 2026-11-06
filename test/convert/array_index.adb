@@ -9,7 +9,7 @@
 -- SOURCE: ada.index %{{.*}}[%i]
 
 -- CHECK: %[[CHK:.*]] = ada.index_check %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @array_index.__anonymous_vec_index_1>
--- CHECK: ada.index %{{.*}}[%[[CHK]]] offset %{{.*}} : (memref<!ada.qual<!ada.array<i32[i32 x 10]>, @array_index.vec>>, !ada.qual<i32, @array_index.__anonymous_vec_index_1>, i64) -> !ada.ref<!ada.qual<i32, @standard.integer>>
+-- CHECK: ada.index %{{.*}}[%[[CHK]]] offset %{{.*}} : (!ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array_index.vec>>, !ada.qual<i32, @array_index.__anonymous_vec_index_1>, i64) -> !ada.ref<!ada.qual<i32, @standard.integer>>
 
 function Array_Index (I : Integer) return Integer is
    type Vec is array (1 .. 10) of Integer;

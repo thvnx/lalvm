@@ -663,6 +663,27 @@ struct AdaDebugInfoPass
         else
           LLVM::DbgValueOp::create(builder, nl, arg, varInfo);
       }
+
+      // Named block arguments describe SSA locals such as loop parameters.
+      for (Block &block : llvm::drop_begin(func.getBody())) {
+        builder.setInsertionPointToStart(&block);
+        for (BlockArgument arg : block.getArguments()) {
+          auto nl = arg.getLoc()->findInstanceOf<NameLoc>();
+          if (!nl || !isa<IntegerType, FloatType>(arg.getType()))
+            continue;
+          auto diType =
+              extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName);
+          if (!diType)
+            diType = fallbackDIType(ctx, arg.getType(), typeOpCache);
+          if (!diType)
+            continue;
+          auto [file, line] = getFileAndLine(ctx, nl.getChildLoc(), subprogram);
+          auto varInfo = LLVM::DILocalVariableAttr::get(
+              subprogram, nl.getName(), file, line, /*arg=*/0,
+              /*alignInBits=*/0, diType, LLVM::DIFlags::Zero);
+          LLVM::DbgValueOp::create(builder, arg.getLoc(), arg, varInfo);
+        }
+      }
     });
 
     // Pass 6: pick the variable carrying each dynamic subrange bound.

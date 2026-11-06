@@ -8,12 +8,12 @@
 -- CHECK:         cf.cond_br %{{.*}}, ^[[OINIT:bb[0-9]+]], ^[[OMERGE:bb[0-9]+]]
 -- CHECK:       ^[[OINIT]]:
 -- CHECK:         cf.br ^[[OBODY:bb[0-9]+]]
--- CHECK:       ^[[OBODY]]:
+-- CHECK:       ^[[OBODY]](%{{[^: ]+}}: !ada.qual<i32, @standard.integer>):
 -- CHECK:         ada.cmp "<=" %{{.*}}, %{{.*}}
 -- CHECK:         cf.cond_br %{{.*}}, ^[[IINIT:bb[0-9]+]], ^{{bb[0-9]+}}
 -- CHECK:       ^[[IINIT]]:
 -- CHECK:         cf.br ^[[IBODY:bb[0-9]+]]
--- CHECK:       ^[[IBODY]]:
+-- CHECK:       ^[[IBODY]](%{{[^: ]+}}: !ada.qual<i32, @standard.integer>):
 -- CHECK:         ada.binop "+" %{{.*}}, %{{.*}} checks<overflow>
 -- CHECK:         ada.cmp "=" %{{.*}}, %{{.*}}
 -- CHECK:         cf.cond_br %{{.*}}, ^[[OMERGE]], ^{{bb[0-9]+}}
