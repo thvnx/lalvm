@@ -942,39 +942,14 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
   }
 };
 
-// ada.unwrap exposes the builtin value under an ada.qual annotation. The type
-// converter maps ada.qual<T> to T, so the adaptor's operand is already the
-// target type; the op is a no-op and is replaced by its operand.
-struct UnwrapOpLowering : public OpConversionPattern<ada::UnwrapOp> {
-  using OpConversionPattern<ada::UnwrapOp>::OpConversionPattern;
+// Qualification changes disappear when the type converter removes Ada types.
+template <typename OpTy>
+struct QualificationOpLowering : OpConversionPattern<OpTy> {
+  using OpConversionPattern<OpTy>::OpConversionPattern;
+  using OpAdaptor = typename OpConversionPattern<OpTy>::OpAdaptor;
 
   LogicalResult
-  matchAndRewrite(ada::UnwrapOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, adaptor.getValue());
-    return success();
-  }
-};
-
-// ada.wrap, the inverse of ada.unwrap (it is a no-op too).
-struct WrapOpLowering : public OpConversionPattern<ada::WrapOp> {
-  using OpConversionPattern<ada::WrapOp>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ada::WrapOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.replaceOp(op, adaptor.getValue());
-    return success();
-  }
-};
-
-// ada.requalify only changes the Ada type identity, which the type converter
-// erases: forward the converted operand.
-struct RequalifyOpLowering : public OpConversionPattern<ada::RequalifyOp> {
-  using OpConversionPattern<ada::RequalifyOp>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ada::RequalifyOp op, OpAdaptor adaptor,
+  matchAndRewrite(OpTy op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     rewriter.replaceOp(op, adaptor.getValue());
     return success();
@@ -1158,12 +1133,13 @@ void AdaToLLVMLoweringPass::runOnOperation() {
 
   patterns.add<NullOpLowering>(&getContext());
   patterns.add<CallOpLowering, BinOpLowering, CmpOpLowering, UnOpLowering,
-               UnwrapOpLowering, WrapOpLowering, FunctionOpLowering,
-               ConstantOpLowering, RangeOpLowering,
+               FunctionOpLowering, ConstantOpLowering, RangeOpLowering,
                InRangeCheckOpLowering<ada::RangeCheckOp>,
                InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
-               IndexOpLowering, RequalifyOpLowering>(typeConverter,
-                                                     &getContext());
+               IndexOpLowering, QualificationOpLowering<ada::UnwrapOp>,
+               QualificationOpLowering<ada::WrapOp>,
+               QualificationOpLowering<ada::RequalifyOp>>(typeConverter,
+                                                          &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));
