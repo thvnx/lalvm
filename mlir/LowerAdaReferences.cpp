@@ -6,6 +6,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/ControlFlow/Transforms/StructuralTypeConversions.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/SCF/Transforms/Patterns.h"
@@ -104,50 +105,6 @@ struct IndexOpLowering : OpConversionPattern<ada::IndexOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// FunctionOpLowering
-//===----------------------------------------------------------------------===//
-
-struct FunctionOpLowering : OpConversionPattern<func::FuncOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(func::FuncOp op, OpAdaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    const TypeConverter &converter = *this->getTypeConverter();
-    auto type = op.getFunctionType();
-    TypeConverter::SignatureConversion signature(type.getNumInputs());
-    SmallVector<Type> results;
-    if (failed(converter.convertSignatureArgs(type.getInputs(), signature)) ||
-        failed(converter.convertTypes(type.getResults(), results)))
-      return failure();
-    if (failed(
-            rewriter.convertRegionTypes(&op.getBody(), converter, &signature)))
-      return failure();
-    rewriter.modifyOpInPlace(op, [&] {
-      op.setType(FunctionType::get(this->getContext(),
-                                   signature.getConvertedTypes(), results));
-    });
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
-// CallOpLowering
-//===----------------------------------------------------------------------===//
-
-struct CallOpLowering : OpConversionPattern<func::CallOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    rewriter.modifyOpInPlace(op,
-                             [&] { op->setOperands(adaptor.getOperands()); });
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // LowerAdaReferencesPass
 //===----------------------------------------------------------------------===//
 
@@ -210,9 +167,12 @@ void LowerAdaReferencesPass::runOnOperation() {
   });
 
   RewritePatternSet patterns(&getContext());
-  patterns.add<ObjectOpLowering, ReadOpLowering, WriteOpLowering,
-               IndexOpLowering, FunctionOpLowering, CallOpLowering>(
-      converter, &getContext());
+  patterns
+      .add<ObjectOpLowering, ReadOpLowering, WriteOpLowering, IndexOpLowering>(
+          converter, &getContext());
+  populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(patterns,
+                                                                 converter);
+  populateCallOpTypeConversionPattern(patterns, converter);
   cf::populateCFStructuralTypeConversionsAndLegality(converter, patterns,
                                                      target);
   scf::populateSCFStructuralTypeConversionsAndLegality(converter, patterns,
