@@ -667,14 +667,18 @@ def UnOp : Ada_Op<"unop", [
 
 // Exposes the builtin MLIR value underneath an `ada.qual` annotation. Value
 // preserving: the result is the same value with the Ada type identity dropped.
-// Used to feed an Ada value into builtin/`cf`/`arith` ops that require the raw
-// type, e.g. the `i1` condition of a `cf.cond_br`.
+// Bridges qualified Ada values to operations requiring builtin types.
 def UnwrapOp : Ada_Op<"unwrap", [Pure]> {
   let summary = "Expose the underlying MLIR value of an Ada-qualified value";
   let description = [{
     Converts a value of `ada.qual<T, @sym>` to its underlying MLIR type `T`,
     discarding the Ada type identity. The lowered `ada.qual<T>` is just `T`, so
     this op folds away during lowering.
+
+    Use at explicit boundaries where an operation requires the underlying
+    representation. Ada semantic operations retain qualified values. Unwrapping
+    performs no conversion or runtime check and does not establish membership
+    in an Ada subtype. Any required checks remain explicit.
 
     ```mlir
     %0 = ada.unwrap %c : !ada.qual<i1, @standard.boolean> to i1

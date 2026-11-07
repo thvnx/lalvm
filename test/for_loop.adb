@@ -9,11 +9,13 @@
 
 -- MLIR-LABEL: ada.subp @for_loop
 -- MLIR:         ada.cmp "<="
--- MLIR:         cf.cond_br
+-- MLIR-NEXT:    %[[GUARD:.*]] = ada.unwrap {{.*}} : !ada.qual<i1, @standard.boolean> to i1
+-- MLIR-NEXT:    cf.cond_br %[[GUARD]],
 -- MLIR:       ^{{bb[0-9]+}}(%[[I:[^: ]+]]: !ada.qual<i32, @standard.integer>):
 -- MLIR:         ada.binop "+" %{{.*}}, %[[I]] checks<overflow>
 -- MLIR:         ada.cmp "="
--- MLIR:         cf.cond_br
+-- MLIR-NEXT:    %[[END:.*]] = ada.unwrap {{.*}} : !ada.qual<i1, @standard.boolean> to i1
+-- MLIR-NEXT:    cf.cond_br %[[END]],
 -- MLIR:         ada.return
 
 -- LLVM-LABEL: define i32 @_ada_for_loop(
