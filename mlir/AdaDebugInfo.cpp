@@ -282,6 +282,16 @@ static LLVM::DITypeAttr extractDITypeFromLoc(
   return makeDITypeAttr(ctx, it->second);
 }
 
+/// Resolve a value's debug type from its location, then its machine type.
+static LLVM::DITypeAttr
+valueDIType(MLIRContext *ctx, Location loc, Type type,
+            llvm::DenseMap<mlir::StringAttr, ada::TypeOp> &typeOpByName,
+            llvm::DenseMap<mlir::Type, ada::TypeOp> &typeOpCache) {
+  if (auto diType = extractDITypeFromLoc(ctx, loc, typeOpByName))
+    return diType;
+  return fallbackDIType(ctx, type, typeOpCache);
+}
+
 static std::pair<LLVM::DIFileAttr, unsigned>
 getFileAndLine(MLIRContext *ctx, Location loc,
                LLVM::DISubprogramAttr subprogram) {
@@ -530,9 +540,7 @@ struct AdaDebugInfoPass
                                 : entry.op->getResult(0).getType();
 
       LLVM::DITypeAttr diType =
-          extractDITypeFromLoc(ctx, entry.innerLoc, typeOpByName);
-      if (!diType)
-        diType = fallbackDIType(ctx, elemType, typeOpCache);
+          valueDIType(ctx, entry.innerLoc, elemType, typeOpByName, typeOpCache);
       if (!diType) {
         // No Ada type (MLIR input): skip the variable.
         entry.op->emitWarning()
@@ -608,9 +616,8 @@ struct AdaDebugInfoPass
         Type argType = arg.getType();
         if (isa<IntegerType, FloatType>(argType)) {
           // Scalar `in` parameter: dbg.value at function entry.
-          diType = extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName);
-          if (!diType)
-            diType = fallbackDIType(ctx, argType, typeOpCache);
+          diType = valueDIType(ctx, nl.getChildLoc(), argType, typeOpByName,
+                               typeOpCache);
           if (!diType) {
             // No Ada type (MLIR input): skip the parameter.
             func.emitWarning("missing ada.type for parameter '")
@@ -671,10 +678,8 @@ struct AdaDebugInfoPass
           auto nl = arg.getLoc()->findInstanceOf<NameLoc>();
           if (!nl || !isa<IntegerType, FloatType>(arg.getType()))
             continue;
-          auto diType =
-              extractDITypeFromLoc(ctx, nl.getChildLoc(), typeOpByName);
-          if (!diType)
-            diType = fallbackDIType(ctx, arg.getType(), typeOpCache);
+          auto diType = valueDIType(ctx, nl.getChildLoc(), arg.getType(),
+                                    typeOpByName, typeOpCache);
           if (!diType)
             continue;
           auto [file, line] = getFileAndLine(ctx, nl.getChildLoc(), subprogram);
