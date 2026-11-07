@@ -172,7 +172,9 @@ def TypeOp : Ada_Op<"type", [Symbol]> {
       CArg<"mlir::FlatSymbolRefAttr", "{}">:$base)>
   ];
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = [{
+    $sym_name (`base` $base^)? `:` $mlir_type (`=` $type_info^)? attr-dict
+  }];
   let hasVerifier = 1;
 
   let extraClassDeclaration = [{

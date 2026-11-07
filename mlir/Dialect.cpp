@@ -285,66 +285,6 @@ void TypeOp::build(mlir::OpBuilder &odsBuilder, mlir::OperationState &odsState,
     odsState.addAttribute(getBaseAttrName(odsState.name), base);
 }
 
-/// Assembly format:
-/// @code
-/// @sym_name (base @ref)? : mlir_type (= type_info_attr)? attr-dict
-/// @endcode
-mlir::ParseResult TypeOp::parse(mlir::OpAsmParser &parser,
-                                mlir::OperationState &result) {
-  mlir::StringAttr symName;
-  if (parser.parseSymbolName(symName, getSymNameAttrName(result.name),
-                             result.attributes))
-    return mlir::failure();
-
-  if (succeeded(parser.parseOptionalKeyword("base"))) {
-    mlir::StringAttr baseName;
-    if (parser.parseSymbolName(baseName))
-      return mlir::failure();
-    result.addAttribute(getBaseAttrName(result.name),
-                        mlir::FlatSymbolRefAttr::get(baseName));
-  }
-
-  mlir::Type mlirType;
-  if (parser.parseColon() || parser.parseType(mlirType))
-    return mlir::failure();
-  result.addAttribute(getMlirTypeAttrName(result.name),
-                      mlir::TypeAttr::get(mlirType));
-
-  if (succeeded(parser.parseOptionalEqual())) {
-    mlir::Attribute typeInfo;
-    if (parser.parseAttribute(typeInfo, getTypeInfoAttrName(result.name),
-                              result.attributes))
-      return mlir::failure();
-  }
-
-  auto attrsLoc = parser.getCurrentLocation();
-  if (parser.parseOptionalAttrDict(result.attributes))
-    return mlir::failure();
-  if (failed(verifyInherentAttrs(result.name, result.attributes, [&]() {
-        return parser.emitError(attrsLoc)
-               << "'" << result.name.getStringRef() << "' op ";
-      })))
-    return mlir::failure();
-  return mlir::success();
-}
-
-void TypeOp::print(mlir::OpAsmPrinter &p) {
-  p << ' ';
-  p.printSymbolName(getSymName());
-  if (auto base = getBaseAttr()) {
-    p << " base ";
-    p.printSymbolName(base.getValue());
-  }
-  p << " : ";
-  p.printType(getMlirType());
-  if (auto typeInfo = getTypeInfoAttr()) {
-    p << " = ";
-    p.printAttribute(typeInfo);
-  }
-  p.printOptionalAttrDict((*this)->getAttrs(),
-                          {"sym_name", "mlir_type", "type_info", "base"});
-}
-
 bool TypeOp::isAnonymous() {
   return bareName(getSymName()).starts_with(kAnonymousTypePrefix);
 }
