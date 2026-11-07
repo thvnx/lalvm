@@ -100,21 +100,14 @@ static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
 static mlir::Value emitFileNamePtr(mlir::ConversionPatternRewriter &rewriter,
                                    mlir::Location loc, mlir::ModuleOp module,
                                    llvm::StringRef fileName) {
-  MLIRContext *ctx = rewriter.getContext();
-  auto ptrTy = LLVM::LLVMPointerType::get(ctx);
-
   auto global = module.lookupSymbol<LLVM::GlobalOp>("lalvm.file");
   if (!global) {
     std::string data = fileName.str();
     data.push_back('\0');
-    auto arrTy =
-        LLVM::LLVMArrayType::get(mlir::IntegerType::get(ctx, 8), data.size());
-    OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPointToStart(module.getBody());
-    global = LLVM::GlobalOp::create(
-        rewriter, loc, arrTy, /*isConstant=*/true, LLVM::Linkage::Private,
-        "lalvm.file", rewriter.getStringAttr(data), /*alignment=*/0);
+    return LLVM::createGlobalString(loc, rewriter, "lalvm.file", data,
+                                    LLVM::Linkage::Private);
   }
+  auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
   mlir::Value base =
       LLVM::AddressOfOp::create(rewriter, loc, ptrTy, global.getSymNameAttr());
   return LLVM::GEPOp::create(rewriter, loc, ptrTy, global.getGlobalType(), base,
