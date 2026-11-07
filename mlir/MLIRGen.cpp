@@ -8,7 +8,6 @@
 #include "frontend/DiagnosticPrinter.h"
 #include "libadalang.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
-#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
@@ -188,12 +187,9 @@ private:
   // pointer (Libadalang's unique node identity). Node identity rather than name
   // strings ensures correct resolution under name shadowing.
   //
-  // In the alloca model: ObjectDecl names map to their memref.alloca pointer
-  // (memref<T>); `in` parameters map to their scalar block argument; `in
-  // out`/`out` parameters map to a pointer to the caller's storage. Reads emit
-  // memref.load, stores emit memref.store, and scalar parameters are returned
-  // directly. No scope cleanup is needed: Libadalang rejects out-of-scope
-  // references before MLIRGen runs.
+  // Mutable objects and writable formals map to semantic references. Constants,
+  // input formals, and loop parameters map to values. Libadalang rejects names
+  // outside their scope before MLIRGen runs.
   llvm::DenseMap<ada_base_node, mlir::Value> declValues;
 
   // Named numbers (@rm{3-3-2}): maps each DefiningName node to the
@@ -547,8 +543,7 @@ private:
         return false;
     }
     return llvm::none_of(val.getUsers(), [](mlir::Operation *op) {
-      return mlir::isa<mlir::ada::WriteOp, mlir::memref::StoreOp,
-                       mlir::ada::CallOp>(op);
+      return mlir::isa<mlir::ada::WriteOp, mlir::ada::CallOp>(op);
     });
   }
 
@@ -593,10 +588,6 @@ private:
               << "' is read before first assignment";
         return readObject(val, propagateAdaNameLoc(val, loc(expr)));
       }
-      if (auto memref = mlir::dyn_cast<mlir::MemRefType>(val.getType()))
-        return mlir::memref::LoadOp::create(builder,
-                                            propagateAdaNameLoc(val, loc(expr)),
-                                            memref.getElementType(), val);
       return val;
     }
 
@@ -2465,8 +2456,8 @@ private:
 
     ada_node type_expr;
     ada_object_decl_f_type_expr(&object_decl, &type_expr);
-    mlir::MemRefType memrefType = getMLIRMemRefType(type_expr);
-    if (!memrefType)
+    mlir::ada::QualType nominalType = getAdaQualType(type_expr);
+    if (!nominalType)
       return mlir::failure();
 
     std::optional<ada_node> typeDecl =
@@ -2495,9 +2486,7 @@ private:
     ada_object_decl_f_default_expr(&object_decl, &default_expr);
 
     // Emit an error if the initialization expression is an array object.
-    auto elemQual =
-        mlir::cast<mlir::ada::QualType>(memrefType.getElementType());
-    if (mlir::isa<mlir::ada::ArrayType>(elemQual.getMlirType()) &&
+    if (mlir::isa<mlir::ada::ArrayType>(nominalType.getMlirType()) &&
         !ada_node_is_null(&default_expr))
       return mlir::emitError(loc(default_expr),
                              "array object initialization is not supported");
@@ -2513,8 +2502,7 @@ private:
       }
       auto nameAttr = getNameAttr(id);
 
-      auto elemType =
-          mlir::cast<mlir::ada::QualType>(memrefType.getElementType());
+      auto elemType = nominalType;
       if (bounds) {
         mlir::ada::TypeOp sub = emitAnonymousSubtype(
             id, typeDecl.value(), bounds->first, bounds->second, loc(id));
@@ -2821,19 +2809,16 @@ private:
   void anchorPendingLabels() {
     mlir::MLIRContext *ctx = builder.getContext();
     for (auto &[blk, name, labelLoc] : pendingLabels) {
-      // Find a lowering-surviving anchor for the label's low_pc: skip ops later
-      // passes erase (`ada.null`; a `memref.load`/`store` of a mem2reg-promoted
-      // local) and chase a branch-only block to its target (consecutive labels
-      // form such blocks, which lowering elides). Consecutive labels may thus
-      // share an anchor, each fusing its own marker.
+      // Find an anchor for the label's low_pc: skip null operations and
+      // promotable reads and writes, then chase a branch block to its target.
+      // Consecutive labels may share an anchor, each with its own marker.
       mlir::Operation *anchor = nullptr;
       mlir::Block *b = blk;
       llvm::SmallPtrSet<mlir::Block *, 4> seen;
       while (b && seen.insert(b).second) {
         mlir::Operation *first = nullptr;
         for (mlir::Operation &o : *b)
-          if (!mlir::isa<mlir::ada::NullOp, mlir::memref::LoadOp,
-                         mlir::memref::StoreOp, mlir::ada::ReadOp,
+          if (!mlir::isa<mlir::ada::NullOp, mlir::ada::ReadOp,
                          mlir::ada::WriteOp>(o)) {
             first = &o;
             break;
@@ -3759,8 +3744,7 @@ private:
     }
     }
 
-    // A loop parameter is a constant view (@rm{5-5}(6)): reject assignment to
-    // it, even though it is backed by a mutable `alloca`.
+    // A loop parameter is a constant view (@rm{5-5}(6)).
     std::optional<ada_node> ref_decl = libadalang::referencedDecl(dest_node);
     if (ref_decl && ada_node_kind(&ref_decl.value()) == ada_for_loop_var_decl) {
       mlir::emitError(loc(dest_node),
@@ -3768,28 +3752,21 @@ private:
       return mlir::failure();
     }
 
-    if (!mlir::isa<mlir::MemRefType, mlir::ada::RefType>(ptr.getType())) {
+    auto refType = mlir::dyn_cast<mlir::ada::RefType>(ptr.getType());
+    if (!refType) {
       mlir::emitError(loc(dest_node), "cannot assign to '")
           << libadalang::getName(&dest_node, false) << "'";
       return mlir::failure();
     }
 
     // Convert to the subtype of the target (@rm{5-2}(11)).
-    mlir::Type element =
-        mlir::isa<mlir::ada::RefType>(ptr.getType())
-            ? mlir::cast<mlir::ada::RefType>(ptr.getType()).getValueType()
-            : mlir::cast<mlir::MemRefType>(ptr.getType()).getElementType();
-    if (auto elemType = mlir::dyn_cast<mlir::ada::QualType>(element)) {
-      rhs = convertImplicitly(rhs, elemType, loc(assign_stmt));
-      if (!rhs)
-        return mlir::failure();
-    }
+    auto targetType = mlir::cast<mlir::ada::QualType>(refType.getValueType());
+    rhs = convertImplicitly(rhs, targetType, loc(assign_stmt));
+    if (!rhs)
+      return mlir::failure();
 
     auto location = propagateAdaNameLoc(ptr, loc(dest_node));
-    if (mlir::isa<mlir::ada::RefType>(ptr.getType()))
-      mlir::ada::WriteOp::create(builder, location, rhs, ptr);
-    else
-      mlir::memref::StoreOp::create(builder, location, rhs, ptr);
+    mlir::ada::WriteOp::create(builder, location, rhs, ptr);
     return mlir::success();
   }
 
@@ -4095,13 +4072,6 @@ private:
 
     mlir::emitError(diagLoc, "unsupported Ada type '") << name << "'";
     return {};
-  }
-
-  mlir::MemRefType getMLIRMemRefType(ada_node &type_expr) {
-    mlir::ada::QualType elementType = getAdaQualType(type_expr);
-    if (!elementType)
-      return {};
-    return mlir::MemRefType::get({}, elementType);
   }
 };
 
