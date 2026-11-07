@@ -1554,6 +1554,20 @@ bool mlir::ada::inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
          llvm::APSInt::compareValues(value, hi) <= 0;
 }
 
+bool mlir::ada::isKnownInStaticRange(mlir::Operation *from, mlir::Value value,
+                                     const llvm::APSInt &lo,
+                                     const llvm::APSInt &hi) {
+  if (auto constant = value.getDefiningOp<ConstantOp>())
+    if (auto known = constant.getIntValue())
+      return inStaticRange(*known, lo, hi);
+  auto qual = mlir::dyn_cast<QualType>(value.getType());
+  auto info = qual ? intTypeInfoOfAdaType(from, qual.getAdaType())
+                   : IntegerTypeInfoAttr{};
+  auto bounds = info ? info.staticBounds() : std::nullopt;
+  return bounds && inStaticRange(bounds->first, lo, hi) &&
+         inStaticRange(bounds->second, lo, hi);
+}
+
 bool mlir::ada::isUnsignedOrderQualType(mlir::Operation *from, QualType qual) {
   ada::TypeOp root = ada::rootOfAdaType(from, qual.getAdaType());
   if (!root)

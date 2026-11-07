@@ -51,18 +51,7 @@ struct IndexOpLowering : OpRewritePattern<ada::IndexOp> {
             llvm::APSInt::compareValues(ada::boundValue(loAttr), lower) == 0 &&
             llvm::APSInt::compareValues(ada::boundValue(hiAttr), upper) == 0;
       }
-    if (!checked) {
-      if (auto constant = index.getDefiningOp<ada::ConstantOp>()) {
-        if (auto value = constant.getIntValue())
-          checked = ada::inStaticRange(*value, lower, upper);
-      } else if (auto typeInfo =
-                     ada::intTypeInfoOfAdaType(op, indexQual.getAdaType())) {
-        if (auto bounds = typeInfo.staticBounds())
-          checked = ada::inStaticRange(bounds->first, lower, upper) &&
-                    ada::inStaticRange(bounds->second, lower, upper);
-      }
-    }
-    if (!checked) {
+    if (!checked && !ada::isKnownInStaticRange(op, index, lower, upper)) {
       auto indexSym = info.getIndexTypes()[0];
       auto base = ada::baseOfAdaType(op, indexSym);
       if (!base)

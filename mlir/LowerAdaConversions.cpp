@@ -14,26 +14,6 @@
 
 using namespace mlir;
 
-/// Whether `knownLo..knownHi` lies within `lo..hi`.
-static bool rangeWithin(const APSInt &knownLo, const APSInt &knownHi,
-                        const APSInt &lo, const APSInt &hi) {
-  return ada::inStaticRange(knownLo, lo, hi) &&
-         ada::inStaticRange(knownHi, lo, hi);
-}
-
-/// Whether `value` is known to lie in `lo..hi`: a constant within it, or a
-/// value whose type's static range is within it.
-static bool knownWithin(Operation *from, Value value, const APSInt &lo,
-                        const APSInt &hi) {
-  if (auto constant = value.getDefiningOp<ada::ConstantOp>())
-    if (std::optional<APSInt> known = constant.getIntValue())
-      return ada::inStaticRange(*known, lo, hi);
-  ada::IntegerTypeInfoAttr info = ada::intTypeInfoOfAdaType(
-      from, cast<ada::QualType>(value.getType()).getAdaType());
-  auto known = info ? info.staticBounds() : std::nullopt;
-  return known && rangeWithin(known->first, known->second, lo, hi);
-}
-
 /// `lo..hi` restricted to the values a `type` integer represents (unsigned when
 /// `typeUnsigned`), with `type`'s width. A range no value lies in when the
 /// restriction is empty.
@@ -137,7 +117,7 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
 
     // A value known to lie within the target's range needs no check either.
     auto [lo, hi] = *bounds;
-    if (knownWithin(op, op.getInput(), lo, hi)) {
+    if (ada::isKnownInStaticRange(op, op.getInput(), lo, hi)) {
       rewriter.replaceOp(
           op, ada::requalify(rewriter, op.getLoc(), op.getInput(), target));
       return success();
@@ -212,7 +192,8 @@ struct RepresentationChangeConversion
     bool check = false, preserving = false;
     if (bounds) {
       // No check when the value is known to lie within the target's range.
-      check = !knownWithin(op, op.getInput(), bounds->first, bounds->second);
+      check = !ada::isKnownInStaticRange(op, op.getInput(), bounds->first,
+                                         bounds->second);
       bool targetUnsigned =
           static_cast<bool>(ada::modulusOfAdaType(op, targetBase));
       // Widening preserves every value, except a negative one into a modular

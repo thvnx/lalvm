@@ -99,6 +99,10 @@ bool isNumericMachineType(mlir::Type type);
 bool inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
                    const llvm::APSInt &hi);
 
+/// Whether a constant or its qualified type proves `value` lies in `lo..hi`.
+bool isKnownInStaticRange(mlir::Operation *from, mlir::Value value,
+                          const llvm::APSInt &lo, const llvm::APSInt &hi);
+
 /// The value of a static bound attribute (`int_info`, `array_info`), stored
 /// signless at its minimal signed width, so read as signed.
 llvm::APSInt boundValue(mlir::IntegerAttr bound);
