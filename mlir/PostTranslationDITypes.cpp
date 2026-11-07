@@ -188,15 +188,12 @@ static TypeOrigin typeOrigin(llvm::Module &llvmModule, llvm::DICompileUnit *cu,
 
 /// The DIBasicType of `typeOp`'s numeric base (the end of its `base` chain).
 /// Built like AdaDebugInfoPass's DIBasicTypeAttr, so DIBuilder returns the very
-/// node that attr translated to. Null for non-numeric types.
+/// node that attr translated to. Null for unresolved or nonnumeric types.
 static llvm::DIType *basicTypeFor(llvm::DIBuilder &db,
                                   mlir::ada::TypeOp typeOp) {
-  while (auto baseAttr = typeOp.getBaseAttr()) {
-    auto baseOp = mlir::ada::lookupAdaType(typeOp, baseAttr);
-    if (!baseOp)
-      return nullptr;
-    typeOp = baseOp;
-  }
+  typeOp = mlir::ada::rootOfAdaType(typeOp);
+  if (!typeOp || typeOp.getBaseAttr())
+    return nullptr;
   auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
       typeOp.getTypeInfoAttr());
   if (mlir::isa<mlir::IntegerType>(typeOp.getMlirType()) && !intInfo)

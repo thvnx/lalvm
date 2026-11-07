@@ -768,7 +768,6 @@ llvm::LogicalResult ConvertOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 
 llvm::LogicalResult IndexOp::verify() {
   auto indexType = mlir::cast<ada::QualType>(getIndex().getType());
-  auto resultType = getResult().getType();
 
   auto arrayQual = objectValueType(getArray().getType());
   if (!arrayQual)
@@ -783,11 +782,7 @@ llvm::LogicalResult IndexOp::verify() {
                          << indexType.getMlirType();
 
   // The result element is the array's component type.
-  auto elementType =
-      mlir::isa<RefType>(resultType)
-          ? mlir::cast<RefType>(resultType).getValueType()
-          : mlir::cast<mlir::MemRefType>(resultType).getElementType();
-  auto resultQual = mlir::dyn_cast<QualType>(elementType);
+  auto resultQual = objectValueType(getResult().getType());
   if (!resultQual)
     return emitOpError("result element type must be ada.qual");
   if (resultQual.getMlirType() != layout.getComponentType())

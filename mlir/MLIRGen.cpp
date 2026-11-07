@@ -2452,16 +2452,14 @@ private:
 
     ada_node type_expr;
     ada_object_decl_f_type_expr(&object_decl, &type_expr);
-    mlir::ada::QualType nominalType = getAdaQualType(type_expr);
-    if (!nominalType)
-      return mlir::failure();
-
     std::optional<ada_node> typeDecl =
         libadalang::designatedTypeDecl(type_expr);
     if (!typeDecl)
       return mlir::emitError(loc(type_expr),
                              "failed to resolve type expression");
-    if (!lookupOrEmitTypeOp(typeDecl.value(), declLoc))
+    mlir::ada::QualType nominalType =
+        getAdaQualType(typeDecl.value(), loc(type_expr));
+    if (!nominalType)
       return mlir::failure();
 
     // A constraint in the subtype indication gives each object its own

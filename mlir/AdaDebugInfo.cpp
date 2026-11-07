@@ -304,14 +304,11 @@ getFileAndLine(MLIRContext *ctx, Location loc,
   return {subprogram.getFile(), 0};
 }
 
-/// Returns the DISubprogramAttr attached to `op` by DIScopeForLLVMFuncOpPass,
-/// or a null attr if the location is not a FusedLoc with DISubprogramAttr
-/// metadata (i.e. the function has no debug info).
+/// Return subprogram metadata nested in the operation's location, or null.
 static LLVM::DISubprogramAttr getSubprogram(Operation *op) {
-  auto fl = dyn_cast<FusedLoc>(op->getLoc());
-  if (!fl)
-    return {};
-  return dyn_cast_or_null<LLVM::DISubprogramAttr>(fl.getMetadata());
+  auto fl =
+      op->getLoc()->findInstanceOf<FusedLocWith<LLVM::DISubprogramAttr>>();
+  return fl ? fl.getMetadata() : LLVM::DISubprogramAttr{};
 }
 
 /// Returns `op`'s enclosing llvm.func and its DISubprogram. The subprogram is
