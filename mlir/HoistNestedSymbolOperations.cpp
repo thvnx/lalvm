@@ -73,11 +73,8 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
         // the post-translation DI type builders once the op has been lifted
         // away from its lexical parent.
         std::string scopeName;
-        for (Operation *p = op->getParentOp(); p; p = p->getParentOp())
-          if (auto subp = dyn_cast<ada::SubpOp>(p)) {
-            scopeName = subp.getMangledName();
-            break;
-          }
+        if (auto subp = op->getParentOfType<ada::SubpOp>())
+          scopeName = subp.getMangledName();
         nestedTypes.emplace_back(op, std::move(scopeName));
       }
       return;
