@@ -324,17 +324,15 @@ enclosingFuncAndSubprogram(Operation *op) {
   return {func, getSubprogram(func)};
 }
 
-/// Collect every DILabelRef marker in a location's FusedLoc tree. A location
-/// can carry more than one when consecutive labels resolve to the same anchor
-/// op.
+/// Collect every DILabelRef marker nested in a location. A location can carry
+/// more than one when consecutive labels resolve to the same anchor op.
 static void collectLabelRefs(Location loc,
                              SmallVectorImpl<ada::DILabelRefAttr> &out) {
-  if (auto fused = dyn_cast<FusedLoc>(loc)) {
-    if (auto m = dyn_cast<ada::DILabelRefAttr>(fused.getMetadata()))
-      out.push_back(m);
-    for (Location inner : fused.getLocations())
-      collectLabelRefs(inner, out);
-  }
+  loc->walk([&](Location inner) {
+    if (auto fused = dyn_cast<FusedLocWith<ada::DILabelRefAttr>>(inner))
+      out.push_back(fused.getMetadata());
+    return WalkResult::advance();
+  });
 }
 
 /// Rebuild `sp` overriding its name, flags, and subroutine type, preserving
