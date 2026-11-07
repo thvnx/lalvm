@@ -135,11 +135,7 @@ private:
   /// location entirely rather than wrapping it.
   void setAdaNameLoc(mlir::Value val, mlir::StringAttr name,
                      mlir::Location srcLoc) {
-    auto newLoc = mlir::NameLoc::get(name, srcLoc);
-    if (auto arg = mlir::dyn_cast<mlir::BlockArgument>(val))
-      arg.setLoc(newLoc);
-    else
-      val.getDefiningOp()->setLoc(newLoc);
+    val.setLoc(mlir::NameLoc::get(name, srcLoc));
   }
 
   /// Return the location to use for a load on `ptr`, with `srcLoc` as the
