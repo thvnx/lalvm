@@ -14,6 +14,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
@@ -819,14 +820,10 @@ llvm::LogicalResult RangeOp::verify() {
 }
 
 std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
-  // A compile-time constant bound is defined by an `ada.constant`: read its
-  // value attribute. A dynamic (runtime) bound has none, so it stays null.
-  auto constOf = [](mlir::Value v) -> mlir::TypedAttr {
-    if (auto c = v.getDefiningOp<ConstantOp>())
-      return mlir::dyn_cast<mlir::TypedAttr>(c.getValue());
-    return {};
-  };
-  return {constOf(getLow()), constOf(getHigh())};
+  mlir::TypedAttr lo, hi;
+  mlir::matchPattern(getLow(), mlir::m_Constant(&lo));
+  mlir::matchPattern(getHigh(), mlir::m_Constant(&hi));
+  return {lo, hi};
 }
 
 //===----------------------------------------------------------------------===//

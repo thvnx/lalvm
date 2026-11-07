@@ -7,6 +7,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/TypeID.h"
@@ -237,17 +238,13 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
     // type's bound; the insertvalue position (0 low, 1 high) names which bound.
     // The marker rides on the value's location, like the other Ada DI metadata.
     auto *ctx = rewriter.getContext();
-    auto isConst = [](mlir::Value v) {
-      return v.getDefiningOp<arith::ConstantOp>() ||
-             v.getDefiningOp<LLVM::ConstantOp>();
-    };
     auto markDyn = [&](LLVM::InsertValueOp iv) {
       iv->setLoc(mlir::FusedLoc::get(
           ctx, {iv->getLoc()}, ada::DIDynBoundAttr::get(ctx, subtypeSym)));
     };
-    if (!isConst(adaptor.getLow()))
+    if (!matchPattern(adaptor.getLow(), m_Constant()))
       markDyn(lo);
-    if (!isConst(adaptor.getHigh()))
+    if (!matchPattern(adaptor.getHigh(), m_Constant()))
       markDyn(hi);
     rewriter.replaceOp(op, hi.getResult());
     return success();
@@ -420,12 +417,9 @@ template <typename OpTy> static bool hasOverflowCheck(OpTy op) {
 // locals. Handles checked binary `+`, `-`, `*` and unary `-`, `abs`, in exact
 // two's complement `APInt` arithmetic. Unary `+` is the identity.
 static std::optional<llvm::APInt> evalConstInt(mlir::Value v) {
-  if (auto c = v.getDefiningOp<ada::ConstantOp>())
-    if (auto ia = mlir::dyn_cast<mlir::IntegerAttr>(c.getValue()))
-      return ia.getValue();
-  if (auto c = v.getDefiningOp<arith::ConstantOp>())
-    if (auto ia = mlir::dyn_cast<mlir::IntegerAttr>(c.getValue()))
-      return ia.getValue();
+  IntegerAttr value;
+  if (matchPattern(v, m_Constant(&value)))
+    return value.getValue();
   if (auto un = v.getDefiningOp<ada::UnOp>()) {
     if (un.getKind() == ada::AdaUnaryOp::Plus)
       return evalConstInt(un.getOperand());
