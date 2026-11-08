@@ -340,8 +340,8 @@ llvm::LogicalResult TypeOp::verify() {
                  << "dimension " << d
                  << ": extent and bounds disagree on being dynamic";
         if (boundsStatic) {
-          int64_t count =
-              hi.getValue().getSExtValue() - lo.getValue().getSExtValue() + 1;
+          int64_t count = arrayExtent(lo.getValue().getSExtValue(),
+                                      hi.getValue().getSExtValue());
           if (count != extents[d])
             return emitOpError() << "array_info bounds imply extent " << count
                                  << " but type extent is " << extents[d]
@@ -1498,6 +1498,10 @@ bool mlir::ada::isKnownInStaticRange(mlir::Operation *from, mlir::Value value,
   auto bounds = info ? info.staticBounds() : std::nullopt;
   return bounds && inStaticRange(bounds->first, lo, hi) &&
          inStaticRange(bounds->second, lo, hi);
+}
+
+int64_t mlir::ada::arrayExtent(int64_t lower, int64_t upper) {
+  return upper < lower ? 0 : upper - lower + 1;
 }
 
 bool mlir::ada::isUnsignedOrderQualType(mlir::Operation *from, QualType qual) {

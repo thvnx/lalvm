@@ -2332,8 +2332,8 @@ private:
         indexBaseOp, lo_node, hi_node, location);
     indexSym = mlir::FlatSymbolRefAttr::get(indexSubtype.getSymNameAttr());
 
-    // Extent is the element count: `hi - lo + 1`.
-    int64_t extent = hi->getSExtValue() - lo->getSExtValue() + 1;
+    int64_t extent =
+        mlir::ada::arrayExtent(lo->getSExtValue(), hi->getSExtValue());
     auto *ctx = builder.getContext();
 
     // Build the !ada.array machine type

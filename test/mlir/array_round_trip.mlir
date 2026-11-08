@@ -22,4 +22,10 @@ module {
   // Negative lower bound: array (-5 .. 5) of Integer, extent 5 - (-5) + 1 = 11.
   // CHECK: ada.type @neg : !ada.array<i32[i32 x 11]> = #ada.array_info<component @standard.integer, dim @standard.integer range -5 to 5>
   ada.type @neg : !ada.array<i32[i32 x 11]> = #ada.array_info<component @standard.integer, dim @standard.integer range -5 to 5>
+
+  // Null ranges have zero extent, including nonadjacent negative bounds.
+  // CHECK: ada.type @adjacent : !ada.array<i32[i32 x 0]> = #ada.array_info<component @standard.integer, dim @standard.integer range 5 to 4>
+  ada.type @adjacent : !ada.array<i32[i32 x 0]> = #ada.array_info<component @standard.integer, dim @standard.integer range 5 to 4>
+  // CHECK: ada.type @empty : !ada.array<i32[i32 x 0]> = #ada.array_info<component @standard.integer, dim @standard.integer range -2 to -5>
+  ada.type @empty : !ada.array<i32[i32 x 0]> = #ada.array_info<component @standard.integer, dim @standard.integer range -2 to -5>
 }

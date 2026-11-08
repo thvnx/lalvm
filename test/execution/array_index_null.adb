@@ -2,6 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- REQUIRES: cc
+-- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=SEMANTIC
 -- RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-indexing %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=INDEXING
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
@@ -13,14 +14,15 @@
 -- RUN: %not %t 2> %t.err
 -- RUN: %FileCheck %s --check-prefix=ERROR < %t.err
 
--- A null array has no selectable component.
+-- A nonadjacent reversed range has zero components and keeps its source bounds.
+-- SEMANTIC: ada.type @{{.*}}vector : !ada.array<i32[i32 x 0]> = #ada.array_info<component @standard.integer, dim @{{.*}} range 5 to 3>
 -- INDEXING: ada.index_check
 -- INDEXING-NOT: ada.index_check
 -- INDEXING: return
 
 procedure Array_Index_Null is
    procedure Touch (I : Integer) is
-      type Vector is array (5 .. 4) of Integer;
+      type Vector is array (5 .. 3) of Integer;
       V : Vector;
    begin
       -- ERROR: raised CONSTRAINT_ERROR : array_index_null.adb:[[#@LINE+1]] index check failed
