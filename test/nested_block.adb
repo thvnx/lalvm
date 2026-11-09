@@ -19,10 +19,13 @@ begin
    Outer :
    begin
       Inner :
-         declare
-            procedure Deep is begin null; end Deep;
+      declare
+         procedure Deep is
          begin
-            Deep;
-         end Inner;
+            null;
+         end Deep;
+      begin
+         Deep;
+      end Inner;
    end Outer;
 end Nested_Block;

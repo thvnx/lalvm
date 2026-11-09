@@ -15,7 +15,7 @@
 function Binary_Search return Integer is
    type Table is array (1 .. 16) of Integer;
    Primes : constant Table :=
-     -- MISSING: binary_search.adb:[[#@LINE+1]]:6: error: array object initialization is not supported
+   -- MISSING: binary_search.adb:[[#@LINE+1]]:6: error: array object initialization is not supported
      (2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53);
 
    --  The index of Key in T, or 0 when absent.

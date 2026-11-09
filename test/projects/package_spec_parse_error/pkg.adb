@@ -6,7 +6,7 @@
 -- Check that a parse error in the spec is reported and no code is generated for
 -- the body.
 
--- CHECK: pkg.ads:5:{{[0-9]+}}: error:
+-- CHECK: pkg.ads:6:{{[0-9]+}}: error:
 -- CHECK-NOT: module @pkg
 
 package body Pkg is

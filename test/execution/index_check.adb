@@ -10,7 +10,8 @@
 
 -- An index outside the array's bounds fails the index check at run time.
 
--- CHECK: raised CONSTRAINT_ERROR : index_check.adb:22 index check failed
+-- CHECK: raised CONSTRAINT_ERROR : index_check.adb:23 index check failed
+
 procedure Index_Check is
    type Vec is array (1 .. 10) of Integer;
    V : Vec;

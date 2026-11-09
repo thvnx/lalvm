@@ -6,6 +6,7 @@
 -- RUN: %FileCheck %s < %t.out
 
 -- A * B overflows Integer; lalvm's overflow check traps via the GNAT runtime.
+
 procedure Overflow is
    A : Integer := 100_000;
    B : Integer := 100_000;

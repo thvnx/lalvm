@@ -13,10 +13,10 @@
 -- LOWERED: arith.truncf %{{.*}} : f128 to f32
 
 procedure Narrowing is
-   Max : constant := 200;
+   Max  : constant := 200;
    Half : constant := 0.5;
-   I : Integer := Max;
-   F : Float := Half;
+   I    : Integer := Max;
+   F    : Float := Half;
 begin
    null;
 end Narrowing;

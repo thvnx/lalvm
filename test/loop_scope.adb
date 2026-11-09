@@ -16,7 +16,8 @@ function Loop_Scope (N : Integer) return Integer is
    Total : Integer := 0;
    I     : Integer := 0;
 begin
-   Outer : while I < N loop
+   Outer :
+   while I < N loop
       declare
          subtype Step_Range is Integer range 0 .. 1000;
          Step : Step_Range := I + 1;

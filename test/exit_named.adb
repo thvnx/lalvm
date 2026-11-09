@@ -32,7 +32,8 @@
 function Exit_Named (N : Integer) return Integer is
    Count : Integer := 0;
 begin
-   Outer : loop
+   Outer :
+   loop
       loop
          Count := Count + 1;
          exit Outer when Count >= N;

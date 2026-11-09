@@ -11,7 +11,6 @@
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
 -- RUN: %check-exit %t 42
 
-
 function Array_Elements return Integer is
    type Vec is array (5 .. 14) of Integer;
    V : Vec;

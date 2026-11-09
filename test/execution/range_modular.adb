@@ -15,7 +15,8 @@
 -- LLVM-DAG: icmp ult i8 %{{.*}}, 100
 -- LLVM-DAG: icmp ugt i8 %{{.*}}, -6
 
--- CHECK: raised CONSTRAINT_ERROR : range_modular.adb:26 range check failed
+-- CHECK: raised CONSTRAINT_ERROR : range_modular.adb:27 range check failed
+
 procedure Range_Modular is
    type Byte is mod 256;
    subtype Mid is Byte range 100 .. 250;

@@ -4,5 +4,5 @@
 
 function Unsupported_Op (A, B : Integer) return Integer is
 begin
-   return A ** B;
+   return A**B;
 end Unsupported_Op;

@@ -59,7 +59,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 add_subdirectory(include)
 
-# Format all C and C++ sources in-place using clang-format.
+# Format source files in-place using the available formatters.
 file(GLOB_RECURSE ALL_CXX_SOURCES RELATIVE ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/*.cpp
   ${CMAKE_SOURCE_DIR}/*.h
@@ -69,14 +69,44 @@ file(GLOB_RECURSE ALL_CXX_SOURCES RELATIVE ${CMAKE_SOURCE_DIR}
 list(FILTER ALL_CXX_SOURCES EXCLUDE REGEX "^(\\.|build)")
 list(TRANSFORM ALL_CXX_SOURCES PREPEND ${CMAKE_SOURCE_DIR}/)
 find_program(CLANG_FORMAT clang-format)
+find_program(GNATFORMAT gnatformat)
+file(GLOB_RECURSE ALL_ADA_SOURCES RELATIVE ${CMAKE_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/*.adb
+  ${CMAKE_SOURCE_DIR}/*.ads
+)
+list(FILTER ALL_ADA_SOURCES EXCLUDE REGEX "^(\\.|build)")
+# GNATformat parses before honoring markers, so skip wholly disabled files.
+set(ADA_FORMAT_SOURCES)
+foreach(SOURCE IN LISTS ALL_ADA_SOURCES)
+  file(STRINGS "${CMAKE_SOURCE_DIR}/${SOURCE}" FIRST_LINE LIMIT_COUNT 1)
+  if(NOT FIRST_LINE STREQUAL "--!format off")
+    list(APPEND ADA_FORMAT_SOURCES "${CMAKE_SOURCE_DIR}/${SOURCE}")
+  endif()
+endforeach()
+if(CLANG_FORMAT OR GNATFORMAT)
+  add_custom_target(format)
+endif()
 if(CLANG_FORMAT)
-  add_custom_target(format
+  add_custom_target(format-cxx
     COMMAND ${CLANG_FORMAT} -i --style=LLVM ${ALL_CXX_SOURCES}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Running clang-format"
+    VERBATIM
   )
+  add_dependencies(format format-cxx)
 else()
-  message(STATUS "clang-format not found, 'format' target unavailable")
+  message(STATUS "clang-format not found, C and C++ formatting unavailable")
+endif()
+if(GNATFORMAT)
+  add_custom_target(format-ada
+    COMMAND ${GNATFORMAT} ${ADA_FORMAT_SOURCES}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Running gnatformat"
+    VERBATIM
+  )
+  add_dependencies(format format-ada)
+else()
+  message(STATUS "gnatformat not found, Ada formatting unavailable")
 endif()
 
 find_package(Doxygen OPTIONAL_COMPONENTS dot)

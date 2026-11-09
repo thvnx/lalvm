@@ -6,6 +6,7 @@
 -- RUN: %FileCheck %s < %t.out
 
 -- 100 / N with N = 0 at run time traps via the GNAT runtime.
+
 procedure Divide_By_Zero is
    N : Integer := 0;
    -- CHECK: raised CONSTRAINT_ERROR : divide_by_zero.adb:[[#@LINE+1]] divide by zero

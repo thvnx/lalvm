@@ -31,7 +31,7 @@ procedure Operator_Overload is
    end "*";
 
    X, Y : Integer := 1;
-   Z : Integer := X * Y;
+   Z    : Integer := X * Y;
 
 begin
    null;

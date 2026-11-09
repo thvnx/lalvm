@@ -8,7 +8,7 @@
 -- CHECK: modulus_limit.adb:11:21: error: modulus exceeds limit (2 ** 128)
 
 procedure Modulus_Limit is
-   type Huge is mod 2 ** 3131;
+   type Huge is mod 2**3131;
 begin
    null;
 end Modulus_Limit;

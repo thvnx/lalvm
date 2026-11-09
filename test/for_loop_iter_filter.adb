@@ -7,6 +7,7 @@
 -- CHECK-LABEL: ada.subp @for_loop_iter_filter
 
 pragma Ada_2022;
+
 function For_Loop_Iter_Filter return Integer is
    Sum : Integer := 0;
 begin

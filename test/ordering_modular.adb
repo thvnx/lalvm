@@ -39,6 +39,9 @@ function Ordering_Modular return Boolean is
       return X >= Y;
    end Greater_Eq;
 begin
-   return Less (200, 100) or Less_Eq (200, 100)
-     or Greater (200, 100) or Greater_Eq (200, 100);
+   return
+     Less (200, 100)
+     or Less_Eq (200, 100)
+     or Greater (200, 100)
+     or Greater_Eq (200, 100);
 end Ordering_Modular;

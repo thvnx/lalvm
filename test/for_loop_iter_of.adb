@@ -5,7 +5,7 @@
 
 function For_Loop_Iter_Of return Integer is
    type Vec is array (1 .. 3) of Integer;
-   A : Vec;
+   A   : Vec;
    Sum : Integer := 0;
 begin
    A (1) := 10;

@@ -9,7 +9,7 @@
 -- CHECK: modulus_nonbinary_limit.adb:12:20: error: nonbinary modulus exceeds limit (2 ** 32 - 1)
 
 procedure Modulus_Nonbinary_Limit is
-   type Odd is mod 2 ** 32 + 1;
+   type Odd is mod 2**32 + 1;
 begin
    null;
 end Modulus_Nonbinary_Limit;

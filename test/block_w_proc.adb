@@ -20,13 +20,19 @@
 procedure Block_W_Proc is
 begin
    Outer :
-      declare
-         procedure Foo is begin null; end Foo;
+   declare
+      procedure Foo is
       begin
          null;
-      end Outer;
+      end Foo;
+   begin
+      null;
+   end Outer;
    declare
-      procedure Bar is begin null; end Bar;
+      procedure Bar is
+      begin
+         null;
+      end Bar;
    begin
       null;
    end;

@@ -21,12 +21,12 @@
 -- DI-DAG: !DILocalVariable(name: "v", arg: 1, scope: ![[OUTER]],
 
 function Call_Values return Integer is
-   X : Integer := 1;
-   Count : Integer := 0;
+   X       : Integer := 1;
+   Count   : Integer := 0;
    Current : Integer := 1;
-   I, J : Integer := 1;
+   I, J    : Integer := 1;
    type Vector is array (1 .. 2) of Integer;
-   Items : Vector;
+   Items   : Vector;
 
    function Change return Integer is
    begin
@@ -83,12 +83,15 @@ function Call_Values return Integer is
    end Accumulate;
 
    type Choice is (First, Second);
-   Flag : Boolean := False;
-   Selected : Choice := First;
+   Flag       : Boolean := False;
+   Selected   : Choice := First;
    Real_Value : Float := 1.0;
-   Wide : Long_Integer := 4;
-   procedure Change_Kinds (B : out Boolean; E : in out Choice;
-                           F : in out Float; W : in out Long_Integer) is
+   Wide       : Long_Integer := 4;
+   procedure Change_Kinds
+     (B : out Boolean;
+      E : in out Choice;
+      F : in out Float;
+      W : in out Long_Integer) is
    begin
       B := True;
       E := Second;

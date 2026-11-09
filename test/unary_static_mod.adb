@@ -12,7 +12,8 @@
 
 procedure Unary_Static_Mod is
    type M10 is mod 10;
-   function Minus_One_Mod return M10 is (-1);
+   function Minus_One_Mod return M10
+   is (-1);
 begin
    null;
 end Unary_Static_Mod;

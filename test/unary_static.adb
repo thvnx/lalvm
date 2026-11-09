@@ -16,9 +16,12 @@
 -- CHECK:         ada.constant : !ada.qual<i32, @standard.integer> = 5
 
 procedure Unary_Static is
-   function Minus_One return Integer is (-1);
-   function Plus_Three return Integer is (+3);
-   function Abs_Minus_Five return Integer is (abs (-5));
+   function Minus_One return Integer
+   is (-1);
+   function Plus_Three return Integer
+   is (+3);
+   function Abs_Minus_Five return Integer
+   is (abs (-5));
 begin
    null;
 end Unary_Static;
