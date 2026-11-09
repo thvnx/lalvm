@@ -17,7 +17,8 @@
 -- LLVM-NEXT:   ret i32 42
 
 procedure Expr_Function is
-   function F return Integer is (42);
+   function F return Integer
+   is (42);
 begin
    null;
 end Expr_Function;

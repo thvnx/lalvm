@@ -11,12 +11,13 @@
 -- RUN: %t
 
 -- Captures share array identity and observe each iteration's SSA value.
+
 function Object_Values return Integer is
    type Vector is array (1 .. 3) of Integer;
-   V : Vector;
+   V     : Vector;
    Count : Integer := 0;
-   Sum : Integer := 0;
-   High : Integer := 3;
+   Sum   : Integer := 0;
+   High  : Integer := 3;
 
    function Bound return Integer is
    begin

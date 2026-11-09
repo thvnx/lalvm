@@ -9,10 +9,12 @@
 
 procedure Exit_Not_Enclosing is
 begin
-   First : loop
+   First :
+   loop
       exit;
    end loop First;
-   Second : loop
+   Second :
+   loop
       exit First;
    end loop Second;
 end Exit_Not_Enclosing;

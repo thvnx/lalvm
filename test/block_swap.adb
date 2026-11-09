@@ -19,11 +19,13 @@ function Block_Swap return Integer is
    U : Integer := 5;
    V : Integer := 3;
 begin
-   Swap:
-      declare
-         Temp : Integer;
-      begin
-         Temp := V; V := U; U := Temp;
-      end Swap;
+   Swap :
+   declare
+      Temp : Integer;
+   begin
+      Temp := V;
+      V := U;
+      U := Temp;
+   end Swap;
    return U;
 end Block_Swap;

@@ -9,9 +9,9 @@
 -- entry block of its subprogram (here, under an `if`): its range is elaborated
 -- there, and V = 20 must still fail the range check.
 
--- CHECK: raised CONSTRAINT_ERROR : exec_block_dynamic_constraint.adb:22 range check failed
 procedure Exec_Block_Dynamic_Constraint is
-   function Ten return Integer is (10);
+   function Ten return Integer
+   is (10);
    V : Integer := 20;
 begin
    if V > 0 then
@@ -19,6 +19,7 @@ begin
          X : Integer range 1 .. Ten := 1;
       begin
          X := 5;
+         -- CHECK: raised CONSTRAINT_ERROR : exec_block_dynamic_constraint.adb:[[#@LINE+1]] range check failed
          X := V;
       end;
    end if;

@@ -54,13 +54,20 @@ procedure Modular_Logical is
    type M10 is mod 10;
    type M256 is mod 256;
 
-   function And5 (A, B : M5) return M5 is (A and B);
-   function Or5 (A, B : M5) return M5 is (A or B);
-   function Xor5 (A, B : M5) return M5 is (A xor B);
-   function Xor256 (A, B : M256) return M256 is (A xor B);
-   function And10 (A, B : M10) return M10 is (A and B);
-   function Or10 (A, B : M10) return M10 is (A or B);
-   function Xor10 (A, B : M10) return M10 is (A xor B);
+   function And5 (A, B : M5) return M5
+   is (A and B);
+   function Or5 (A, B : M5) return M5
+   is (A or B);
+   function Xor5 (A, B : M5) return M5
+   is (A xor B);
+   function Xor256 (A, B : M256) return M256
+   is (A xor B);
+   function And10 (A, B : M10) return M10
+   is (A and B);
+   function Or10 (A, B : M10) return M10
+   is (A or B);
+   function Xor10 (A, B : M10) return M10
+   is (A xor B);
 begin
    null;
 end Modular_Logical;

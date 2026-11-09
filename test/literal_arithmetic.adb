@@ -12,6 +12,7 @@
 -- LLVM:         ret i32 66
 
 -- 1 + 2 + 3 + 4 + 5 - 6 + 7 * 8 - 9 + 10 = 66
+
 function Literal_Arithmetic return Integer is
 begin
    return 1 + 2 + 3 + 4 + 5 - 6 + 7 * 8 - 9 + 10;

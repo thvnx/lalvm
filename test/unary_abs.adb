@@ -39,9 +39,12 @@
 procedure Unary_Abs is
    type Byte is mod 256;
 
-   function On_Integer (X : Integer) return Integer is (abs X);
-   function On_Modular (X : Byte) return Byte is (abs X);
-   function On_Float (X : Float) return Float is (abs X);
+   function On_Integer (X : Integer) return Integer
+   is (abs X);
+   function On_Modular (X : Byte) return Byte
+   is (abs X);
+   function On_Float (X : Float) return Float
+   is (abs X);
 begin
    null;
 end Unary_Abs;

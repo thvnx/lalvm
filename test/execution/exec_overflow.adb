@@ -4,10 +4,11 @@
 -- RUN: %FileCheck %s < %t.out
 
 -- A * B overflows Integer; lalvm's overflow check traps via the GNAT runtime.
--- CHECK: raised CONSTRAINT_ERROR : exec_overflow.adb:11 overflow check failed
+
 procedure Exec_Overflow is
    A : Integer := 100_000;
    B : Integer := 100_000;
+   -- CHECK: raised CONSTRAINT_ERROR : exec_overflow.adb:[[#@LINE+1]] overflow check failed
    C : Integer := A * B;
 begin
    null;

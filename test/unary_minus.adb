@@ -49,10 +49,14 @@ procedure Unary_Minus is
    type Byte is mod 256;
    type M10 is mod 10;
 
-   function On_Integer (X : Integer) return Integer is (-X);
-   function On_Modular (X : Byte) return Byte is (-X);
-   function On_Mod10 (X : M10) return M10 is (-X);
-   function On_Float (X : Float) return Float is (-X);
+   function On_Integer (X : Integer) return Integer
+   is (-X);
+   function On_Modular (X : Byte) return Byte
+   is (-X);
+   function On_Mod10 (X : M10) return M10
+   is (-X);
+   function On_Float (X : Float) return Float
+   is (-X);
 begin
    null;
 end Unary_Minus;

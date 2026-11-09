@@ -5,4 +5,5 @@
 
 -- CHECK: expr_function_library_unit.adb:{{[0-9]+}}:{{[0-9]+}}: error: expression function cannot be a library unit
 
-function Expr_Function_Library_Unit return Integer is (42);
+function Expr_Function_Library_Unit return Integer
+is (42);

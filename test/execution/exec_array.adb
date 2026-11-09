@@ -9,7 +9,6 @@
 -- RUN: rm -rf %t.dir && mkdir -p %t.dir && cp %s %t.dir/exec_array.adb && cd %t.dir && env LALVM=%lalvm %lalvm-make exec_array.adb
 -- RUN: %t.dir/exec_array; test $? -eq 42
 
-
 function Exec_Array return Integer is
    type Vec is array (5 .. 14) of Integer;
    V : Vec;

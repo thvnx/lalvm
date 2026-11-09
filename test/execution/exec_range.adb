@@ -4,10 +4,11 @@
 -- RUN: %FileCheck %s < %t.out
 
 -- V = 20 assigned to Small (1 .. 10) fails the range check at run time.
--- CHECK: raised CONSTRAINT_ERROR : exec_range.adb:11 range check failed
+
 procedure Exec_Range is
    subtype Small is Integer range 1 .. 10;
    V : Integer := 20;
+   -- CHECK: raised CONSTRAINT_ERROR : exec_range.adb:[[#@LINE+1]] range check failed
    X : Small := V;
 begin
    null;

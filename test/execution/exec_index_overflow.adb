@@ -24,5 +24,5 @@ procedure Exec_Index_Overflow is
 begin
    V (10) := 1;
    Read_Double (5);
-   Read_Double (2 ** 30);
+   Read_Double (2**30);
 end Exec_Index_Overflow;

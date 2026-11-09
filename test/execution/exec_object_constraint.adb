@@ -8,11 +8,11 @@
 -- The constraint of an object declaration is checked at run time: V = 20 fails
 -- the range check.
 
--- CHECK: raised CONSTRAINT_ERROR : exec_object_constraint.adb:17 range check failed
 procedure Exec_Object_Constraint is
    V : Integer := 20;
    X : Integer range 1 .. 10 := 1;
 begin
    X := 5;
+   -- CHECK: raised CONSTRAINT_ERROR : exec_object_constraint.adb:[[#@LINE+1]] range check failed
    X := V;
 end Exec_Object_Constraint;

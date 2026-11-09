@@ -13,11 +13,13 @@
 
 function Block_Swap_Param (U, V : in out Integer) return Integer is
 begin
-   Swap:
-      declare
-         Temp : Integer;
-      begin
-         Temp := V; V := U; U := Temp;
-      end Swap;
+   Swap :
+   declare
+      Temp : Integer;
+   begin
+      Temp := V;
+      V := U;
+      U := Temp;
+   end Swap;
    return U;
 end Block_Swap_Param;

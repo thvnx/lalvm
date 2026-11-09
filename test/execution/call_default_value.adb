@@ -18,8 +18,8 @@
 function Call_Default_Value return Integer is
    type T is range 0 .. 100 with Default_Value => 7;
    subtype Narrow is T range 1 .. 5;
-   X : T := 9;
-   Y : Narrow := 3;
+   X    : T := 9;
+   Y    : Narrow := 3;
    Seen : Integer := 0;
    procedure Keep (V : out Narrow) is
    begin
