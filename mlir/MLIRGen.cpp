@@ -2524,7 +2524,9 @@ private:
         init = convertImplicitly(init, elemType, loc(id));
         if (!init)
           return mlir::failure();
-        setAdaNameLoc(init, nameAttr, loc(id));
+        // A constant view must not rename the parameter it aliases.
+        if (!mlir::isa<mlir::BlockArgument>(init))
+          setAdaNameLoc(init, nameAttr, loc(id));
         declare(id, init);
       } else {
         // No explicit initializer: default-initialize from the type's

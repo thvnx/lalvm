@@ -1,15 +1,18 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s 2>&1 | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- A nested function reads a variable from the enclosing scope (an up-level
 -- reference). At the dialect level it is an un-lifted cross-region SSA use:
--- `X : constant := A` folds through mem2reg to the enclosing parameter, so `I`
+-- `X : constant := A` shares the enclosing parameter's SSA value, so `I`
 -- returns the outer SSA value. Closure conversion then lifts the capture into a
 -- trailing parameter and hoists `I` to module level; the call passes it.
--- MLIR-LABEL: ada.subp @nested_subp_upvar(%x: !ada.qual<i32, @standard.integer>)
+-- MLIR-LABEL: ada.subp @nested_subp_upvar(%a: !ada.qual<i32, @standard.integer>)
 -- MLIR:         ada.decls {
 -- MLIR:           ada.subp private @nested_subp_upvar.i(%b: !ada.qual<i1, @standard.boolean>) -> !ada.qual<i32, @standard.integer>
--- MLIR:             ada.return %x : !ada.qual<i32, @standard.integer>
+-- MLIR:             ada.return %a : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.call @nested_subp_upvar.i(
 
 -- LLVM-LABEL: define void @_ada_nested_subp_upvar(i32 %0
