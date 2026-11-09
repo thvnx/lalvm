@@ -2,7 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- Regression test for symbol shadowing: a nested subprogram shares the
 -- enclosing subprogram's name, and its parameter shadows an outer-scope
@@ -21,7 +21,9 @@
 -- MLIR-NEXT:    ada.return %[[RES]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define i32 @_ada_nested_subp_shadow(
--- LLVM:          call i32 @nested_subp_shadow__nested_subp_shadow(i32 12)
+-- LLVM:          store i32 12, ptr %[[I:.*]]
+-- LLVM:          %[[A:.*]] = load i32, ptr %[[I]]
+-- LLVM:          call i32 @nested_subp_shadow__nested_subp_shadow(i32 %[[A]])
 -- LLVM:          ret i32
 -- LLVM-LABEL: define internal i32 @nested_subp_shadow__nested_subp_shadow(i32
 -- LLVM:          call { i32, i1 } @llvm.sadd.with.overflow.i32

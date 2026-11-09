@@ -3,7 +3,7 @@
 
 -- REQUIRES: cc
 -- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 -- RUN: %lalvm -O1 --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
@@ -11,7 +11,7 @@
 -- RUN: %FileCheck %s --check-prefix=EXEC < %t.out
 
 -- Removing unused local objects must preserve checks on their initializers.
--- Parameters keep the arithmetic dynamic when Checked is optimized.
+-- Parameters keep the arithmetic dynamic in the unoptimized LLVM output.
 -- MLIR-LABEL: ada.subp private @exec_unused_operator_checks.checked(
 -- MLIR: ada.binop "+" {{.*}} checks<overflow>
 -- MLIR: ada.binop "/" {{.*}} checks<division>

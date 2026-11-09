@@ -6,7 +6,7 @@
 -- After `mem2reg`, a checked unary `-` or `abs` on a known value cannot
 -- overflow: it needs no overflow check and folds to a constant.
 
--- CHECK-LABEL: define i32 @_ada_unary_const(
+-- CHECK-LABEL: define noundef i32 @_ada_unary_const(
 -- CHECK:         ret i32 5
 
 function Unary_Const return Integer is

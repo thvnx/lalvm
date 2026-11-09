@@ -2,7 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- An if expression (RM 4.5.7) yields a value, so it lowers to scf.if -> (T)
 -- with each dependent_expression yielded from its region; SCFToControlFlow

@@ -1,5 +1,8 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- bare loop + `exit when` (RM 5.5/5.7). A bare loop has no header: the body is
 -- its own back-edge target, reached again unless `exit` branches to the merge.
@@ -19,7 +22,7 @@
 -- MLIR:         return
 
 -- LLVM-LABEL: define i32 @_ada_exit_loop(
--- LLVM:         phi i32
+-- LLVM:         load i32
 -- LLVM:         icmp sge i32 %{{.*}}, %0
 -- LLVM:         br i1
 -- LLVM:         ret i32

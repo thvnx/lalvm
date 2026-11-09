@@ -3,7 +3,7 @@
 
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-references %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWER --implicit-check-not=!ada.ref --implicit-check-not=unrealized_conversion_cast
 // RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
-// RUN: %lalvm --emit=llvm -O1 %s | %FileCheck %s --check-prefix=LLVM
+// RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=ada-to-llvm %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWERED
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
@@ -17,6 +17,9 @@ module {
   // LOWER: %[[VALUE:.*]] = memref.load %[[Y]][]
   // LOWER: return %[[VALUE]],
   // LLVM-LABEL: define { i32, i32, i32 } @_ada_set_and_read(i32
+  // LOWERED-LABEL: llvm.func @_ada_set_and_read(
+  // LOWERED-SAME: -> !llvm.struct<(i32, i32, i32)>
+  // LOWERED: llvm.return {{.*}} : !llvm.struct<(i32, i32, i32)>
   // LLVM: ret { i32, i32, i32 }
   ada.subp @set_and_read(%x: !ada.ref<!ada.qual<i32, @integer>> {ada.mode = #ada<mode in_out>}, %y: !ada.ref<!ada.qual<i32, @integer>> {ada.mode = #ada<mode in_out>}, %v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer> {
     ada.write %v, %x : !ada.qual<i32, @integer> -> !ada.ref<!ada.qual<i32, @integer>>
@@ -31,6 +34,9 @@ module {
   // LOWER: memref.store
   // LOWER: call @_ada_set_and_read
   // LLVM-LABEL: define i32 @_ada_verify(
+  // LOWERED-LABEL: llvm.func @_ada_verify(
+  // LOWERED: llvm.call @_ada_set_and_read
+  // LOWERED: llvm.call @_ada_set_and_read
   // LLVM: call { i32, i32, i32 } @_ada_set_and_read(i32 1, i32 1, i32 42)
   // LLVM: call { i32, i32, i32 } @_ada_set_and_read(i32
   ada.subp @verify() -> !ada.qual<i32, @integer> {

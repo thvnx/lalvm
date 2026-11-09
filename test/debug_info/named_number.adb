@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm -O1 --emit=mlir --mlir-print-debuginfo --mlir-print-local-scope %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 -g --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -11,7 +14,7 @@
 -- MLIR:         %[[MAX:.*]] = ada.convert implicit {{.*}} : !ada.qual<i512, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.return %[[MAX]] : !ada.qual<i32, @standard.integer>
 
--- LLVM-LABEL: define i32 @_ada_named_number(
+-- LLVM-LABEL: define {{.*}}i32 @_ada_named_number(
 -- LLVM:          #dbg_value(i512 200,
 -- LLVM:          DILocalVariable(name: "max",
 

@@ -3,7 +3,7 @@
 
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-lower-calls %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=CALLEE
 // RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
-// RUN: %lalvm --emit=llvm -O1 %s | %FileCheck %s --check-prefix=LLVM
+// RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=ada-lower-calls %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=CALLEE
 // RUN: %lalvm --emit=llvm -g %s | %FileCheck %s --check-prefix=DI
 
 module {

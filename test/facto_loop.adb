@@ -1,5 +1,8 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- Iterative factorial via a nested function and a while loop (RM 5.5): the
 -- header tests `I <= X` and the body accumulates `Result * I`. Compare with the
@@ -20,7 +23,7 @@
 -- MLIR:           return
 
 -- LLVM:      define internal i32 @facto_loop__f(
--- LLVM:        phi i32
+-- LLVM:        load i32
 -- LLVM:        icmp sle i32 %{{.*}}, %0
 -- LLVM:        br i1
 -- LLVM:        call { i32, i1 } @llvm.smul.with.overflow.i32

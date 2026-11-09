@@ -3,7 +3,7 @@
 
 // RUN: %lalvm --emit=mlir -O1 %s | %FileCheck %s --check-prefix=EARLY
 // RUN: %lalvm --emit=llvm %s | %FileCheck %s
-// RUN: %lalvm --emit=llvm -O1 %s | %FileCheck %s
+// RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=ada-closure-conversion %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=CLOSURE
 // RUN: %lalvm --emit=llvm -g %s | %FileCheck %s --check-prefix=DI
 // RUN: %lalvm --emit=llvm --mlir-print-ir-after=ada-closure-conversion %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=CLOSURE
 

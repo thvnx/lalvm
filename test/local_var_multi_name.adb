@@ -17,7 +17,7 @@
 -- MLIR:         ada.binop "+"
 -- MLIR:         ada.return
 
--- LLVM-LABEL: define i32 @_ada_local_var_multi_name(
+-- LLVM-LABEL: define noundef i32 @_ada_local_var_multi_name(
 -- LLVM:         ret i32 9
 
 function Local_Var_Multi_Name return Integer is

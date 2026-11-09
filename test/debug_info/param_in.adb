@@ -1,4 +1,7 @@
--- RUN: %lalvm -O1 -g --emit=llvm %s | %FileCheck %s
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
+-- RUN: %lalvm -O0 -g --emit=llvm %s | %FileCheck %s
 
 -- An `in` scalar parameter is passed by value, so the debugger describes it
 -- with #dbg_value (a plain SSA value) rather than #dbg_declare, while still

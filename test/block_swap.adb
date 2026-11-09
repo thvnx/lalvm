@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=canonicalize %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -9,7 +12,7 @@
 -- MLIR:         %[[V:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 3
 -- MLIR:         return %[[V]] : !ada.qual<i32, @standard.integer>
 
--- LLVM-LABEL: define i32 @_ada_block_swap(
+-- LLVM-LABEL: define noundef i32 @_ada_block_swap(
 -- LLVM:          ret i32 3
 
 function Block_Swap return Integer is

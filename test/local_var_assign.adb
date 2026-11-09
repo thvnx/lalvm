@@ -11,7 +11,7 @@
 -- MLIR:         %[[X:.*]] = ada.binop "+" %[[INIT]], %[[ONE]] checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:    return %[[X]] : !ada.qual<i32, @standard.integer>
 
--- LLVM-LABEL: define i32 @_ada_local_var_assign(
+-- LLVM-LABEL: define noundef i32 @_ada_local_var_assign(
 -- LLVM:         ret i32 5
 
 function Local_Var_Assign return Integer is

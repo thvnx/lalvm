@@ -2,7 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- MLIR-LABEL: ada.subp @nested_func_call
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 42
@@ -19,7 +19,9 @@
 -- LLVM:          call i32 @nested_func_call__inner(i32 42)
 -- LLVM:          ret void
 -- LLVM-LABEL: define internal i32 @nested_func_call__inner(i32
--- LLVM:          ret i32 %0
+-- LLVM:          store i32 %0, ptr %[[I:.*]]
+-- LLVM:          %[[V:.*]] = load i32, ptr %[[I]]
+-- LLVM:          ret i32 %[[V]]
 
 procedure Nested_Func_Call is
    function Inner (X : Integer) return Integer;

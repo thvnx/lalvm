@@ -1,5 +1,8 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
--- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=ada-to-llvm %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=LOWERED
 
 -- Mutable and transitive captures share the same object.
 -- Add_Twice forwards Total through Add, preserving both writes.
@@ -13,6 +16,15 @@
 
 -- LLVM-DAG: define internal void @counter__add(i32 {{.*}}, ptr
 -- LLVM-DAG: define internal void @counter__add_twice(i32 {{.*}}, ptr
+
+-- LOWERED-LABEL: llvm.func @_ada_counter(
+-- LOWERED: %[[T:.*]] = llvm.alloca
+-- LOWERED: llvm.store %{{.*}}, %[[T]]
+-- LOWERED: llvm.call @counter__add_twice(%{{.*}}, %[[T]])
+-- LOWERED: %[[R:.*]] = llvm.load %[[T]]
+-- LOWERED: llvm.return %[[R]]
+-- LOWERED-DAG: llvm.func internal @counter__add(
+-- LOWERED-DAG: llvm.func internal @counter__add_twice(
 
 function Counter return Integer is
    Total : Integer := 0;

@@ -2,7 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm -O1 --emit=llvm --mlir-print-ir-after=mem2reg %s -o /dev/null 2>&1 | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 -- If statement with no else (RM 5.3). After mem2reg, R is a block argument of
 -- the merge block so the canonicalizer then turns the branch into a select.
@@ -16,9 +16,12 @@
 -- MLIR:         return
 
 -- LLVM-LABEL: define i32 @_ada_if_no_else(
+-- LLVM:         store i32 %0, ptr %[[R:.*]]
 -- LLVM:         icmp eq i32 %0, 0
--- LLVM:         select i1
--- LLVM:         ret i32
+-- LLVM:         br i1
+-- LLVM:         store i32 1, ptr %[[R]]
+-- LLVM:         %[[V:.*]] = load i32, ptr %[[R]]
+-- LLVM:         ret i32 %[[V]]
 
 function If_No_Else (X : Integer) return Integer is
    R : Integer := X;

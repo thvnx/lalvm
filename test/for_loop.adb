@@ -1,7 +1,10 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR --implicit-check-not=memref.alloca --implicit-check-not=memref.load --implicit-check-not=memref.store
 -- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 -- RUN: %lalvm -g --emit=llvm %s | %FileCheck %s --check-prefix=DI
--- RUN: %lalvm -g -O1 --emit=llvm %s | %FileCheck %s --check-prefix=DI
+-- RUN: %lalvm -g -O1 --emit=llvm %s | %FileCheck %s --check-prefix=OPT-DI
 
 -- Forward `for` loop (RM 5.5): empty-range guard, body, then a pre-step
 -- `I = hi` test so the induction step is unchecked (RM 5.5(9)).
@@ -26,6 +29,12 @@
 -- DI: #dbg_value(i32 %[[PHI]], ![[VAR:[0-9]+]],
 -- DI-DAG: ![[VAR]] = !DILocalVariable(name: "i", scope: {{.*}}type: ![[TYPE:[0-9]+]])
 -- DI-DAG: ![[TYPE]] = !DIBasicType(name: "integer", size: 32,
+
+-- Optimization can reorder the induction and accumulator phis.
+-- OPT-DI: phi i32
+-- OPT-DI: #dbg_value(i32 %[[I:[0-9]+]], ![[VAR:[0-9]+]],
+-- OPT-DI-DAG: ![[VAR]] = !DILocalVariable(name: "i", scope: {{.*}}type: ![[TYPE:[0-9]+]])
+-- OPT-DI-DAG: ![[TYPE]] = !DIBasicType(name: "integer", size: 32,
 
 function For_Loop (N : Integer) return Integer is
    Sum : Integer := 0;

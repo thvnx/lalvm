@@ -2,10 +2,11 @@
 // Copyright (c) 2026 The LALVM Project
 
 // At -O1 (and above), check that constants stay in their own subprogram: none
-// is hoisted to the module or shared with a nested subprogram.
+// is hoisted to the module or shared with a nested subprogram. The LLVM IR is
+// checked at -O0, where LLVM's pipeline does not inline `inner`.
 
 // RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
-// RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+// RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
 // MLIR-NOT:     ada.constant
 // MLIR-LABEL: ada.subp @outer

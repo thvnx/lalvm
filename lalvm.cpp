@@ -18,6 +18,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
+#include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
@@ -131,8 +132,7 @@ struct OptLevelParser : cl::parser<unsigned> {
   }
 };
 
-// LALVM optimization level. It also selects the machine code generator's
-// optimization level (via `CodeGenOptLevel`).
+// Optimization level for MLIR transformations, LLVM IR and machine code.
 static cl::opt<unsigned, false, OptLevelParser>
     optLevel("O", cl::Prefix, cl::ValueOptional, cl::init(0),
              cl::desc("Optimization level"), cl::value_desc("level"),
@@ -447,8 +447,15 @@ static int emitLLVMIR(mlir::MLIRContext &context,
   llvm::TargetMachine &tm = *tmOwner;
   mlir::ExecutionEngine::setupTargetTripleAndDataLayout(llvmModule.get(), &tm);
 
-  // @todo Add an optional optimization pipeline via
-  // mlir::makeOptimizingTransformer.
+  // Optimize first, so --emit=llvm dumps what gets compiled.
+  if (optLevel > 0) {
+    auto optimize =
+        mlir::makeOptimizingTransformer(optLevel, /*sizeLevel=*/0, &tm);
+    if (llvm::Error error = optimize(llvmModule.get())) {
+      frontend::emitErrorDiag(llvm::toString(std::move(error)));
+      return 1;
+    }
+  }
   if (emitAction == Action::EmitLLVMIR)
     return writeTextOutput([&](llvm::raw_ostream &os) { os << *llvmModule; });
 
