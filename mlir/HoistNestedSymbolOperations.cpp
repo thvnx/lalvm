@@ -46,14 +46,12 @@ struct HoistNestedSymbolOperationsPass
 } // namespace
 
 void HoistNestedSymbolOperationsPass::runOnOperation() {
-  // All ops are collected in one walk before any mutation, so the scope-name
-  // capture below reads intact FQN sym_names and there is no iterator
-  // invalidation.
+  // Hoist types before mangling subprograms so their source scopes are intact.
   ModuleOp module = getOperation();
   MLIRContext *ctx = module.getContext();
   llvm::SmallVector<std::pair<Operation *, std::string>, 4> subps;
-  llvm::SmallVector<std::pair<Operation *, std::string>, 4> nestedTypes;
   llvm::SmallVector<ada::DeclsOp, 4> declsOps;
+  auto insertion = module.getBody()->begin();
   module.walk([&](Operation *op) {
     // ada.decls now holds at most ada.type ops (closure conversion hoisted the
     // subprograms out); collect them to erase once their types are lifted.
@@ -66,17 +64,22 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
     // non-SymbolTable llvm.func body after lowering. No mangling: type symbols
     // are not part of the GNAT ABI, and FQN sym_names are already unique.
     if (isa<ada::TypeOp>(op)) {
+      if (op->getParentOfType<ModuleOp>() != module)
+        return;
       if (!isa<ModuleOp>(op->getParentOp())) {
-        // Capture the enclosing subprogram's mangled name now, while FQN
-        // sym_names are still intact (the rename loop runs afterward). It is
-        // fused onto the type's location below as its DWARF scope, recovered by
-        // the post-translation DI type builders once the op has been lifted
-        // away from its lexical parent.
-        std::string scopeName;
+        // Preserve the source scope before moving the type away from it.
         if (auto subp = op->getParentOfType<ada::SubpOp>())
-          scopeName = subp.getMangledName();
-        nestedTypes.emplace_back(op, std::move(scopeName));
+          op->setLoc(mlir::FusedLoc::get(
+              ctx, {op->getLoc()},
+              ada::DIScopeRefAttr::get(ctx, mlir::FlatSymbolRefAttr::get(
+                                                ctx, subp.getMangledName()))));
       }
+      // Extend the leading type group in walk order. Already placed types
+      // advance the cursor without being moved or revisited.
+      if (op->getBlock() == module.getBody() && op->getIterator() == insertion)
+        ++insertion;
+      else
+        op->moveBefore(module.getBody(), insertion);
       return;
     }
     if (auto subp = dyn_cast<ada::SubpOp>(op))
@@ -104,19 +107,6 @@ void HoistNestedSymbolOperationsPass::runOnOperation() {
             mlir::SymbolTable::replaceAllSymbolUses(op, mangledAttr, module)))
       return signalPassFailure();
     mlir::SymbolTable::setSymbolName(op, mangledName);
-  }
-  // Hoist the remaining nested ada.type ops to module level. Their FQN
-  // sym_names are unique, so a plain move keeps every type-symbol reference
-  // (the @sym in ada.qual) valid. Fuse the captured enclosing subprogram onto
-  // the location so the post-translation DI type builders can still place
-  // the type's DWARF scope under it.
-  for (auto &[op, scopeName] : nestedTypes) {
-    if (!scopeName.empty())
-      op->setLoc(mlir::FusedLoc::get(
-          ctx, {op->getLoc()},
-          ada::DIScopeRefAttr::get(
-              ctx, mlir::FlatSymbolRefAttr::get(ctx, scopeName))));
-    op->moveBefore(module.getBody(), module.getBody()->end());
   }
   // Closure conversion erased the subprogram-only ada.decls; the rest held
   // types, now lifted out, so every remaining container is empty. Erase them.
