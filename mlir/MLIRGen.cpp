@@ -601,12 +601,12 @@ private:
     return nullptr;
   }
 
-  /// Emit the arithmetic or Boolean logical operation for two precomputed
-  /// operands, of type `resultType`. `op` is the ada_op node (ada_op_plus,
-  /// ada_op_and, etc.).
-  mlir::Value emitBinOp(ada_node &op, mlir::Value lhs, mlir::Value rhs,
-                        mlir::Type resultType, bool isInteger = false,
-                        bool modular = false) {
+  /// Emit the arithmetic or Boolean logical operation of `binop` on its
+  /// precomputed operands, of type `resultType`. `op` is its ada_op node
+  /// (ada_op_plus, ada_op_and, etc.).
+  mlir::Value emitBinOp(ada_node &binop, ada_node &op, mlir::Value lhs,
+                        mlir::Value rhs, mlir::Type resultType,
+                        bool isInteger = false, bool modular = false) {
     auto callerLoc = loc(op);
     bool signedInt = isInteger && !modular;
     mlir::ada::AdaBinaryOp kind;
@@ -643,18 +643,29 @@ private:
         checks = mlir::ada::AdaChecks::Division;
         // Resolve the Division_Check against a static divisor at compile time
         // (@rm{11-5}), GNAT-style: a constant nonzero divisor needs no run-time
-        // check, while a constant zero divisor fails statically. The divisor
-        // may sit behind an `ada.convert` (a literal or a named number).
+        // check. A zero divisor is illegal only in a static expression
+        // (@rm{4-9}(34)). Otherwise warn and keep the check (@rm{4-5-5}(22)).
+        // The divisor may sit behind an `ada.convert` (a literal or a named
+        // number).
         mlir::Value divisor = rhs;
         if (auto convert = divisor.getDefiningOp<mlir::ada::ConvertOp>())
           divisor = convert.getInput();
         if (auto cst = divisor.getDefiningOp<mlir::ada::ConstantOp>())
           if (auto iv = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
             if (iv.getValue().isZero()) {
-              mlir::emitError(callerLoc, "division by zero");
-              mlir::emitError(callerLoc,
-                              "static expression fails Constraint_Check");
-              return nullptr;
+              ada_node right;
+              ada_bin_op_f_right(&binop, &right);
+              auto divisorLoc = loc(right);
+              if (libadalang::isStaticExpr(binop)) {
+                mlir::emitError(divisorLoc, "division by zero");
+                mlir::emitError(divisorLoc,
+                                "static expression fails Constraint_Check");
+                return nullptr;
+              }
+              mlir::emitWarning(divisorLoc, "division by zero");
+              mlir::emitWarning(divisorLoc,
+                                "Constraint_Error will be raised at run time");
+              break;
             }
             // A nonzero divisor cannot raise Divide_By_Zero, and only a divisor
             // of -1 can trigger the signed `Integer'First / -1` overflow, so
@@ -822,7 +833,7 @@ private:
         isInteger = true;
         modular = isModularTypeOp(typeOp);
       }
-    return emitBinOp(op, lhs, rhs,
+    return emitBinOp(binop, op, lhs, rhs,
                      resultType ? mlir::Type(resultType) : lhs.getType(),
                      isInteger, modular);
   }

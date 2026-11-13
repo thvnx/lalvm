@@ -1,11 +1,16 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
--- A static zero divisor fails the Division_Check at compile time (RM 11.5),
--- GNAT-style, rather than emitting a run-time raise.
--- CHECK: error: division by zero
--- CHECK: error: static expression fails Constraint_Check
+-- A static division by zero is illegal (RM 4.9(34)). A modular one is not
+-- folded, so it reaches the division.
+-- CHECK: division_by_zero_static.adb:[[@LINE+5]]:17: error: division by zero
+-- CHECK: division_by_zero_static.adb:[[@LINE+4]]:17: error: static expression fails Constraint_Check
 
-function Division_By_Zero_Static (A : Integer) return Integer is
+function Division_By_Zero_Static return Integer is
+   type M is mod 8;
+   A : M := 1 / 0;
 begin
-   return A / 0;
+   return Integer (A);
 end Division_By_Zero_Static;
