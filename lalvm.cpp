@@ -23,19 +23,15 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
-#include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/Timing.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
-#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/CommandFlags.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -43,13 +39,9 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/InitLLVM.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
@@ -167,30 +159,6 @@ static std::string commandLine;
 ///       before lowering.
 static llvm::codegen::RegisterCodeGenFlags codeGenFlags;
 
-// Load a .mlir file directly, bypassing Libadalang entirely.
-static int loadMLIRFile(mlir::MLIRContext &context,
-                        mlir::OwningOpRef<mlir::ModuleOp> &module) {
-  std::string errorMessage;
-  std::unique_ptr<llvm::MemoryBuffer> file =
-      mlir::openInputFile(inputFilename, &errorMessage);
-  if (!file) {
-    frontend::emitErrorDiag(errorMessage);
-    return 1;
-  }
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
-  // Route MLIR parse diagnostics through the source manager so errors print
-  // with file:line:col and a source snippet instead of only the terse "can't
-  // load file" fallback below.
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
-  module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
-  if (!module) {
-    frontend::emitErrorDiag("can't load file " + inputFilename);
-    return 1;
-  }
-  return 0;
-}
-
 // Generate MLIR from Ada source via Libadalang.
 static int loadMLIR(libadalang::AdaAST &ast, mlir::MLIRContext &context,
                     mlir::OwningOpRef<mlir::ModuleOp> &module) {
@@ -270,76 +238,6 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   }
 
   return runPassManager(pm, *module, timing);
-}
-
-// Write textual output produced by `print` to `outputFilename` ("-" = stdout).
-static int
-writeTextOutput(llvm::function_ref<void(llvm::raw_ostream &)> print) {
-  std::string errorMessage;
-  std::unique_ptr<llvm::ToolOutputFile> out =
-      mlir::openOutputFile(outputFilename, &errorMessage);
-  if (!out) {
-    frontend::emitErrorDiag(errorMessage);
-    return 1;
-  }
-  print(out->os());
-  out->keep();
-  return 0;
-}
-
-// Run the LLVM backend to emit an object file or target assembly for
-// `llvmModule` (using host target machine `tm`). Output goes to -o when given,
-// otherwise to the input basename with a .o/.s extension (in the current
-// directory), mirroring a compiler's default object/assembly output. The bind
-// object gets a `b_` prefix, so it sits next to the unit's own object.
-static int emitMachineCode(llvm::Module &llvmModule, llvm::TargetMachine &tm,
-                           bool emitObject) {
-  std::string path = outputFilename;
-  if (outputFilename.getNumOccurrences() == 0) {
-    llvm::StringRef stem =
-        inputFilename == "-" ? "a" : llvm::sys::path::stem(inputFilename);
-    path = (bindAction ? "b_" : "") + stem.str() + (emitObject ? ".o" : ".s");
-  }
-
-  // Writing a binary object to a terminal produces garbage; require -o (llc
-  // does the same). Assembly is text and prints fine.
-  if (emitObject && path == "-" &&
-      llvm::sys::Process::StandardOutIsDisplayed()) {
-    frontend::emitErrorDiag(
-        "refusing to write a binary object file to the terminal; "
-        "use -o <file>");
-    return 1;
-  }
-
-  std::string errorMessage;
-  std::unique_ptr<llvm::ToolOutputFile> out =
-      mlir::openOutputFile(path, &errorMessage);
-  if (!out) {
-    frontend::emitErrorDiag(errorMessage);
-    return 1;
-  }
-
-  // addPassesToEmitFile writes via pwrite; a non-seekable stream (e.g. a pipe)
-  // must be buffered first.
-  llvm::raw_pwrite_stream *os = &out->os();
-  std::unique_ptr<llvm::buffer_ostream> buffered;
-  if (!out->os().supportsSeeking()) {
-    buffered = std::make_unique<llvm::buffer_ostream>(out->os());
-    os = buffered.get();
-  }
-
-  llvm::legacy::PassManager pm;
-  if (tm.addPassesToEmitFile(pm, *os, /*DwoOut=*/nullptr,
-                             emitObject
-                                 ? llvm::CodeGenFileType::ObjectFile
-                                 : llvm::CodeGenFileType::AssemblyFile)) {
-    frontend::emitErrorDiag(llvm::Twine("target cannot emit an ") +
-                            (emitObject ? "object" : "assembly") + " file");
-    return 1;
-  }
-  pm.run(llvmModule);
-  out->keep();
-  return 0;
 }
 
 static int emitLLVMIR(mlir::MLIRContext &context,
@@ -457,9 +355,17 @@ static int emitLLVMIR(mlir::MLIRContext &context,
     }
   }
   if (emitAction == Action::EmitLLVMIR)
-    return writeTextOutput([&](llvm::raw_ostream &os) { os << *llvmModule; });
+    return lalvm::writeTextOutput(
+        outputFilename, [&](llvm::raw_ostream &os) { os << *llvmModule; });
 
-  return emitMachineCode(*llvmModule, tm, emitAction == Action::EmitObject);
+  bool emitObject = emitAction == Action::EmitObject;
+  std::string path = outputFilename;
+  if (outputFilename.getNumOccurrences() == 0) {
+    llvm::StringRef stem =
+        inputFilename == "-" ? "a" : llvm::sys::path::stem(inputFilename);
+    path = (bindAction ? "b_" : "") + stem.str() + (emitObject ? ".o" : ".s");
+  }
+  return lalvm::emitMachineCode(*llvmModule, tm, path, emitObject);
 }
 
 int main(int argc, char **argv) {
@@ -541,7 +447,8 @@ int main(int argc, char **argv) {
     libadalang::AdaAST ast(inputFilename, projectFile);
     if (ast.emitParserDiagnostics() || !ast.isValid())
       return 1;
-    return writeTextOutput([&](llvm::raw_ostream &os) { ast.dump(os); });
+    return lalvm::writeTextOutput(outputFilename,
+                                  [&](llvm::raw_ostream &os) { ast.dump(os); });
   }
 
   // Every other action: load a module then emit.
@@ -560,7 +467,7 @@ int main(int argc, char **argv) {
       frontend::emitErrorDiag("can't bind when the input is MLIR");
       return 1;
     }
-    if (int error = loadMLIRFile(context, module))
+    if (int error = lalvm::loadMLIRFile(inputFilename, context, module))
       return error;
   } else {
     libadalang::AdaAST ast(inputFilename, projectFile);
@@ -604,8 +511,9 @@ int main(int argc, char **argv) {
     if (debugInfo)
       flags.enableDebugInfo(/*enable=*/true, /*prettyForm=*/false)
           .useLocalScope();
-    return writeTextOutput(
-        [&](llvm::raw_ostream &os) { module->print(os, flags); });
+    return lalvm::writeTextOutput(outputFilename, [&](llvm::raw_ostream &os) {
+      module->print(os, flags);
+    });
   }
   case Action::EmitLLVMIR:
   case Action::EmitObject:
