@@ -2809,7 +2809,8 @@ private:
         return nullptr;
       }
 
-      mlir::FailureOr<mlir::Value> retVal = mlirGenReturnExpr(expr);
+      mlir::FailureOr<mlir::Value> retVal =
+          mlirGenReturnExpr(expr, mlir::cast<mlir::ada::SubpOp>(op));
 
       if (mlir::failed(retVal)) {
         op->erase();
@@ -3789,37 +3790,49 @@ private:
     return mlir::success();
   }
 
-  /// Return the expression to be used in a return statement. Returns a null
-  /// value for a procedure's return.
-  mlir::FailureOr<mlir::Value> mlirGenReturnExpr(ada_node &return_expr) {
-    mlir::Value expr = nullptr;
-    if (!ada_node_is_null(&return_expr)) {
-      expr = visit_expr(return_expr);
-      if (!expr)
-        return mlir::failure();
-      // Convert to the subprogram's result subtype (@rm{6-5}).
-      mlir::Operation *enclosing =
-          builder.getInsertionBlock()->getParent()->getParentOp();
-      if (auto subp = mlir::dyn_cast<mlir::ada::SubpOp>(enclosing)) {
-        auto results = subp.getFunctionType().getResults();
-        if (!results.empty())
-          if (auto retType =
-                  mlir::dyn_cast<mlir::ada::QualType>(results.front())) {
-            expr = convertImplicitly(expr, retType, loc(return_expr));
-            if (!expr)
-              return mlir::failure();
-          }
-      }
-    }
+  /// Emit a return statement's expression or an expression function's body,
+  /// converted to the result subtype. A procedure's return has no value.
+  mlir::FailureOr<mlir::Value> mlirGenReturnExpr(ada_node &node,
+                                                 mlir::ada::SubpOp subp) {
+    auto returnLoc = loc(node);
+    ada_node return_expr = node;
+    if (ada_node_kind(&node) == ada_return_stmt)
+      ada_return_stmt_f_return_expr(&node, &return_expr);
+    // A simple return has an expression iff it applies to a function body
+    // (@rm{6-5}(5)). Libadalang does not check it.
+    // @todo Check unreachable returns too, and exempt the simple returns of an
+    //       extended return statement (never an expression) once supported.
+    if (!subp)
+      return mlir::emitError(returnLoc,
+                             "return statement has no enclosing subprogram");
+    bool hasExpr = !ada_node_is_null(&return_expr);
+    if (subp.isFunction() && !hasExpr)
+      return mlir::emitError(returnLoc,
+                             "missing expression in return from function");
+    if (subp.isProcedure() && hasExpr)
+      return mlir::emitError(returnLoc,
+                             "procedure cannot return value (use function)");
+
+    if (!hasExpr)
+      return mlir::Value{};
+    mlir::Value expr = visit_expr(return_expr);
+    if (!expr)
+      return mlir::failure();
+    // Convert to the subprogram's result subtype (@rm{6-5}).
+    auto resultType =
+        mlir::cast<mlir::ada::QualType>(subp.getFunctionType().getResult(0));
+    expr = convertImplicitly(expr, resultType, loc(return_expr));
+    if (!expr)
+      return mlir::failure();
     return expr;
   }
 
   /// Emit a return operation or a failure if any generation fails.
   mlir::LogicalResult mlirGenReturn(ada_node &return_stmt) {
-    ada_node return_expr = {};
-    ada_return_stmt_f_return_expr(&return_stmt, &return_expr);
-
-    mlir::FailureOr<mlir::Value> expr = mlirGenReturnExpr(return_expr);
+    auto subp = builder.getInsertionBlock()
+                    ->getParent()
+                    ->getParentOfType<mlir::ada::SubpOp>();
+    mlir::FailureOr<mlir::Value> expr = mlirGenReturnExpr(return_stmt, subp);
 
     if (mlir::failed(expr))
       return mlir::failure();
