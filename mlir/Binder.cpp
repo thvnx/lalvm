@@ -108,12 +108,11 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
       return error(returns, "the main function must return Integer");
   }
 
-  ada_node defName = {};
-  if (!ada_basic_decl_p_defining_name(&item, &defName) ||
-      ada_node_is_null(&defName))
-    return error(item, "failed to get the main subprogram's name");
+  auto defName = libadalang::declDefiningName(item);
+  if (!defName)
+    return std::nullopt;
   std::string symbol =
-      mlir::ada::libraryLevelSymbol(libadalang::getName(&defName));
+      mlir::ada::libraryLevelSymbol(libadalang::getName(&defName.value()));
 
   std::string unitName =
       llvm::sys::path::stem(libadalang::unitFilename(root)).str();
