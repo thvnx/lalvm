@@ -179,17 +179,18 @@ static void dump_image(llvm::raw_ostream &os, ada_node *node,
     }
     failed |= ada_get_last_exception() != nullptr;
   }
-  ada_node type = {};
-  if (ada_expr_p_expression_type(node, &type) && !ada_node_is_null(&type)) {
-    WithColor(os, raw_ostream::BLUE).get() << " type=" << declRef(type, node);
+  auto type = libadalang::expressionType(*node);
+  if (type) {
+    WithColor(os, raw_ostream::BLUE).get()
+        << " type=" << declRef(type.value(), node);
     printed = true;
   }
   failed |= ada_get_last_exception() != nullptr;
   // Print the expected type if it differs from the type.
   ada_node expected = {};
-  if (!ada_node_is_null(&type) &&
-      ada_expr_p_expected_expression_type(node, &expected) &&
-      !ada_node_is_null(&expected) && !ada_node_is_equivalent(&expected, &type))
+  if (type && ada_expr_p_expected_expression_type(node, &expected) &&
+      !ada_node_is_null(&expected) &&
+      !ada_node_is_equivalent(&expected, &type.value()))
     WithColor(os, raw_ostream::BLUE).get()
         << " expected=" << declRef(expected, node);
   if (failed || (unresolved && isReference && !printed))
@@ -572,6 +573,13 @@ std::optional<ada_node> libadalang::canonicalType(ada_node &typeDecl) {
   if (ada_base_type_decl_p_canonical_type(&typeDecl, &kNullOrigin, &canon) &&
       !ada_node_is_null(&canon))
     return canon;
+  return std::nullopt;
+}
+
+std::optional<ada_node> libadalang::expressionType(ada_node &expr) {
+  ada_node type = {};
+  if (ada_expr_p_expression_type(&expr, &type) && !ada_node_is_null(&type))
+    return type;
   return std::nullopt;
 }
 

@@ -799,10 +799,9 @@ private:
     ada_bin_op_f_op(&binop, &op);
 
     // Resolve the operation's result type from libadalang.
-    ada_node type_decl{};
+    ada_node type_decl = libadalang::expressionType(binop).value_or(ada_node{});
     mlir::ada::QualType resultType;
-    if (ada_expr_p_expression_type(&binop, &type_decl) &&
-        !ada_node_is_null(&type_decl))
+    if (!ada_node_is_null(&type_decl))
       resultType = getAdaQualType(type_decl, loc(binop));
 
     // Relational operators (@rm{4-5-2}) yield Boolean. Their operands are
@@ -872,9 +871,8 @@ private:
       return nullptr;
     }
 
-    ada_node type_decl{};
-    if (!ada_expr_p_expression_type(&unop, &type_decl) ||
-        ada_node_is_null(&type_decl)) {
+    ada_node type_decl = libadalang::expressionType(unop).value_or(ada_node{});
+    if (ada_node_is_null(&type_decl)) {
       mlir::emitError(loc(unop), "failed to resolve type of unary operation");
       return nullptr;
     }
@@ -919,9 +917,8 @@ private:
   /// (universal_int_type_ / universal_real_type_), falls back to the expected
   /// type from the surrounding context. Returns a null node on failure.
   ada_node resolveLiteralType(ada_node &node, mlir::Location location) {
-    ada_node type_decl;
-    if (!ada_expr_p_expression_type(&node, &type_decl) ||
-        ada_node_is_null(&type_decl)) {
+    ada_node type_decl = libadalang::expressionType(node).value_or(ada_node{});
+    if (ada_node_is_null(&type_decl)) {
       mlir::emitError(location, "failed to resolve type of literal");
       return {};
     }
@@ -1476,11 +1473,9 @@ private:
     // A universal integer operand has no expected type: it is a static value
     // emitted in the target subtype, so a value outside the base range is an
     // error (@rm{4-9}(35)).
-    ada_node operandType;
-    if (mlir::isa<mlir::IntegerType>(target.getMlirType()) &&
-        ada_expr_p_expression_type(&operand, &operandType) &&
-        !ada_node_is_null(&operandType) &&
-        libadalang::isUniversalTypeDecl(operandType)) {
+    auto operandType = libadalang::expressionType(operand);
+    if (mlir::isa<mlir::IntegerType>(target.getMlirType()) && operandType &&
+        libadalang::isUniversalTypeDecl(operandType.value())) {
       std::optional<llvm::APSInt> staticValue =
           libadalang::evalExprAsInt(operand);
       if (!staticValue) {
@@ -1782,16 +1777,14 @@ private:
     ada_number_decl_f_expr(&number_decl, &expr);
 
     // Determine the universal type of the static expression.
-    ada_node exprType;
-    bool hasConstantValue = ada_expr_p_expression_type(&expr, &exprType) &&
-                            !ada_node_is_null(&exprType);
+    auto exprType = libadalang::expressionType(expr);
 
     enum class UniversalKind { Unknown, Int, Real };
     UniversalKind kind = UniversalKind::Unknown;
     std::string unknownTypeName;
-    if (hasConstantValue) {
+    if (exprType) {
       ada_node typeNameNode;
-      ada_base_type_decl_f_name(&exprType, &typeNameNode);
+      ada_base_type_decl_f_name(&exprType.value(), &typeNameNode);
       if (!ada_node_is_null(&typeNameNode)) {
         std::string typeName = libadalang::getName(&typeNameNode);
         kind =
@@ -1811,7 +1804,7 @@ private:
     switch (kind) {
     case UniversalKind::Int: {
       if (auto value = libadalang::evalExprAsInt(expr)) {
-        typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
+        typeOp = lookupOrEmitTypeOp(exprType.value(), loc(number_decl));
         if (typeOp) {
           auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
           constAttr = mlir::IntegerAttr::get(
@@ -1836,7 +1829,7 @@ private:
       if (ada_node_kind(&literal) == ada_real_literal) {
         auto value = evalRealLiteral(literal);
         if (value) {
-          typeOp = lookupOrEmitTypeOp(exprType, loc(number_decl));
+          typeOp = lookupOrEmitTypeOp(exprType.value(), loc(number_decl));
           if (typeOp)
             constAttr = mlir::FloatAttr::get(
                 mlir::cast<mlir::FloatType>(typeOp.getMlirType()), *value);
@@ -3284,7 +3277,7 @@ private:
     if (!ada_node_is_null(&idType))
       typeDecl = libadalang::designatedTypeDecl(idType).value_or(ada_node{});
     else
-      ada_expr_p_expression_type(&iterExpr, &typeDecl);
+      typeDecl = libadalang::expressionType(iterExpr).value_or(ada_node{});
     if (ada_node_is_null(&typeDecl)) {
       mlir::emitError(loc(loopNode),
                       "failed to resolve `for` loop parameter type");
@@ -3520,13 +3513,13 @@ private:
     mlir::Location location = loc(if_expr);
 
     // Result type, shared by every dependent_expression.
-    ada_node type_decl{};
-    if (!ada_expr_p_expression_type(&if_expr, &type_decl) ||
-        ada_node_is_null(&type_decl)) {
+    auto type_decl = libadalang::expressionType(if_expr);
+    if (!type_decl) {
       mlir::emitError(location, "failed to resolve type of if expression");
       return nullptr;
     }
-    mlir::ada::QualType resultType = getAdaQualType(type_decl, location);
+    mlir::ada::QualType resultType =
+        getAdaQualType(type_decl.value(), location);
     if (!resultType)
       return nullptr;
 

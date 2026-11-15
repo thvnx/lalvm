@@ -156,6 +156,10 @@ std::optional<ada_node> typeDefOfKind(ada_node &typeDecl,
 /// base type), or `std::nullopt` when resolution fails.
 std::optional<ada_node> canonicalType(ada_node &typeDecl);
 
+/// Return the type declaration of `expr`, or std::nullopt when resolution fails
+/// or finds nothing.
+std::optional<ada_node> expressionType(ada_node &expr);
+
 /// Return the declaration `name` references, or `std::nullopt` when name
 /// resolution fails or finds nothing.
 std::optional<ada_node> referencedDecl(ada_node &name);
