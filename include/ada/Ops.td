@@ -453,6 +453,9 @@ def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
     /// not a compile-time constant. Returned independently so a per-bound
     /// consumer (e.g. folding `'First` alone) can use one side.
     std::pair<mlir::TypedAttr, mlir::TypedAttr> staticBounds();
+
+    /// Whether both bounds are integer constants equal to `lo` and `hi`.
+    bool hasStaticBounds(const llvm::APSInt &lo, const llvm::APSInt &hi);
   }];
 
   let hasVerifier = 1;

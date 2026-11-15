@@ -42,15 +42,8 @@ struct IndexOpLowering : OpRewritePattern<ada::IndexOp> {
     auto upper = ada::boundValue(info.staticUpper(0));
     bool checked = false;
     if (auto check = index.getDefiningOp<ada::IndexCheckOp>())
-      if (auto range = check.getRange().getDefiningOp<ada::RangeOp>()) {
-        auto [lo, hi] = range.staticBounds();
-        auto loAttr = dyn_cast_or_null<IntegerAttr>(lo);
-        auto hiAttr = dyn_cast_or_null<IntegerAttr>(hi);
-        checked =
-            loAttr && hiAttr &&
-            llvm::APSInt::compareValues(ada::boundValue(loAttr), lower) == 0 &&
-            llvm::APSInt::compareValues(ada::boundValue(hiAttr), upper) == 0;
-      }
+      if (auto range = check.getRange().getDefiningOp<ada::RangeOp>())
+        checked = range.hasStaticBounds(lower, upper);
     if (!checked && !ada::isKnownInStaticRange(op, index, lower, upper)) {
       auto indexSym = info.getIndexTypes()[0];
       auto base = ada::baseOfAdaType(op, indexSym);

@@ -51,6 +51,27 @@ module {
     %element = ada.index %array[%index] : (!ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
     ada.return
   }
+
+  ada.type @byte : i8 = #ada.int_info<mod 256>
+  ada.type @upper_byte base @byte : i8 = #ada.int_info<range 128 to 255>
+  ada.type @bytes : !ada.array<i32[i8 x 128]> = #ada.array_info<component @integer, dim @upper_byte range 128 to 255>
+
+  // Recognize an existing check even when its bounds set the machine sign bit.
+  // INDEXING-LABEL: func.func @_ada_checked_unsigned(
+  // INDEXING: %[[CHECKED_UNSIGNED:.*]] = ada.index_check
+  // INDEXING-NEXT: %[[BYTES:.*]] = ada.object
+  // INDEXING-NEXT: %[[RAW_UNSIGNED:.*]] = ada.unwrap %[[CHECKED_UNSIGNED]]
+  // INDEXING-NEXT: arith.extui %[[RAW_UNSIGNED]] : i8 to i64
+  // INDEXING: ada.index %[[BYTES]][%[[CHECKED_UNSIGNED]]] offset
+  ada.subp @checked_unsigned(%index: !ada.qual<i8, @byte>) {
+    %lo = ada.constant : !ada.qual<i8, @byte> = 128
+    %hi = ada.constant : !ada.qual<i8, @byte> = 255
+    %range = ada.range %lo, %hi : !ada.qual<i8, @byte> -> !ada.range<i8, @byte>
+    %checked = ada.index_check %index, %range : !ada.qual<i8, @byte> to !ada.qual<i8, @byte>
+    %array = ada.object : !ada.ref<!ada.qual<!ada.array<i32[i8 x 128]>, @bytes>>
+    %element = ada.index %array[%checked] : (!ada.ref<!ada.qual<!ada.array<i32[i8 x 128]>, @bytes>>, !ada.qual<i8, @byte>) -> !ada.ref<!ada.qual<i32, @integer>>
+    ada.return
+  }
 }
 
 // OPT-LABEL: define {{.*}}void @_ada_unused(

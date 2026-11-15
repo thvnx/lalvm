@@ -824,6 +824,20 @@ std::pair<mlir::TypedAttr, mlir::TypedAttr> RangeOp::staticBounds() {
   return {lo, hi};
 }
 
+bool RangeOp::hasStaticBounds(const llvm::APSInt &lo, const llvm::APSInt &hi) {
+  auto [low, high] = staticBounds();
+  auto lowAttr = mlir::dyn_cast_or_null<mlir::IntegerAttr>(low);
+  auto highAttr = mlir::dyn_cast_or_null<mlir::IntegerAttr>(high);
+  if (!lowAttr || !highAttr)
+    return false;
+  auto qual = mlir::cast<QualType>(getLow().getType());
+  bool isUnsigned = isUnsignedOrderQualType(*this, qual);
+  return llvm::APSInt::compareValues(
+             llvm::APSInt(lowAttr.getValue(), isUnsigned), lo) == 0 &&
+         llvm::APSInt::compareValues(
+             llvm::APSInt(highAttr.getValue(), isUnsigned), hi) == 0;
+}
+
 //===----------------------------------------------------------------------===//
 // RangeCheckOp, IndexCheckOp and RequalifyOp
 //===----------------------------------------------------------------------===//
@@ -1571,20 +1585,17 @@ mlir::Value mlir::ada::getOrCreateStaticRange(
   llvm::APInt high = hi.sextOrTrunc(intType.getWidth());
   // A descriptor of `sym` with the same bounds, before the insertion point in
   // the same block, dominates it.
-  auto sameBound = [](mlir::TypedAttr attr, const llvm::APInt &value) {
-    auto intAttr = mlir::dyn_cast_or_null<mlir::IntegerAttr>(attr);
-    return intAttr && intAttr.getValue() == value;
-  };
-  if (mlir::Block *block = builder.getInsertionBlock())
+  if (mlir::Block *block = builder.getInsertionBlock()) {
+    bool isUnsigned = isUnsignedOrderQualType(block->getParentOp(), baseQual);
+    llvm::APSInt lower(low, isUnsigned), upper(high, isUnsigned);
     for (mlir::Operation &op :
          llvm::make_range(block->begin(), builder.getInsertionPoint()))
       if (auto rangeOp = mlir::dyn_cast<RangeOp>(&op))
         if (mlir::cast<RangeType>(rangeOp.getType()).getConstrainedType() ==
-            sym) {
-          auto [loAttr, hiAttr] = rangeOp.staticBounds();
-          if (sameBound(loAttr, low) && sameBound(hiAttr, high))
-            return rangeOp.getResult();
-        }
+                sym &&
+            rangeOp.hasStaticBounds(lower, upper))
+          return rangeOp.getResult();
+  }
   // Separate statements: the bounds are emitted in order.
   mlir::Value loValue = createIntConstant(builder, loc, baseQual, low);
   mlir::Value hiValue = createIntConstant(builder, loc, baseQual, high);
