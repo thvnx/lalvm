@@ -2326,14 +2326,14 @@ private:
     ada_node constraint_list = {};
     ada_constrained_array_indices_f_list(&indices, &constraint_list);
     ada_node dim0 = {};
-    if (ada_node_child(&constraint_list, 0, &dim0) == 0 ||
-        ada_node_kind(&dim0) != ada_bin_op)
+    auto bounds = ada_node_child(&constraint_list, 0, &dim0)
+                      ? libadalang::explicitRangeBounds(dim0)
+                      : std::nullopt;
+    if (!bounds)
       return mlir::emitError(location,
                              "array index constraint must be a .. binary op");
 
-    ada_node lo_node = {}, hi_node = {};
-    ada_bin_op_f_left(&dim0, &lo_node);
-    ada_bin_op_f_right(&dim0, &hi_node);
+    auto [lo_node, hi_node] = *bounds;
     if (!libadalang::isStaticExpr(lo_node) ||
         !libadalang::isStaticExpr(hi_node))
       return mlir::emitError(location,
@@ -3262,14 +3262,8 @@ private:
     // subtype name or a Range attribute (needing First and Last) is diagnosed.
     ada_node iterExpr;
     ada_for_loop_spec_f_iter_expr(&spec, &iterExpr);
-    ada_node rangeOp{};
-    if (ada_node_kind(&iterExpr) == ada_bin_op) {
-      ada_node op;
-      ada_bin_op_f_op(&iterExpr, &op);
-      if (ada_node_kind(&op) == ada_op_double_dot)
-        rangeOp = iterExpr;
-    }
-    if (ada_node_is_null(&rangeOp)) {
+    auto bounds = libadalang::explicitRangeBounds(iterExpr);
+    if (!bounds) {
       mlir::emitError(
           loc(loopNode),
           "`for` loop over a type or subtype name is not yet supported");
@@ -3340,9 +3334,7 @@ private:
 
     // Evaluate bounds once and guard the empty range.
     builder.setInsertionPointToEnd(entryBlock);
-    ada_node lowNode, highNode;
-    ada_bin_op_f_left(&rangeOp, &lowNode);
-    ada_bin_op_f_right(&rangeOp, &highNode);
+    auto [lowNode, highNode] = *bounds;
 
     // A statically null range (`lo > hi`) provably runs zero iterations; warn.
     if (libadalang::isStaticExpr(lowNode) && libadalang::isStaticExpr(highNode))

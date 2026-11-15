@@ -164,6 +164,10 @@ std::optional<ada_node> referencedDecl(ada_node &name);
 /// name resolution fails or finds nothing.
 std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
 
+/// Return the bounds of an explicit `L .. H` range, or std::nullopt otherwise.
+std::optional<std::pair<ada_node, ada_node>>
+explicitRangeBounds(ada_node &range);
+
 /// Return the bounds of `constraint`, when it is an `ada_range_constraint`, or
 /// `std::nullopt` for any other form (a Range attribute, a subtype name, etc).
 std::optional<std::pair<ada_node, ada_node>>

@@ -584,16 +584,24 @@ std::optional<ada_node> libadalang::referencedDecl(ada_node &name) {
 }
 
 std::optional<std::pair<ada_node, ada_node>>
-libadalang::rangeConstraintBounds(ada_node &constraint) {
-  ada_node spec = {}, range = {}, op = {}, lo = {}, hi = {};
-  if (ada_node_kind(&constraint) != ada_range_constraint ||
-      !ada_range_constraint_f_range(&constraint, &spec) ||
-      !ada_range_spec_f_range(&spec, &range) ||
-      ada_node_kind(&range) != ada_bin_op || !ada_bin_op_f_op(&range, &op) ||
+libadalang::explicitRangeBounds(ada_node &range) {
+  ada_node op = {}, lo = {}, hi = {};
+  if (ada_node_is_null(&range) || ada_node_kind(&range) != ada_bin_op ||
+      !ada_bin_op_f_op(&range, &op) ||
       ada_node_kind(&op) != ada_op_double_dot ||
       !ada_bin_op_f_left(&range, &lo) || !ada_bin_op_f_right(&range, &hi))
     return std::nullopt;
   return std::make_pair(lo, hi);
+}
+
+std::optional<std::pair<ada_node, ada_node>>
+libadalang::rangeConstraintBounds(ada_node &constraint) {
+  ada_node spec = {}, range = {};
+  if (ada_node_kind(&constraint) != ada_range_constraint ||
+      !ada_range_constraint_f_range(&constraint, &spec) ||
+      !ada_range_spec_f_range(&spec, &range))
+    return std::nullopt;
+  return explicitRangeBounds(range);
 }
 
 std::optional<ada_node> libadalang::subtypeConstraint(ada_node &typeExpr) {
