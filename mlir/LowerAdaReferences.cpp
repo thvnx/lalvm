@@ -32,8 +32,7 @@ struct ObjectOpLowering : OpConversionPattern<ada::ObjectOp> {
         getTypeConverter()->convertType(op.getType()));
     if (!slotType)
       return rewriter.notifyMatchFailure(op, "unresolved object base type");
-    auto qual =
-        cast<ada::QualType>(cast<ada::RefType>(op.getType()).getValueType());
+    auto qual = ada::objectValueType(op.getType());
     Location loc = ada::attachAdaTypeRef(op.getLoc(), qual.getAdaType());
     Value slot = memref::AllocaOp::create(rewriter, loc, slotType);
     if (Value initial = adaptor.getInitial()) {

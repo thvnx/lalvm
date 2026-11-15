@@ -547,8 +547,7 @@ private:
   /// base.
   mlir::Value readObject(mlir::Value reference, mlir::Location location,
                          bool baseOnly = false) {
-    auto qual = mlir::cast<mlir::ada::QualType>(
-        mlir::cast<mlir::ada::RefType>(reference.getType()).getValueType());
+    auto qual = mlir::ada::objectValueType(reference.getType());
     bool initialized = false;
     if (auto object = reference.getDefiningOp<mlir::ada::ObjectOp>())
       initialized =
@@ -1398,8 +1397,7 @@ private:
             return nullptr;
           snapshots[i] = value;
         }
-        auto actual = mlir::cast<mlir::ada::QualType>(
-            mlir::cast<mlir::ada::RefType>(args[i].getType()).getValueType());
+        auto actual = mlir::ada::objectValueType(args[i].getType());
         auto actualType = mlir::ada::lookupAdaType(
             builder.getInsertionBlock()->getParentOp(), actual.getAdaType());
         if (actualType && actualType.hasDynamicRange()) {

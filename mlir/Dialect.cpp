@@ -428,8 +428,7 @@ static mlir::Value createDefaultObjectValue(mlir::Operation *op,
 llvm::SmallVector<mlir::MemorySlot> ObjectOp::getPromotableSlots() {
   if (!getOperation()->getBlock()->isEntryBlock())
     return {};
-  auto qual =
-      mlir::cast<QualType>(mlir::cast<RefType>(getType()).getValueType());
+  auto qual = objectValueType(getType());
   if (!isNumericMachineType(qual.getMlirType()))
     return {};
   auto base = baseOfAdaType(*this, qual.getAdaType());
@@ -470,8 +469,7 @@ llvm::LogicalResult ObjectOp::verify() {
   if (!function)
     return emitOpError("must be nested in a subprogram or function");
 
-  auto valueType =
-      mlir::cast<QualType>(mlir::cast<RefType>(getType()).getValueType());
+  auto valueType = objectValueType(getType());
   if (getInitial() &&
       mlir::cast<QualType>(getInitial().getType()).getMlirType() !=
           valueType.getMlirType())
@@ -484,8 +482,7 @@ llvm::LogicalResult ObjectOp::verify() {
 llvm::LogicalResult ObjectOp::verifySymbolUses(mlir::SymbolTableCollection &) {
   if (!getInitial())
     return mlir::success();
-  auto qual =
-      mlir::cast<QualType>(mlir::cast<RefType>(getType()).getValueType());
+  auto qual = objectValueType(getType());
   auto initial = mlir::cast<QualType>(getInitial().getType());
   if (initial == qual)
     return mlir::success();
@@ -502,8 +499,7 @@ llvm::LogicalResult ObjectOp::verifySymbolUses(mlir::SymbolTableCollection &) {
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult ReadOp::verify() {
-  auto valueType = mlir::cast<QualType>(
-      mlir::cast<RefType>(getReference().getType()).getValueType());
+  auto valueType = objectValueType(getReference().getType());
   if (mlir::cast<QualType>(getType()).getMlirType() != valueType.getMlirType())
     return emitOpError(
         "result and referenced object must share a machine type");
@@ -511,8 +507,7 @@ llvm::LogicalResult ReadOp::verify() {
 }
 
 llvm::LogicalResult ReadOp::verifySymbolUses(mlir::SymbolTableCollection &) {
-  auto valueType = mlir::cast<QualType>(
-      mlir::cast<RefType>(getReference().getType()).getValueType());
+  auto valueType = objectValueType(getReference().getType());
   auto resultType = mlir::cast<QualType>(getType());
   if (resultType == valueType)
     return mlir::success();
@@ -589,7 +584,7 @@ void ReadOp::getCanonicalizationPatterns(mlir::RewritePatternSet &results,
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult WriteOp::verify() {
-  auto valueType = mlir::cast<RefType>(getReference().getType()).getValueType();
+  auto valueType = objectValueType(getReference().getType());
   if (getValue().getType() != valueType)
     return emitOpError("value must have the object's nominal type ")
            << valueType;
