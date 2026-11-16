@@ -1101,7 +1101,15 @@ llvm::LogicalResult BinOp::verify() {
           *this, {getLhs().getType(), getRhs().getType(), getType()},
           "operands and result")))
     return mlir::failure();
-  return verifyNumeric(*this, machineTypeOf(getType()));
+  mlir::Type type = machineTypeOf(getType());
+  if (failed(verifyNumeric(*this, type)))
+    return mlir::failure();
+  // `mod` and `rem` are defined for integer types only (@rm{4-5-5}).
+  if (mlir::isa<mlir::FloatType>(type) &&
+      (getKind() == AdaBinaryOp::Mod || getKind() == AdaBinaryOp::Rem))
+    return emitOpError() << "unsupported operand type " << type
+                         << "; expected integer";
+  return mlir::success();
 }
 
 llvm::LogicalResult BinOp::verifySymbolUses(mlir::SymbolTableCollection &) {

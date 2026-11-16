@@ -2,16 +2,16 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- REQUIRES: cc
--- RUN: %not %lalvm --emit=obj %s -o %t.o 2>&1 | %FileCheck %s --check-prefix=MISSING
-
--- EXEC: %lalvm --emit=obj %s -o %t.o
--- EXEC: %lalvm --bind %s -o %t.b.o
--- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 69
+-- RUN: %lalvm -O0 --emit=obj %s -o %t.o
+-- RUN: %lalvm --bind %s -o %t.b.o
+-- RUN: %cc %t.o %t.b.o %gnatstub -o %t
+-- RUN: %t; test $? -eq 69
+-- RUN: %lalvm -O1 --emit=obj %s -o %t.o
+-- RUN: %cc %t.o %t.b.o %gnatstub -o %t
+-- RUN: %t; test $? -eq 69
 
 -- The harmonic number H (6) = 49 / 20 reduced by Euclid's algorithm, then `mod`
 -- and `rem` on a negative operand (RM 4.5.5).
--- Missing today: `mod` and `rem`.
 
 function Gcd return Integer is
    function Gcd (A, B : Natural) return Natural is
@@ -19,7 +19,6 @@ function Gcd return Integer is
       if B = 0 then
          return A;
       end if;
-      -- MISSING: gcd.adb:[[#@LINE+1]]:24: error: invalid binary operator '<OpRem "rem"
       return Gcd (B, A rem B);
    end Gcd;
 

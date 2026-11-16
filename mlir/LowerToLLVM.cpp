@@ -491,10 +491,8 @@ struct BinOpLowering : public OpConversionPattern<ada::BinOp> {
   }
 
 private:
-  // Integer arithmetic that can trap a Constraint_Error: signed +/-/* with the
-  // overflow flag, and integer division. Returns nullopt for anything else
-  // (floats, modular +/-/*, unflagged or const-foldable +/-/*), leaving it to a
-  // later lowering.
+  // Lower signed arithmetic with overflow checks and integer division, `mod`
+  // and `rem`. Return nullopt for other operations.
   std::optional<LogicalResult>
   lowerCheckedArithmetic(ada::BinOp op, OpAdaptor adaptor,
                          ConversionPatternRewriter &rewriter) const {
@@ -534,15 +532,10 @@ private:
       return success();
     }
 
-    // Integer division (@rm{11-5}, @rm{4-5}). Modular division is unsigned, all
-    // other integer division signed; neither exceeds the modulus/range, so no
-    // reduction is needed. When the `division` check is set, guard the divide
-    // with a zero-divisor precheck (and, for signed division, the
-    // `Integer'First / -1` overflow precheck), since an LLVM divide by zero is
-    // undefined and there is no checked-division intrinsic. The prechecks must
-    // precede the divide, which is emitted on the live path that
-    // `emitConstraintRaise` leaves us on.
-    if (kind == ada::AdaBinaryOp::Div) {
+    // Check zero divisors before emitting integer division, `mod` or `rem`
+    // (@rm{4-5-5}, @rm{11-5}). Signed division also needs an overflow check.
+    if (kind == ada::AdaBinaryOp::Div || kind == ada::AdaBinaryOp::Mod ||
+        kind == ada::AdaBinaryOp::Rem) {
       mlir::Location loc = op.getLoc();
       mlir::Value lhs = adaptor.getLhs(), rhs = adaptor.getRhs();
       bool modular = isModularQualType(
@@ -552,7 +545,7 @@ private:
         auto module = op->getParentOfType<mlir::ModuleOp>();
         unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
 
-        // Zero divisor raises Constraint_Error, for any integer `/`.
+        // Zero divisor raises Constraint_Error.
         mlir::Value zero = constInt(rewriter, loc, type, 0);
         mlir::Value isZero = arith::CmpIOp::create(
             rewriter, loc, arith::CmpIPredicate::eq, rhs, zero);
@@ -561,9 +554,8 @@ private:
                                     "__gnat_rcheck_CE_Divide_By_Zero")))
           return mlir::failure();
 
-        // `Integer'First / -1` overflows the signed range (its result does not
-        // fit); modular division wraps and never overflows.
-        if (!modular) {
+        // Only signed division can overflow, for `Integer'First / -1`.
+        if (!modular && kind == ada::AdaBinaryOp::Div) {
           mlir::Value intMin =
               constInt(rewriter, loc, type, llvm::APInt::getSignedMinValue(w));
           mlir::Value negOne =
@@ -581,7 +573,10 @@ private:
         }
       }
 
-      if (modular)
+      if (kind != ada::AdaBinaryOp::Div)
+        rewriter.replaceOp(
+            op, emitRemainder(rewriter, loc, kind, modular, lhs, rhs));
+      else if (modular)
         rewriter.replaceOpWithNewOp<arith::DivUIOp>(op, lhs, rhs);
       else
         rewriter.replaceOpWithNewOp<arith::DivSIOp>(op, lhs, rhs);
@@ -589,6 +584,41 @@ private:
     }
 
     return std::nullopt;
+  }
+
+  // Compute `mod` or `rem` for a nonzero divisor (@rm{4-5-5}). Modular operands
+  // use unsigned remainder. Signed `mod` adjusts the sign below.
+  static mlir::Value emitRemainder(ConversionPatternRewriter &rewriter,
+                                   mlir::Location loc, ada::AdaBinaryOp kind,
+                                   bool modular, mlir::Value lhs,
+                                   mlir::Value rhs) {
+    if (modular)
+      return arith::RemUIOp::create(rewriter, loc, lhs, rhs);
+
+    // `srem T'First, -1` is undefined, but the result is 0: divide by 1.
+    mlir::Type type = lhs.getType();
+    unsigned w = mlir::cast<mlir::IntegerType>(type).getWidth();
+    mlir::Value negOne =
+        constInt(rewriter, loc, type, llvm::APInt::getAllOnes(w));
+    mlir::Value one = constInt(rewriter, loc, type, 1);
+    mlir::Value isNegOne = arith::CmpIOp::create(
+        rewriter, loc, arith::CmpIPredicate::eq, rhs, negOne);
+    mlir::Value divisor =
+        arith::SelectOp::create(rewriter, loc, isNegOne, one, rhs);
+    mlir::Value rem = arith::RemSIOp::create(rewriter, loc, lhs, divisor);
+    if (kind == ada::AdaBinaryOp::Rem)
+      return rem;
+
+    // For `mod`, add the divisor when the nonzero remainder has the other sign.
+    mlir::Value zero = constInt(rewriter, loc, type, 0);
+    mlir::Value nonZero = arith::CmpIOp::create(
+        rewriter, loc, arith::CmpIPredicate::ne, rem, zero);
+    mlir::Value signs = arith::XOrIOp::create(rewriter, loc, rem, rhs);
+    mlir::Value differ = arith::CmpIOp::create(
+        rewriter, loc, arith::CmpIPredicate::slt, signs, zero);
+    mlir::Value adjust = arith::AndIOp::create(rewriter, loc, nonZero, differ);
+    mlir::Value sum = arith::AddIOp::create(rewriter, loc, rem, rhs);
+    return arith::SelectOp::create(rewriter, loc, adjust, sum, rem);
   }
 
   // Modular arithmetic and logical operators (@rm{3-5-4}, @rm{4-5-1}). Values
@@ -752,6 +782,10 @@ private:
     case ada::AdaBinaryOp::Div:
       lower(isInt, arith::DivSIOp{}, arith::DivFOp{});
       break;
+    // Integer only (verifier): lowered by `lowerCheckedArithmetic`.
+    case ada::AdaBinaryOp::Mod:
+    case ada::AdaBinaryOp::Rem:
+      llvm_unreachable("integer mod/rem is lowered with the division");
     // Boolean logical operators are bitwise on `i1` (integer-only, no float).
     case ada::AdaBinaryOp::And:
       rewriter.replaceOpWithNewOp<arith::AndIOp>(op, adaptor.getOperands());

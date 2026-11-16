@@ -637,21 +637,22 @@ private:
         checks = mlir::ada::AdaChecks::Overflow;
       break;
     case ada_op_div:
-      kind = mlir::ada::AdaBinaryOp::Div;
+    case ada_op_mod:
+    case ada_op_rem:
+      kind = ada_node_kind(&op) == ada_op_div   ? mlir::ada::AdaBinaryOp::Div
+             : ada_node_kind(&op) == ada_op_mod ? mlir::ada::AdaBinaryOp::Mod
+                                                : mlir::ada::AdaBinaryOp::Rem;
       if (isInteger) {
         checks = mlir::ada::AdaChecks::Division;
-        // Resolve the Division_Check against a static divisor at compile time
-        // (@rm{11-5}), GNAT-style: a constant nonzero divisor needs no run-time
-        // check. A zero divisor is illegal only in a static expression
-        // (@rm{4-9}(34)). Otherwise warn and keep the check (@rm{4-5-5}(22)).
-        // The divisor may sit behind an `ada.convert` (a literal or a named
-        // number).
+        // Resolve checks for constant divisors, including converted values. A
+        // zero divisor is illegal in a static expression (@rm{4-9}(34)).
+        // Otherwise warn and retain the runtime check (@rm{4-5-5}(22)).
         mlir::Value divisor = rhs;
         if (auto convert = divisor.getDefiningOp<mlir::ada::ConvertOp>())
           divisor = convert.getInput();
-        if (auto cst = divisor.getDefiningOp<mlir::ada::ConstantOp>())
-          if (auto iv = mlir::dyn_cast<mlir::IntegerAttr>(cst.getValue())) {
-            if (iv.getValue().isZero()) {
+        if (auto constant = divisor.getDefiningOp<mlir::ada::ConstantOp>())
+          if (auto value = constant.getIntValue()) {
+            if (value.value().isZero()) {
               ada_node right;
               ada_bin_op_f_right(&binop, &right);
               auto divisorLoc = loc(right);
@@ -664,14 +665,11 @@ private:
               mlir::emitWarning(divisorLoc, "division by zero");
               mlir::emitWarning(divisorLoc,
                                 "Constraint_Error will be raised at run time");
-              break;
-            }
-            // A nonzero divisor cannot raise Divide_By_Zero, and only a divisor
-            // of -1 can trigger the signed `Integer'First / -1` overflow, so
-            // the check is unnecessary unless the (signed) divisor is exactly
-            // -1.
-            if (modular || !iv.getValue().isAllOnes())
+            } else if (modular || kind != mlir::ada::AdaBinaryOp::Div ||
+                       !value.value().isAllOnes()) {
+              // Only -1 needs an overflow check for signed division.
               checks = mlir::ada::AdaChecks{};
+            }
           }
       }
       break;
@@ -684,10 +682,7 @@ private:
           << libadalang::image(&op) << "'";
       return nullptr;
     }
-    // Overflow on signed-integer +/-/* (@rm{4-5}, @rm{3-5-4}); the division
-    // check on any integer / (@rm{11-5}, zero divisor, and Integer'First / -1
-    // for signed). Modular arithmetic wraps, so it carries only the divisor
-    // check. A null attr means no checks.
+    // Omit the attribute when no runtime check is needed.
     auto checksAttr =
         checks != mlir::ada::AdaChecks{}
             ? mlir::ada::AdaChecksAttr::get(builder.getContext(), checks)
@@ -743,14 +738,9 @@ private:
                                     rhs);
   }
 
-  /// If `expr` is a static expression (@rm{4-9}) of an integer type, evaluate
-  /// it in full via `eval_as_int` and emit one range-checked `ada.constant`: a
-  /// static expression is computed at compile time, so it carries no run-time
-  /// check and no arithmetic op. Returns nullopt when `expr` is not a static
-  /// integer expression (the caller emits it normally); returns a value (null
-  /// on a failed static Constraint_Check, @rm{11-5}) when handled. Enumeration
-  /// types (including Boolean and Character) are static too but are emitted via
-  /// their representation, not `eval_as_int`, so they are left to the caller.
+  /// Fold a static integer expression to a checked constant (@rm{4-9}). Return
+  /// nullopt when it is not handled, or a null value after a diagnostic.
+  /// Enumeration values are emitted separately.
   std::optional<mlir::Value> tryEmitStaticIntExpr(ada_node &expr) {
     if (!libadalang::isStaticExpr(expr))
       return std::nullopt;
@@ -765,18 +755,46 @@ private:
     if (!typeOp || !mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
                        typeOp.getTypeInfoAttr()))
       return std::nullopt;
-    // @todo Libadalang 27 bug: `eval_as_int` computes a modular expression
-    // without wrapping each operation (@rm{3-5-4}(19)), so `(3 - 4) / 2` of a
-    // `mod 10` type evaluates to 0 instead of 4. Leave modular expressions
-    // unfolded until the bug is fixed.
+    // @todo Libadalang 27 evaluates modular arithmetic without wrapping
+    //       (@rm{3-5-4}(19)). Keep it unfolded until the evaluator is fixed.
     if (isModularTypeOp(typeOp))
       return std::nullopt;
+    // @todo Diagnose all failing static checks (@rm{4-9}). Libadalang 27 cannot
+    //       evaluate `mod`, `rem` or division by zero, so emit these normally.
     auto value = libadalang::evalExprAsInt(expr);
     if (!value) {
+      if (involvesDivisionOp(expr))
+        return std::nullopt;
       mlir::emitError(location, "failed to evaluate static integer expression");
       return mlir::Value(nullptr);
     }
     return mlir::Value(emitCheckedIntConstant(*value, type_decl, location));
+  }
+
+  /// Whether an expression or referenced constant uses `/`, `mod` or `rem`.
+  static bool involvesDivisionOp(ada_node &expr) {
+    ada_node_kind_enum k = ada_node_kind(&expr);
+    if (k == ada_op_div || k == ada_op_mod || k == ada_op_rem)
+      return true;
+    if (k == ada_identifier) {
+      auto decl = libadalang::referencedDecl(expr);
+      ada_node init{};
+      if (decl &&
+          ((ada_node_kind(&decl.value()) == ada_object_decl &&
+            ada_object_decl_f_default_expr(&decl.value(), &init)) ||
+           (ada_node_kind(&decl.value()) == ada_number_decl &&
+            ada_number_decl_f_expr(&decl.value(), &init))) &&
+          !ada_node_is_null(&init) && involvesDivisionOp(init))
+        return true;
+    }
+    unsigned count = ada_node_children_count(&expr);
+    for (unsigned i = 0; i < count; ++i) {
+      ada_node child{};
+      if (ada_node_child(&expr, i, &child) && !ada_node_is_null(&child) &&
+          involvesDivisionOp(child))
+        return true;
+    }
+    return false;
   }
 
   /// Emit a binary operation.

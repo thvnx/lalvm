@@ -60,7 +60,7 @@ def AdaOp_Not     : I32EnumAttrCase<"Not",     22, "not">;
 def AdaBinaryOp : I32EnumAttr<"AdaBinaryOp",
     "Ada predefined binary operator kind",
     [AdaOp_And, AdaOp_Or, AdaOp_Xor,
-     AdaOp_Plus, AdaOp_Minus, AdaOp_Mult, AdaOp_Div]> {
+     AdaOp_Plus, AdaOp_Minus, AdaOp_Mult, AdaOp_Div, AdaOp_Mod, AdaOp_Rem]> {
   let cppNamespace = "::mlir::ada";
 }
 
@@ -571,11 +571,12 @@ def BinOp : Ada_Op<"binop", [
     @rm{4-5-5}). The operator is encoded as an `AdaBinaryOp` enum attribute.
 
     The result has the operator's type which each operand may have through any
-    of its subtypes: they share a machine type and a base type.
+    of its subtypes: they share a machine type and a base type. The operators
+    `mod` and `rem` require integer operands.
 
     An optional `checks<...>` group lists the run-time checks the operation
-    must perform (`overflow` for signed-integer `+`/`-`/`*`). It is printed only
-    when nonempty:
+    must perform (`overflow` for signed-integer `+`/`-`/`*`, `division` for
+    integer `/`, `mod` and `rem`). It is printed only when nonempty:
 
     ```mlir
     %0 = ada.binop "+" %a, %b checks<overflow>
