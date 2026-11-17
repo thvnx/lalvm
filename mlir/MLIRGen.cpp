@@ -215,6 +215,9 @@ private:
   // elaborateDynamicRange). Ada visibility guarantees it dominates every use.
   llvm::DenseMap<mlir::Attribute, mlir::Value> dynamicRanges;
 
+  // Fallback type for a universal operand of an explicit conversion.
+  ada_node universalOperandType{};
+
   // Enclosing loops, innermost last: the block to branch to on `exit`, and the
   // loop's source name (empty when unnamed) for `exit Loop_Name`.
   llvm::SmallVector<std::pair<mlir::Block *, std::string>> loopStack;
@@ -943,6 +946,8 @@ private:
     if (libadalang::isUniversalTypeDecl(type_decl)) {
       if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
           ada_node_is_null(&type_decl)) {
+        if (!ada_node_is_null(&universalOperandType))
+          return universalOperandType;
         mlir::emitError(location, "failed to resolve expected type of literal");
         return {};
       }
@@ -1472,7 +1477,8 @@ private:
     return callOp->getResult(0);
   }
 
-  /// Emit an explicit type conversion `T (X)` (@rm{4-6}).
+  /// Emit a numeric type conversion `T (X)` (@rm{4-6}), folding static
+  /// integers.
   mlir::Value mlirGenTypeConversion(ada_node &conversion) {
     mlir::Location location = loc(conversion);
     ada_node name = {}, suffix = {}, assoc = {}, operand = {};
@@ -1488,12 +1494,17 @@ private:
       return nullptr;
     ada_node_child(&suffix, 0, &assoc);
     ada_param_assoc_f_r_expr(&assoc, &operand);
-    // A universal integer operand has no expected type: it is a static value
-    // emitted in the target subtype, so a value outside the base range is an
-    // error (@rm{4-9}(35)).
+    mlir::Operation *scope = builder.getInsertionBlock()->getParentOp();
+    bool toInt = mlir::isa<mlir::IntegerType>(target.getMlirType());
+    // A static universal operand has no expected type (@rm{4-6}(27)).
     auto operandType = libadalang::expressionType(operand);
-    if (mlir::isa<mlir::IntegerType>(target.getMlirType()) && operandType &&
-        libadalang::isUniversalTypeDecl(operandType.value())) {
+    bool universal = operandType &&
+                     libadalang::isUniversalTypeDecl(operandType.value()) &&
+                     libadalang::isStaticExpr(operand);
+    bool realOperand =
+        universal && libadalang::isRealTypeDecl(operandType.value());
+    if (universal && !realOperand) {
+      // Evaluate universal integers exactly before converting (@rm{4-9}(35)).
       std::optional<llvm::APSInt> staticValue =
           libadalang::evalExprAsInt(operand);
       if (!staticValue) {
@@ -1501,30 +1512,65 @@ private:
                         "failed to evaluate static integer expression");
         return nullptr;
       }
-      return emitCheckedIntConstant(*staticValue, *typeDecl, location);
+      if (toInt)
+        return emitCheckedIntConstant(staticValue.value(), typeDecl.value(),
+                                      location);
+      auto floatType = mlir::dyn_cast<mlir::FloatType>(target.getMlirType());
+      auto baseType = mlir::ada::baseOfAdaType(scope, target);
+      if (!floatType || !baseType) {
+        mlir::emitError(location, "unsupported type conversion");
+        return nullptr;
+      }
+      llvm::APFloat f(floatType.getFloatSemantics());
+      // @todo Diagnose APFloat overflow, while accepting inexact rounding.
+      f.convertFromAPInt(staticValue.value(), staticValue.value().isSigned(),
+                         llvm::APFloat::rmNearestTiesToEven);
+      mlir::Value constant = mlir::ada::ConstantOp::create(
+          builder, location, baseType, mlir::FloatAttr::get(floatType, f));
+      if (constant.getType() == target)
+        return constant;
+      return emitConversion(constant, target,
+                            mlir::ada::AdaConversionKind::Explicit, location);
     }
+    // Fold a static conversion to an integer type, then convert it to the
+    // target subtype, in case the fold took its base type.
+    if (toInt)
+      if (std::optional<mlir::Value> folded =
+              tryEmitStaticIntExpr(conversion)) {
+        if (!folded.value() || folded.value().getType() == target)
+          return folded.value();
+        return emitConversion(folded.value(), target,
+                              mlir::ada::AdaConversionKind::Explicit, location);
+      }
+    // @todo A static real operand (`0.1 + 0.2 - 0.3`) is computed in a float
+    //       type at run time, rounded at each step, not exactly as
+    //       @rm{4-9}(33) requires. Even a literal is rounded through double,
+    //       so `Long_Long_Integer (123456789012345678.0)` is wrong. Libadalang
+    //       evaluates no real expression: fold it with exact rationals, then
+    //       round once.
+    llvm::SaveAndRestore<ada_node> savedType(
+        universalOperandType, realOperand ? operandType.value() : ada_node{});
     mlir::Value value = visit_expr(operand);
     if (!value)
       return nullptr;
     auto source = mlir::dyn_cast<mlir::ada::QualType>(value.getType());
     auto isEnum = [&](mlir::ada::QualType type) {
-      mlir::ada::TypeOp root = mlir::ada::rootOfAdaType(
-          builder.getInsertionBlock()->getParentOp(), type.getAdaType());
+      mlir::ada::TypeOp root =
+          mlir::ada::rootOfAdaType(scope, type.getAdaType());
       return root && mlir::isa_and_nonnull<mlir::ada::EnumTypeInfoAttr>(
                          root.getTypeInfoAttr());
     };
     mlir::Type from = source ? source.getMlirType() : mlir::Type();
     mlir::Type to = target.getMlirType();
-    // @todo Conversions between integer and float types, of enumeration types
-    // (by position, @rm{4-6}), of universal real operands, and the static
-    // evaluation of a static conversion of a typed operand (@rm{4-9}(35)).
-    if (!mlir::isa_and_nonnull<mlir::IntegerType, mlir::FloatType>(from) ||
-        !mlir::isa<mlir::IntegerType, mlir::FloatType>(to) ||
-        mlir::isa<mlir::FloatType>(from) != mlir::isa<mlir::FloatType>(to) ||
-        isEnum(source) || isEnum(target)) {
+    // @todo Conversions of enumeration types (by position, @rm{4-6}).
+    if (!from || !mlir::ada::isNumericMachineType(from) ||
+        !mlir::ada::isNumericMachineType(to) || isEnum(source) ||
+        isEnum(target)) {
       mlir::emitError(location, "unsupported type conversion");
       return nullptr;
     }
+    if (value.getType() == target)
+      return value;
     return emitConversion(value, target, mlir::ada::AdaConversionKind::Explicit,
                           location);
   }

@@ -4,12 +4,14 @@
 #include "ada/Dialect.h"
 #include "ada/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/TypeID.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
 
 using namespace mlir;
@@ -151,7 +153,7 @@ struct RepresentationChangeConversion
     auto source = cast<ada::QualType>(op.getInput().getType());
     auto target = cast<ada::QualType>(op.getType());
     Type sourceType = source.getMlirType(), targetType = target.getMlirType();
-    // @todo Lower conversions between integer and float types (@rm{4-6}(33)).
+    // Integer and float pairs are handled by IntegerFloatConversion.
     if (isa<FloatType>(sourceType) != isa<FloatType>(targetType))
       return rewriter.notifyMatchFailure(op, "integer and float conversion");
 
@@ -245,11 +247,94 @@ struct RepresentationChangeConversion
   }
 };
 
+/// Lower a conversion between an integer and a float type (@rm{4-6}(31-33)).
+/// Float to integer conversions round, check the base range, cast, then check
+/// the target subtype.
+struct IntegerFloatConversion : public OpRewritePattern<ada::ConvertOp> {
+  using OpRewritePattern<ada::ConvertOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ada::ConvertOp op,
+                                PatternRewriter &rewriter) const override {
+    auto source = cast<ada::QualType>(op.getInput().getType());
+    auto target = cast<ada::QualType>(op.getType());
+    Type sourceType = source.getMlirType(), targetType = target.getMlirType();
+    if (isa<FloatType>(sourceType) == isa<FloatType>(targetType))
+      return rewriter.notifyMatchFailure(op, "not an integer and float pair");
+
+    auto sourceBaseQual = ada::baseOfAdaType(op, source);
+    auto targetBaseQual = ada::baseOfAdaType(op, target);
+    if (!sourceBaseQual || !targetBaseQual)
+      return rewriter.notifyMatchFailure(op, "unresolved Ada type");
+    Location loc = op.getLoc();
+    Location unnamed = ada::unnamedLoc(loc);
+    Location castLoc = ada::attachAdaTypeRef(loc, target.getAdaType());
+    Value value = op.getInput();
+
+    if (auto intType = dyn_cast<IntegerType>(sourceType)) {
+      // Integer to float (@rm{4-6}(31)), unsigned for a modular source.
+      // @todo Check the target floating point subtype's range constraint.
+      Value raw = ada::UnwrapOp::create(rewriter, unnamed, intType, value);
+      if (ada::modulusOfAdaType(op, source.getAdaType()))
+        raw = arith::UIToFPOp::create(rewriter, castLoc, targetType, raw);
+      else
+        raw = arith::SIToFPOp::create(rewriter, castLoc, targetType, raw);
+      value = ada::WrapOp::create(rewriter, unnamed, targetBaseQual, raw);
+      rewriter.replaceOp(op, ada::requalify(rewriter, loc, value, target));
+      return success();
+    }
+
+    // Check that the rounded value fits the target's base range.
+    auto floatType = cast<FloatType>(sourceType);
+    auto intType = cast<IntegerType>(targetType);
+    bool targetUnsigned = static_cast<bool>(
+        ada::modulusOfAdaType(op, targetBaseQual.getAdaType()));
+    auto baseInfo = ada::intTypeInfoOfAdaType(op, targetBaseQual.getAdaType());
+    auto baseBounds = baseInfo ? baseInfo.staticBounds() : std::nullopt;
+    // Fall back to the machine range when static base bounds are unavailable.
+    unsigned bits = intType.getWidth();
+    APSInt intLo = baseBounds ? baseBounds.value().first
+                              : APSInt::getMinValue(bits, targetUnsigned);
+    APSInt intHi = baseBounds ? baseBounds.value().second
+                              : APSInt::getMaxValue(bits, targetUnsigned);
+
+    // Round to nearest, ties away from zero (@rm{4-6}(33)).
+    Value raw = ada::UnwrapOp::create(rewriter, unnamed, floatType, value);
+    raw = math::RoundOp::create(rewriter, unnamed, raw);
+    value = ada::WrapOp::create(rewriter, unnamed, sourceBaseQual, raw);
+
+    // Round bounds inward so the checked value fits the integer base range.
+    auto bound = [&](const APSInt &v, APFloat::roundingMode rounding) -> Value {
+      APFloat f(floatType.getFloatSemantics());
+      f.convertFromAPInt(v, v.isSigned(), rounding);
+      return ada::ConstantOp::create(rewriter, unnamed, sourceBaseQual,
+                                     FloatAttr::get(floatType, f));
+    };
+    Value floatLo = bound(intLo, APFloat::rmTowardPositive);
+    Value floatHi = bound(intHi, APFloat::rmTowardNegative);
+    Value range = ada::createRange(rewriter, unnamed, floatLo, floatHi,
+                                   sourceBaseQual.getAdaType());
+    value = ada::RangeCheckOp::create(rewriter, unnamed, sourceBaseQual, value,
+                                      range, rewriter.getUnitAttr());
+
+    raw = ada::UnwrapOp::create(rewriter, unnamed, floatType, value);
+    if (targetUnsigned)
+      raw = arith::FPToUIOp::create(rewriter, castLoc, targetType, raw);
+    else
+      raw = arith::FPToSIOp::create(rewriter, castLoc, targetType, raw);
+    value = ada::WrapOp::create(rewriter, unnamed, targetBaseQual, raw);
+
+    // Reuse SameRepresentationConversion for the target subtype's checks.
+    rewriter.replaceOpWithNewOp<ada::ConvertOp>(op, target, op.getKind(), value,
+                                                op.getRange());
+    return success();
+  }
+};
+
 struct LowerAdaConversionsPass
     : public PassWrapper<LowerAdaConversionsPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LowerAdaConversionsPass)
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<arith::ArithDialect>();
+    registry.insert<arith::ArithDialect, math::MathDialect>();
   }
   void runOnOperation() final;
   StringRef getName() const final { return "LowerAdaConversions"; }
@@ -263,12 +348,13 @@ struct LowerAdaConversionsPass
 void LowerAdaConversionsPass::runOnOperation() {
   // No ada.convert is legal after the pass.
   ConversionTarget target(getContext());
-  target.addLegalDialect<ada::AdaDialect, arith::ArithDialect>();
+  target.addLegalDialect<ada::AdaDialect, arith::ArithDialect,
+                         math::MathDialect>();
   target.addIllegalOp<ada::ConvertOp>();
 
   RewritePatternSet patterns(&getContext());
-  patterns.add<SameRepresentationConversion, RepresentationChangeConversion>(
-      &getContext());
+  patterns.add<SameRepresentationConversion, RepresentationChangeConversion,
+               IntegerFloatConversion>(&getContext());
 
   if (failed(
           applyPartialConversion(getOperation(), target, std::move(patterns))))

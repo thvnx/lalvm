@@ -522,6 +522,12 @@ bool libadalang::isUniversalTypeDecl(ada_node &typeDecl) {
   return false;
 }
 
+bool libadalang::isRealTypeDecl(ada_node &typeDecl) {
+  ada_bool result = false;
+  return ada_base_type_decl_p_is_real_type(&typeDecl, &kNullOrigin, &result) &&
+         result;
+}
+
 bool libadalang::isNumericTypeDecl(ada_node &typeDecl) {
   ada_bool result = false;
 #if LALVM_LIBADALANG_VERSION_MAJOR >= 27
@@ -533,8 +539,7 @@ bool libadalang::isNumericTypeDecl(ada_node &typeDecl) {
   if (ada_base_type_decl_p_is_int_type(&typeDecl, &kNullOrigin, &result) &&
       result)
     return true;
-  return ada_base_type_decl_p_is_real_type(&typeDecl, &kNullOrigin, &result) &&
-         result;
+  return isRealTypeDecl(typeDecl);
 #endif
 }
 

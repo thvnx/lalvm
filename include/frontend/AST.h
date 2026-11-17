@@ -142,6 +142,7 @@ constexpr llvm::StringLiteral kUniversalRealTypeName = "universal_real_type_";
 bool isBaseTypeDecl(ada_node &node);
 bool isEnumTypeDecl(ada_node &typeDecl);
 bool isUniversalTypeDecl(ada_node &typeDecl);
+bool isRealTypeDecl(ada_node &typeDecl);
 bool isNumericTypeDecl(ada_node &typeDecl);
 bool isArrayTypeDecl(ada_node &typeDecl);
 /// Number of dimensions of `arrayType`, or 0 if it is not an array.

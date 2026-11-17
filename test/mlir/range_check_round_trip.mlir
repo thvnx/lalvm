@@ -7,7 +7,7 @@
 // `TypesMatchWith` inference). The `ada.range` bounds are `ada.qual` values of
 // the base type, printed ahead of the `!ada.range`.
 
-// RUN: %lalvm --emit=mlir %s | %FileCheck %s
+// RUN: %lalvm --emit=mlir %s | %lalvm -x mlir --emit=mlir - | %FileCheck %s
 
 module {
   // CHECK-LABEL: ada.subp @checks
@@ -31,6 +31,10 @@ module {
     // The check establishes the subtype on a value of the base type.
     // CHECK: ada.range_check %arg1, %[[R]] : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
     %cb = ada.range_check %n, %r : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
+
+    // The overflow marker preserves the check kind through printing and parsing.
+    // CHECK: ada.range_check %arg1, %[[R]] {overflow} : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
+    %overflow = ada.range_check %n, %r {overflow} : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
 
     ada.return
   }

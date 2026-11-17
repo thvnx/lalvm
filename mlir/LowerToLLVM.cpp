@@ -18,6 +18,7 @@
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -246,8 +247,9 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
 } // namespace
 
 /// The GNAT runtime entry point raising Constraint_Error for each check kind.
-static llvm::StringRef raiseEntry(ada::RangeCheckOp) {
-  return "__gnat_rcheck_CE_Range_Check";
+static llvm::StringRef raiseEntry(ada::RangeCheckOp op) {
+  return op.isOverflowCheck() ? "__gnat_rcheck_CE_Overflow_Check"
+                              : "__gnat_rcheck_CE_Range_Check";
 }
 static llvm::StringRef raiseEntry(ada::IndexCheckOp) {
   return "__gnat_rcheck_CE_Index_Check";
@@ -1161,6 +1163,7 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   // unstructured cf, which the cf patterns below then take to LLVM.
   mlir::populateSCFToControlFlowConversionPatterns(patterns);
   mlir::arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+  populateMathToLLVMConversionPatterns(typeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   populateFuncToLLVMConversionPatterns(typeConverter, patterns);
   populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
