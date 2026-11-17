@@ -20,6 +20,7 @@ module {
   ada.type @my_float : f32 = #ada.float_info<digits 6>
   ada.type @color : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
   ada.type @hue : i8 = #ada.enum_info<"red" = 0, "green" = 1, "blue" = 2>
+  ada.type @flag : i1 = #ada.enum_info<"off" = 0, "on" = 1>
 
   // CHECK-LABEL: IR Dump After LowerAdaConversions
 
@@ -48,6 +49,16 @@ module {
   ada.subp @widen_modular(%v: !ada.qual<i16, @word>) -> !ada.qual<i32, @integer> {
     %r = ada.convert explicit %v : !ada.qual<i16, @word> to !ada.qual<i32, @integer>
     ada.return %r : !ada.qual<i32, @integer>
+  }
+
+  // Unsigned enumeration values widen with zeros.
+  // CHECK-LABEL: func.func @_ada_widen_enum
+  // CHECK:         %[[U:.*]] = ada.unwrap %arg0 : !ada.qual<i1, @flag> to i1
+  // CHECK-NEXT:    %[[E:.*]] = arith.extui %[[U]] : i1 to i8
+  // CHECK-NEXT:    %[[W:.*]] = ada.wrap %[[E]] : i8 to !ada.qual<i8, @color>
+  ada.subp @widen_enum(%v: !ada.qual<i1, @flag>) -> !ada.qual<i8, @color> {
+    %r = ada.convert explicit %v : !ada.qual<i1, @flag> to !ada.qual<i8, @color>
+    ada.return %r : !ada.qual<i8, @color>
   }
 
   // Widening into a constrained subtype: the check comes after.

@@ -721,9 +721,7 @@ std::optional<llvm::APSInt> ConstantOp::getIntValue() {
     return std::nullopt;
   // The Ada type gives the signedness.
   auto type = mlir::cast<QualType>(getResult().getType());
-  bool isUnsigned =
-      static_cast<bool>(modulusOfAdaType(*this, type.getAdaType()));
-  return llvm::APSInt(attr.getValue(), isUnsigned);
+  return llvm::APSInt(attr.getValue(), isUnsignedOrderQualType(*this, type));
 }
 
 //===----------------------------------------------------------------------===//

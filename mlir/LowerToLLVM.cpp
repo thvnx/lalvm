@@ -290,14 +290,14 @@ struct InRangeCheckOpLowering : public OpConversionPattern<OpTy> {
       above = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::UGT,
                                     value, hi);
     } else {
-      bool mod = isModularQualType(
+      bool uns = ada::isUnsignedOrderQualType(
           op, mlir::cast<ada::QualType>(op.getValue().getType()));
       below = arith::CmpIOp::create(rewriter, loc,
-                                    mod ? arith::CmpIPredicate::ult
+                                    uns ? arith::CmpIPredicate::ult
                                         : arith::CmpIPredicate::slt,
                                     value, lo);
       above = arith::CmpIOp::create(rewriter, loc,
-                                    mod ? arith::CmpIPredicate::ugt
+                                    uns ? arith::CmpIPredicate::ugt
                                         : arith::CmpIPredicate::sgt,
                                     value, hi);
     }

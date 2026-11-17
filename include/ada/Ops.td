@@ -301,7 +301,7 @@ def ConstantOp : Ada_Op<"constant", [Pure, ConstantLike]> {
   // deduplicates constants through it).
   let hasFolder = 1;
   let extraClassDeclaration = [{
-    /// The integer value, unsigned for a modular type.
+    /// The integer value, interpreted with its type's signedness.
     std::optional<llvm::APSInt> getIntValue();
   }];
 }

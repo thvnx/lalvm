@@ -189,15 +189,13 @@ struct RepresentationChangeConversion
       }
     }
 
-    bool sourceUnsigned =
-        static_cast<bool>(ada::modulusOfAdaType(op, source.getAdaType()));
+    bool sourceUnsigned = ada::isUnsignedOrderQualType(op, source);
     bool check = false, preserving = false;
     if (bounds) {
       // No check when the value is known to lie within the target's range.
       check = !ada::isKnownInStaticRange(op, op.getInput(), bounds->first,
                                          bounds->second);
-      bool targetUnsigned =
-          static_cast<bool>(ada::modulusOfAdaType(op, targetBase));
+      bool targetUnsigned = ada::isUnsignedOrderQualType(op, targetBaseQual);
       // Widening preserves every value, except a negative one into a modular
       // type.
       preserving = targetType.getIntOrFloatBitWidth() >
