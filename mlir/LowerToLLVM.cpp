@@ -26,6 +26,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/FunctionCallUtils.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -55,7 +56,7 @@ struct AdaToLLVMLoweringPass
 
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<LLVM::LLVMDialect, func::FuncDialect, arith::ArithDialect,
-                    cf::ControlFlowDialect>();
+                    cf::ControlFlowDialect, math::MathDialect>();
   }
   void runOnOperation() final;
   StringRef getName() const final { return "LowerToLLVM"; }
@@ -148,8 +149,7 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
     line = flc.getStartLine();
   }
   mlir::Value file = emitFileNamePtr(rewriter, loc, module, fileName);
-  mlir::Value lineVal = LLVM::ConstantOp::create(
-      rewriter, loc, i32Ty, rewriter.getI32IntegerAttr(line));
+  mlir::Value lineVal = constInt(rewriter, loc, i32Ty, line);
   LLVM::CallOp::create(rewriter, loc, *fn, mlir::ValueRange{file, lineVal});
   LLVM::UnreachableOp::create(rewriter, loc);
 
@@ -285,21 +285,23 @@ struct InRangeCheckOpLowering : public OpConversionPattern<OpTy> {
     if (mlir::isa<mlir::FloatType>(value.getType())) {
       // Unordered predicates so a NaN value (in no range) raises: `NaN ult lo`
       // is true, whereas the ordered `olt` would let it pass.
-      below = LLVM::FCmpOp::create(rewriter, loc, LLVM::FCmpPredicate::ult,
-                                   value, lo);
-      above = LLVM::FCmpOp::create(rewriter, loc, LLVM::FCmpPredicate::ugt,
-                                   value, hi);
+      below = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::ULT,
+                                    value, lo);
+      above = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::UGT,
+                                    value, hi);
     } else {
       bool mod = isModularQualType(
           op, mlir::cast<ada::QualType>(op.getValue().getType()));
-      below = LLVM::ICmpOp::create(
-          rewriter, loc,
-          mod ? LLVM::ICmpPredicate::ult : LLVM::ICmpPredicate::slt, value, lo);
-      above = LLVM::ICmpOp::create(
-          rewriter, loc,
-          mod ? LLVM::ICmpPredicate::ugt : LLVM::ICmpPredicate::sgt, value, hi);
+      below = arith::CmpIOp::create(rewriter, loc,
+                                    mod ? arith::CmpIPredicate::ult
+                                        : arith::CmpIPredicate::slt,
+                                    value, lo);
+      above = arith::CmpIOp::create(rewriter, loc,
+                                    mod ? arith::CmpIPredicate::ugt
+                                        : arith::CmpIPredicate::sgt,
+                                    value, hi);
     }
-    mlir::Value bad = LLVM::OrOp::create(rewriter, loc, below, above);
+    mlir::Value bad = arith::OrIOp::create(rewriter, loc, below, above);
 
     if (mlir::failed(
             emitConstraintRaise(rewriter, loc, module, bad, raiseEntry(op))))
@@ -907,28 +909,25 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
       mlir::Value x = adaptor.getOperand();
 
       if (mlir::isa<mlir::FloatType>(type)) {
-        rewriter.replaceOpWithNewOp<LLVM::FAbsOp>(op, type, x);
+        rewriter.replaceOpWithNewOp<math::AbsFOp>(op, x);
       } else if (modulus) {
         // A modular value is never negative, `abs` is the identity.
         rewriter.replaceOp(op, x);
       } else {
-        // Signed integer unary 'abs' is `x < 0 ? -x : x`.
-        mlir::Value zero = constInt(rewriter, loc, type, 0);
-        mlir::Value isNeg = arith::CmpIOp::create(
-            rewriter, loc, arith::CmpIPredicate::slt, x, zero);
-        mlir::Value neg = {};
-        if (!hasOverflowCheck(op) || evalConstInt(op.getResult())) {
-          neg = arith::SubIOp::create(rewriter, loc, zero, x);
-        } else {
+        if (hasOverflowCheck(op) && !evalConstInt(op.getResult())) {
+          auto min =
+              constInt(rewriter, loc, type,
+                       llvm::APInt::getSignedMinValue(
+                           mlir::cast<mlir::IntegerType>(type).getWidth()));
+          auto isMin = arith::CmpIOp::create(rewriter, loc,
+                                             arith::CmpIPredicate::eq, x, min);
           auto module = op->getParentOfType<mlir::ModuleOp>();
-          mlir::FailureOr<mlir::Value> res =
-              emitOverflowChecked<LLVM::SSubWithOverflowOp>(rewriter, loc,
-                                                            module, zero, x);
-          if (mlir::failed(res))
+          if (mlir::failed(
+                  emitConstraintRaise(rewriter, loc, module, isMin,
+                                      "__gnat_rcheck_CE_Overflow_Check")))
             return mlir::failure();
-          neg = *res;
         }
-        rewriter.replaceOpWithNewOp<arith::SelectOp>(op, isNeg, neg, x);
+        rewriter.replaceOpWithNewOp<math::AbsIOp>(op, x);
       }
       return mlir::success();
     }
@@ -1019,9 +1018,7 @@ struct AllocaAdaTypedLowering : OpConversionPattern<memref::AllocaOp> {
     mlir::Location loc = op.getLoc();
     if (!loc->findInstanceOf<FusedLocWith<ada::DITypeRefAttr>>())
       loc = ada::attachAdaTypeRef(loc, typedElem.getAdaType());
-    auto one =
-        LLVM::ConstantOp::create(rewriter, op.getLoc(), rewriter.getI64Type(),
-                                 rewriter.getI64IntegerAttr(1));
+    auto one = constInt(rewriter, op.getLoc(), rewriter.getI64Type(), 1);
     auto alloca = LLVM::AllocaOp::create(
         rewriter, loc, LLVM::LLVMPointerType::get(rewriter.getContext()),
         llvmElem, one,

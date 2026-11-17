@@ -17,16 +17,13 @@
 -- MLIR:          ada.unop "abs" %x : (!ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
 
 -- LLVM-LABEL: define internal i32 @unary_abs__on_integer(
--- LLVM-NEXT:     [[ISNEG:%[0-9]+]] = icmp slt i32 %0, 0
--- LLVM-NEXT:     [[WO:%[0-9]+]] = call { i32, i1 } @llvm.ssub.with.overflow.i32(i32 0, i32 %0)
--- LLVM-NEXT:     [[NEG:%[0-9]+]] = extractvalue { i32, i1 } [[WO]], 0
--- LLVM-NEXT:     [[OVF:%[0-9]+]] = extractvalue { i32, i1 } [[WO]], 1
--- LLVM-NEXT:     br i1 [[OVF]], label %[[RAISE:[0-9]+]], label %[[OK:[0-9]+]]
+-- LLVM-NEXT:     [[ISMIN:%[0-9]+]] = icmp eq i32 %0, -2147483648
+-- LLVM-NEXT:     br i1 [[ISMIN]], label %[[RAISE:[0-9]+]], label %[[OK:[0-9]+]]
 -- LLVM:        [[RAISE]]:
 -- LLVM-NEXT:     call void @__gnat_rcheck_CE_Overflow_Check(ptr @lalvm.file, i32 {{[0-9]+}})
 -- LLVM-NEXT:     unreachable
 -- LLVM:        [[OK]]:
--- LLVM-NEXT:     [[R:%[0-9]+]] = select i1 [[ISNEG]], i32 [[NEG]], i32 %0
+-- LLVM-NEXT:     [[R:%[0-9]+]] = call i32 @llvm.abs.i32(i32 %0, i1 false)
 -- LLVM-NEXT:     ret i32 [[R]]
 
 -- LLVM-LABEL: define internal i8 @unary_abs__on_modular(
