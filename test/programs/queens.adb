@@ -5,7 +5,7 @@
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
--- RUN: %t; test $? -eq 92
+-- RUN: %check-exit %t 92
 
 -- Eight queens by backtracking: the 92 solutions are the exit status.
 

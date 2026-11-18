@@ -5,10 +5,10 @@
 -- RUN: %lalvm -O0 --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -lm -o %t
--- RUN: %t; test $? -eq 145
+-- RUN: %check-exit %t 145
 -- RUN: %lalvm -O1 --emit=obj %s -o %t.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -lm -o %t
--- RUN: %t; test $? -eq 145
+-- RUN: %check-exit %t 145
 
 -- Square roots by Newton's method on Float (RM 3.5.7), converted back and
 -- forth with Integer (RM 4.6).

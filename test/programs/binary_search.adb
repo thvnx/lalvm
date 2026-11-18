@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 156
+-- EXEC: %check-exit %t 156
 
 -- Binary search in a sorted constant array passed as an `in` parameter (RM 6.2).
 -- Missing today: array parameters, aggregates and attributes.

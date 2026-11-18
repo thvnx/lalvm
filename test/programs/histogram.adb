@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 252
+-- EXEC: %check-exit %t 252
 
 -- A vote histogram: an array indexed by an enumeration type (RM 3.6).
 -- Missing today: enumeration indexes, aggregates, loops over a type, 'Pos.

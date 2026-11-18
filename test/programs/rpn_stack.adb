@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 42
+-- EXEC: %check-exit %t 42
 
 -- A postfix evaluator: a record (RM 3.8) kept private in a nested package
 -- (RM 7.3), a case (RM 5.4), a `raise`.

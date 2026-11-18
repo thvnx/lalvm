@@ -8,7 +8,7 @@
 -- EXEC: %lalvm --emit=obj -P %S/subset.gpr %s -o %t.o
 -- EXEC: %lalvm --bind -P %S/subset.gpr %s -o %t.b.o
 -- EXEC: %cc %t.o %t.accounts.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 72
+-- EXEC: %check-exit %t 72
 
 -- Two units: package Accounts keeps state set by its elaboration
 -- (RM 7.2, RM 10.2).

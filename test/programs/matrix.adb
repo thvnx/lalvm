@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 144
+-- EXEC: %check-exit %t 144
 
 -- Fibonacci by matrix power: a two-dimensional array type (RM 3.6) returned by
 -- a user-defined "*" (RM 6.5).
