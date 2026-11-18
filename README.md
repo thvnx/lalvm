@@ -26,20 +26,20 @@ remain to be addressed before the Ada language could be fully supported.
 - [LLVM](https://llvm.org/)/[MLIR](https://mlir.llvm.org/).
 - AdaCore's [Libadalang](https://github.com/AdaCore/libadalang), version 26 or
   newer, for Ada parsing, semantic analysis and name resolution.
-- `lit` and `FileCheck` for running tests (from `llvm-22-tools`).
+- `lit` and `FileCheck` for running tests (from `llvm-23-tools`).
 - `doxygen` and `graphviz` (optional, for API documentation with call graphs).
 
 ### Setting up a development environment
 
-LALVM is currently based on LLVM/MLIR version 22. To install all LLVM
+LALVM is currently based on LLVM/MLIR version 23. To install all LLVM
 dependencies, use [llvm.sh](https://apt.llvm.org)'s (on Debian or Ubuntu):
 
 ```shell
 wget https://apt.llvm.org/llvm.sh
 chmod +x llvm.sh
-sudo ./llvm.sh 22
-sudo apt-get install -y cmake ninja-build mold clang-22 \
-  llvm-22-dev llvm-22-tools libmlir-22-dev mlir-22-tools
+sudo ./llvm.sh 23
+sudo apt-get install -y cmake ninja-build mold clang-23 \
+  llvm-23-dev llvm-23-tools libmlir-23-dev mlir-23-tools
 ```
 
 Install the GNAT toolchain and Libadalang from [Alire](https://alire.ada.dev).
