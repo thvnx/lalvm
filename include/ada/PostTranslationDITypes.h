@@ -6,7 +6,7 @@
 //===----------------------------------------------------------------------===//
 //
 // DI type builders running on the llvm::Module after translateModuleToLLVMIR.
-// MLIR 22 has no DIEnumeratorAttr and no DISubrangeType attr, so
+// MLIR 23 still has no DIEnumeratorAttr or DISubrangeTypeAttr, so
 // AdaDebugInfoPass emits placeholder types that these builders replace with the
 // full nodes, built through LLVM's DIBuilder. Run them in the order below: the
 // array builder reuses the nodes of the first two.
