@@ -1789,8 +1789,7 @@ void CallOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
 //===----------------------------------------------------------------------===//
 
 llvm::LogicalResult ReturnOp::verify() {
-  // The HasParent<ada.subp> trait already verified the parent is an ada.subp.
-  auto subp = mlir::cast<SubpOp>((*this)->getParentOp());
+  auto subp = getAncestorOp();
   mlir::FunctionType funcType = subp.getFunctionType();
   const auto &results = funcType.getResults();
   if (getNumOperands() != results.size())

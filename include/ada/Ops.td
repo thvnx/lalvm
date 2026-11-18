@@ -951,13 +951,9 @@ def SubpOp : Ada_Op<"subp", [
 // ReturnOp
 //===----------------------------------------------------------------------===//
 
-// @todo Once LLVM 23.1 ships `HasAncestor` in ODS, switch `HasParent` to
-// `HasAncestor<"ada.subp">`, which also covers a return nested in a sub-region
-// (e.g. a future block statement); `HasParent` only covers today's flat CFG.
-//
 // Terminator marks this op as the mandatory last op in a basic block.
 def ReturnOp : Ada_Op<"return", [Terminator, ReturnLike,
-                                 HasParent<"::mlir::ada::SubpOp">]> {
+                                 HasAncestor<"::mlir::ada::SubpOp">]> {
   let summary = "return operation";
   let description = [{
     Represents an Ada return statement (@rm{6-5}). Functions carry one return
