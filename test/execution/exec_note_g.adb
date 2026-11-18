@@ -5,7 +5,7 @@
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
--- RUN: %t; test $? -eq 30
+-- RUN: %check-exit %t 30
 
 -- After Lovelace's Note G: B(8) = -1/30 by the Akiyama-Tanigawa scheme.
 

@@ -6,7 +6,7 @@
 
 -- REQUIRES: gnat
 -- RUN: rm -rf %t.dir && mkdir -p %t.dir && cp %s %t.dir/exec_array_loop.adb && cd %t.dir && env LALVM=%lalvm %lalvm-make exec_array_loop.adb
--- RUN: %t.dir/exec_array_loop; test $? -eq 30
+-- RUN: %check-exit %t.dir/exec_array_loop 30
 
 function Exec_Array_Loop return Integer is
    type Vec is array (1 .. 5) of Integer;

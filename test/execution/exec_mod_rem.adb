@@ -5,7 +5,7 @@
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
--- RUN: %t; test $? -eq 42
+-- RUN: %check-exit %t 42
 
 -- Check operand signs, exact multiples, signed minima and modular operands.
 

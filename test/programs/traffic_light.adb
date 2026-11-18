@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 134
+-- EXEC: %check-exit %t 134
 
 -- An enumeration state machine: case statements (RM 5.4), 'Succ/'Pos/'Val
 -- (RM 3.5.5), membership (RM 4.5.2), `for L in Light` (RM 5.5).

@@ -5,7 +5,7 @@
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
--- RUN: %t; test $? -eq 95
+-- RUN: %check-exit %t 95
 
 -- Sieve of Eratosthenes (RM 3.6, RM 5.5): 95 primes are below 500.
 

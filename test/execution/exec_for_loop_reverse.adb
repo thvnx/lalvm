@@ -5,7 +5,7 @@
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
--- RUN: %t; test $? -eq 57
+-- RUN: %check-exit %t 57
 
 -- Order sensitive: I = 3, 2, 1 gives 57, the forward order would give 27.
 

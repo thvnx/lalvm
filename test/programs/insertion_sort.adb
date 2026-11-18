@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 218
+-- EXEC: %check-exit %t 218
 
 -- Insertion sort of an `in out` array parameter (RM 6.2).
 -- Missing today: array parameters and aggregates, short-circuit forms.

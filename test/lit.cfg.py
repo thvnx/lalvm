@@ -3,11 +3,13 @@ import os
 import shutil
 
 config.name = 'lalvm'
-config.test_format = lit.formats.ShTest(
-    execute_external=True, force_execute_external=True)
+config.test_format = lit.formats.ShTest()
 config.suffixes = ['.adb', '.ads', '.mlir']
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = config.lalvm_obj_root
+
+config.substitutions.append(('%check-exit',
+    os.path.join(config.test_source_root, '..', 'tools', 'check-exit')))
 
 # %lalvm-make must precede %lalvm: substitutions apply in order, and %lalvm
 # would otherwise rewrite the `%lalvm` prefix of `%lalvm-make`.

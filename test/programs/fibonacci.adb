@@ -5,7 +5,7 @@
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
--- RUN: %t 2> %t.err; test $? -eq 1
+-- RUN: %check-exit %t 1 2> %t.err
 -- RUN: %FileCheck %s < %t.err
 
 -- Fibonacci numbers until F (47) overflows (RM 11.5), as under GNAT.

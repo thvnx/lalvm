@@ -6,7 +6,7 @@
 -- RUN: %lalvm --emit=obj %s -o %t.o
 -- RUN: %lalvm --bind %s -o %t.b.o
 -- RUN: %cc %t.o %t.b.o %gnatstub -o %t
--- RUN: %t; test $? -eq 42
+-- RUN: %check-exit %t 42
 
 -- True reads as 1, needs no index check and selects the second component.
 -- CHECK: ada.index

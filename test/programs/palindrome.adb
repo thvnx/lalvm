@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 45
+-- EXEC: %check-exit %t 45
 
 -- Palindromes: string literals passed to String formals (RM 3.6.3, RM 6.2).
 -- Missing today: unconstrained arrays (String).

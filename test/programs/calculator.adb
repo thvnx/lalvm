@@ -7,7 +7,7 @@
 -- EXEC: %lalvm --emit=obj %s -o %t.o
 -- EXEC: %lalvm --bind %s -o %t.b.o
 -- EXEC: %cc %t.o %t.b.o %gnatstub -o %t
--- EXEC: %t; test $? -eq 48
+-- EXEC: %check-exit %t 48
 
 -- A recursive descent evaluator over a String constant (RM 3.6.3).
 -- Missing today: strings, case, forward declarations, 'Pos.
