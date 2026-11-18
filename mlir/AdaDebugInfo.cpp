@@ -119,7 +119,8 @@ static LLVM::DICompositeTypeAttr makeDIEnumStub(MLIRContext *ctx,
       /*dataLocation=*/LLVM::DIExpressionAttr{},
       /*rank=*/LLVM::DIExpressionAttr{},
       /*allocated=*/LLVM::DIExpressionAttr{},
-      /*associated=*/LLVM::DIExpressionAttr{}, /*elements=*/{});
+      /*associated=*/LLVM::DIExpressionAttr{}, /*identifier=*/StringAttr{},
+      /*discriminator=*/LLVM::DIDerivedTypeAttr{}, /*elements=*/{});
 }
 
 /// Build a DIDerivedType typedef placeholder for a constrained integer subtype.
@@ -133,9 +134,10 @@ static LLVM::DIDerivedTypeAttr makeDISubrangeStub(MLIRContext *ctx,
                                                   LLVM::DITypeAttr baseType) {
   return LLVM::DIDerivedTypeAttr::get(
       ctx, llvm::dwarf::DW_TAG_typedef,
-      StringAttr::get(ctx, typeOp.getSymName()), baseType, /*sizeInBits=*/0,
+      StringAttr::get(ctx, typeOp.getSymName()), /*file=*/LLVM::DIFileAttr{},
+      /*line=*/0, /*scope=*/LLVM::DIScopeAttr{}, baseType, /*sizeInBits=*/0,
       /*alignInBits=*/0, /*offsetInBits=*/0, /*dwarfAddressSpace=*/std::nullopt,
-      /*extraData=*/LLVM::DINodeAttr{});
+      /*flags=*/LLVM::DIFlags::Zero, /*extraData=*/LLVM::DINodeAttr{});
 }
 
 /// Build the DW_TAG_array_type placeholder for a statically constrained array
@@ -165,7 +167,8 @@ static LLVM::DICompositeTypeAttr makeDIArrayStub(MLIRContext *ctx,
       /*sizeInBits=*/0, /*alignInBits=*/0,
       /*dataLocation=*/LLVM::DIExpressionAttr{},
       /*rank=*/LLVM::DIExpressionAttr{}, /*allocated=*/LLVM::DIExpressionAttr{},
-      /*associated=*/LLVM::DIExpressionAttr{}, /*elements=*/{});
+      /*associated=*/LLVM::DIExpressionAttr{}, /*identifier=*/StringAttr{},
+      /*discriminator=*/LLVM::DIDerivedTypeAttr{}, /*elements=*/{});
 }
 
 /// Wrap `baseType` in a DW_TAG_const_type, modeling an Ada `in` parameter as a
@@ -173,9 +176,12 @@ static LLVM::DICompositeTypeAttr makeDIArrayStub(MLIRContext *ctx,
 static LLVM::DIDerivedTypeAttr makeDIConstType(MLIRContext *ctx,
                                                LLVM::DITypeAttr baseType) {
   return LLVM::DIDerivedTypeAttr::get(
-      ctx, llvm::dwarf::DW_TAG_const_type, /*name=*/StringAttr{}, baseType,
+      ctx, llvm::dwarf::DW_TAG_const_type, /*name=*/StringAttr{},
+      /*file=*/LLVM::DIFileAttr{}, /*line=*/0, /*scope=*/LLVM::DIScopeAttr{},
+      baseType,
       /*sizeInBits=*/0, /*alignInBits=*/0, /*offsetInBits=*/0,
-      /*dwarfAddressSpace=*/std::nullopt, /*extraData=*/LLVM::DINodeAttr{});
+      /*dwarfAddressSpace=*/std::nullopt, /*flags=*/LLVM::DIFlags::Zero,
+      /*extraData=*/LLVM::DINodeAttr{});
 }
 
 /// Dispatch to the appropriate DI type for a given ada.type op.

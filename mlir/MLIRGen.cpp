@@ -52,16 +52,6 @@ namespace {
 /// DenseMapInfo for ada_node: identity is the raw node pointer; entity info
 /// (rebindings) is ignored for map purposes.
 struct AdaNodeDenseMapInfo {
-  static ada_node getEmptyKey() {
-    return {
-        static_cast<ada_base_node>(llvm::DenseMapInfo<void *>::getEmptyKey()),
-        {}};
-  }
-  static ada_node getTombstoneKey() {
-    return {static_cast<ada_base_node>(
-                llvm::DenseMapInfo<void *>::getTombstoneKey()),
-            {}};
-  }
   static unsigned getHashValue(const ada_node &n) {
     return llvm::DenseMapInfo<ada_base_node>::getHashValue(n.node);
   }

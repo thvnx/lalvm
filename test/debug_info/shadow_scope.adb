@@ -10,8 +10,8 @@
 -- CHECK-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE1]],
 -- CHECK-DAG: ![[BSCOPE2:[0-9]+]] = distinct !DISubprogram(name: "inner", linkageName: "shadow_scope__inner__inner",
 -- CHECK-DAG: DICompositeType(tag: DW_TAG_enumeration_type, name: "boolean", scope: ![[BSCOPE2]],
--- CHECK: DILocalVariable(name: "b", arg: 1,
--- CHECK: DILocalVariable(name: "b", arg: 1,
+-- CHECK-DAG: DILocalVariable(name: "b", arg: 1, scope: ![[BSCOPE1]],
+-- CHECK-DAG: DILocalVariable(name: "b", arg: 1, scope: ![[BSCOPE2]],
 
 function Shadow_Scope return Boolean is
    function Inner (B : Boolean) return Boolean is
