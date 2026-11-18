@@ -3,7 +3,8 @@ import os
 import shutil
 
 config.name = 'lalvm'
-config.test_format = lit.formats.ShTest(True)
+config.test_format = lit.formats.ShTest(
+    execute_external=True, force_execute_external=True)
 config.suffixes = ['.adb', '.ads', '.mlir']
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = config.lalvm_obj_root
