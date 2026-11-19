@@ -11,20 +11,9 @@ config.test_exec_root = config.lalvm_obj_root
 config.substitutions.append(('%check-exit',
     os.path.join(config.test_source_root, '..', 'tools', 'check-exit')))
 
-# %lalvm-make must precede %lalvm: substitutions apply in order, and %lalvm
-# would otherwise rewrite the `%lalvm` prefix of `%lalvm-make`.
-config.substitutions.append(('%lalvm-make',
-    os.path.join(config.test_source_root, '..', 'tools', 'lalvm-make')))
 config.substitutions.append(('%lalvm',
     os.path.join(config.lalvm_tools_dir, 'lalvm')))
 
-# Execution tests bind and link with the GNAT toolchain; mark `gnat` available
-# so they can `REQUIRES: gnat` and skip cleanly where it is not installed.
-if shutil.which('gnatmake'):
-    config.available_features.add('gnat')
-
-# Execution tests without GNAT link the unit's object, the bind object and the
-# GNAT stub with the configured C compiler (`cc`).
 cc = shutil.which(config.cc) if config.cc else None
 if cc:
     config.available_features.add('cc')
