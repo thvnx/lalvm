@@ -99,13 +99,9 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
   if (params)
     ada_node_array_dec_ref(params);
 
-  bool isFunction = libadalang::isFunction(spec);
-  if (isFunction) {
-    ada_node returns = {};
-    ada_subp_spec_f_subp_returns(&spec, &returns);
-    if (!isStandardInteger(returns))
-      return error(returns, "the main function must return Integer");
-  }
+  auto resultType = libadalang::subpResultType(spec);
+  if (resultType && !isStandardInteger(resultType.value()))
+    return error(resultType.value(), "the main function must return Integer");
 
   auto defName = libadalang::declDefiningName(body);
   if (!defName)
@@ -116,7 +112,7 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
   std::string unitName =
       llvm::sys::path::stem(libadalang::unitFilename(root)).str();
 
-  return Program{unitName, symbol, isFunction,
+  return Program{unitName, symbol, resultType.has_value(),
                  libadalang::sourceLocation(context, spec)};
 }
 

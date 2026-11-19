@@ -2737,16 +2737,11 @@ private:
     ada_node ada_subp_spec;
     ada_base_subp_body_f_subp_spec(&subp_body, &ada_subp_spec);
 
-    bool isProc = !libadalang::isFunction(ada_subp_spec);
-
-    // Guard to function returning array: this is not supported yet.
-    if (!isProc) {
-      ada_node ret_type_expr;
-      ada_subp_spec_f_subp_returns(&ada_subp_spec, &ret_type_expr);
-      std::optional<ada_node> ret_type_decl =
-          libadalang::designatedTypeDecl(ret_type_expr);
-      if (ret_type_decl && libadalang::isArrayTypeDecl(ret_type_decl.value())) {
-        mlir::emitError(loc(ret_type_expr),
+    auto resultType = libadalang::subpResultType(ada_subp_spec);
+    if (resultType) {
+      auto resultDecl = libadalang::designatedTypeDecl(resultType.value());
+      if (resultDecl && libadalang::isArrayTypeDecl(resultDecl.value())) {
+        mlir::emitError(loc(resultType.value()),
                         "returning an array is not supported");
         return nullptr;
       }
@@ -2756,7 +2751,7 @@ private:
         subpParams(ada_subp_spec);
     if (!params)
       return nullptr;
-    auto subp = mlirGenSubpSpec(ada_subp_spec, isProc, *params);
+    auto subp = mlirGenSubpSpec(ada_subp_spec, resultType, *params);
     if (!subp)
       return nullptr;
     // Enter the subprogram's naming scope for the declarations in its body.
@@ -3660,7 +3655,8 @@ private:
 
   /// Create an ada.subp with the signature derived from the Ada subprogram
   /// spec and its `params`. Returns nullptr on failure.
-  mlir::ada::SubpOp mlirGenSubpSpec(ada_node &subp_spec, bool isProc,
+  mlir::ada::SubpOp mlirGenSubpSpec(ada_node &subp_spec,
+                                    std::optional<ada_node> resultType,
                                     llvm::ArrayRef<SubpParam> params) {
     auto location = loc(libadalang::parent(&subp_spec));
 
@@ -3680,14 +3676,8 @@ private:
     }
 
     llvm::SmallVector<mlir::Type, 1> retTypes;
-    if (!isProc) {
-      ada_node ret_type_expr;
-      ada_subp_spec_f_subp_returns(&subp_spec, &ret_type_expr);
-      if (ada_node_is_null(&ret_type_expr)) {
-        mlir::emitError(location, "function has no return type");
-        return nullptr;
-      }
-      mlir::ada::QualType retType = getAdaQualType(ret_type_expr);
+    if (resultType) {
+      mlir::ada::QualType retType = getAdaQualType(resultType.value());
       if (!retType)
         return nullptr;
       retTypes.push_back(retType);

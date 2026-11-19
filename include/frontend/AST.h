@@ -192,8 +192,9 @@ std::optional<ada_node> libraryItem(ada_node &root);
 /// spec", "subprogram spec" or "spec"), or `std::nullopt` if it is not one.
 std::optional<llvm::StringRef> specKind(ada_node &root);
 
-/// Return whether the subprogram specification `subpSpec` denotes a function.
-bool isFunction(ada_node &subpSpec);
+/// Return the result type expression of a function, or std::nullopt for a
+/// procedure.
+std::optional<ada_node> subpResultType(ada_node &subpSpec);
 
 /// Convert the source location range of `node` to an MLIR location.
 mlir::Location sourceLocation(mlir::MLIRContext &context, const ada_node &node);

@@ -684,10 +684,12 @@ std::optional<llvm::StringRef> libadalang::specKind(ada_node &root) {
   return "spec";
 }
 
-bool libadalang::isFunction(ada_node &subpSpec) {
+std::optional<ada_node> libadalang::subpResultType(ada_node &subpSpec) {
   ada_node returns = {};
-  return ada_subp_spec_f_subp_returns(&subpSpec, &returns) &&
-         !ada_node_is_null(&returns);
+  if (ada_subp_spec_f_subp_returns(&subpSpec, &returns) &&
+      !ada_node_is_null(&returns))
+    return returns;
+  return std::nullopt;
 }
 
 mlir::Location libadalang::sourceLocation(mlir::MLIRContext &context,
