@@ -3,6 +3,8 @@
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm -O0 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
+-- RUN: %lalvm -O1 --emit=mlir %s | %FileCheck %s --check-prefix=MLIR-OPT
+-- RUN: %lalvm -O1 --emit=llvm %s | %FileCheck %s --check-prefix=LLVM-OPT
 
 -- An if expression (RM 4.5.7) yields a value, so it lowers to scf.if -> (T)
 -- with each dependent_expression yielded from its region; SCFToControlFlow
@@ -21,6 +23,15 @@
 -- LLVM:         br i1
 -- LLVM:         phi i32
 -- LLVM:         ret i32
+
+-- At -O1, an if expression yielding values from outside it becomes a select
+-- on `!ada.qual` values, which lowers to an LLVM `select`.
+
+-- MLIR-OPT: arith.select %{{.*}}, %a, %b : !ada.qual<i32, @standard.integer>
+
+-- LLVM-OPT-LABEL: define i32 @_ada_if_expr(
+-- LLVM-OPT-NOT:     br
+-- LLVM-OPT:         select i1 %{{.*}}, i32 %1, i32 %2
 
 function If_Expr (Cond : Boolean; A, B : Integer) return Integer is
 begin

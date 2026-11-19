@@ -1,25 +1,28 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --implicit-check-not="with.overflow.i8"
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
 
--- Signed-integer +/-/* with the overflow flag lower to the LLVM checked
--- intrinsic and trap to `__gnat_rcheck_CE_Overflow_Check` on overflow (RM 4.5).
--- Modular `+` wraps (plain `add`) and float `*` is unchecked (`fmul`); neither
--- emits a checked intrinsic (`--implicit-check-not` guards the modular i8 case).
+-- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
+-- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM --implicit-check-not="with.overflow.i8"
 
--- CHECK-LABEL: define i32 @_ada_binop_overflow_lowering(
--- CHECK:         %[[WO:.*]] = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %0, i32 %1)
--- CHECK:         %{{.*}} = extractvalue { i32, i1 } %[[WO]], 0
--- CHECK:         %[[O:.*]] = extractvalue { i32, i1 } %[[WO]], 1
--- CHECK:         br i1 %[[O]], label %[[RAISE:[0-9]+]], label %{{[0-9]+}}
--- CHECK:       [[RAISE]]:
--- CHECK:         call void @__gnat_rcheck_CE_Overflow_Check(ptr {{.*}}, i32 {{.*}})
--- CHECK:         unreachable
+-- Signed integer arithmetic checks for overflow (RM 4.5).
+-- Modular addition wraps and floating point multiplication is unchecked.
+-- MLIR:      ada.binop "+" %{{.*}}, %{{.*}} : (!ada.qual<i8, @binop_overflow_lowering.byte>, !ada.qual<i8, @binop_overflow_lowering.byte>) -> !ada.qual<i8, @binop_overflow_lowering.byte>
+-- MLIR:      ada.binop "*" %{{.*}}, %{{.*}} : (!ada.qual<f32, @standard.float>, !ada.qual<f32, @standard.float>) -> !ada.qual<f32, @standard.float>
+-- MLIR:      ada.binop "+" %{{.*}}, %{{.*}} checks<overflow> : (!ada.qual<i32, @standard.integer>, !ada.qual<i32, @standard.integer>) -> !ada.qual<i32, @standard.integer>
 
--- The other signed operators emit their matching checked intrinsics; modular
--- `+` lowers to a plain wrapping `add i8` and float `*` to `fmul`.
--- CHECK-DAG:     call { i32, i1 } @llvm.ssub.with.overflow.i32
--- CHECK-DAG:     call { i32, i1 } @llvm.smul.with.overflow.i32
--- CHECK-DAG:     = add i8
--- CHECK-DAG:     = fmul float
+-- LLVM-LABEL: define i32 @_ada_binop_overflow_lowering(
+-- LLVM:         %[[WO:.*]] = call { i32, i1 } @llvm.sadd.with.overflow.i32(i32 %0, i32 %1)
+-- LLVM:         %{{.*}} = extractvalue { i32, i1 } %[[WO]], 0
+-- LLVM:         %[[O:.*]] = extractvalue { i32, i1 } %[[WO]], 1
+-- LLVM:         br i1 %[[O]], label %[[RAISE:[0-9]+]], label %{{[0-9]+}}
+-- LLVM:       [[RAISE]]:
+-- LLVM:         call void @__gnat_rcheck_CE_Overflow_Check(ptr {{.*}}, i32 {{.*}})
+-- LLVM:         unreachable
+
+-- LLVM-DAG:     call { i32, i1 } @llvm.ssub.with.overflow.i32
+-- LLVM-DAG:     call { i32, i1 } @llvm.smul.with.overflow.i32
+-- LLVM-DAG:     = add i8
+-- LLVM-DAG:     = fmul float
 
 function Binop_Overflow_Lowering (A, B : Integer) return Integer is
    type Byte is mod 256;
