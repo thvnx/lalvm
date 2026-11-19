@@ -7,17 +7,17 @@
 -- Boolean has 2 literals (False=0, True=1) so it maps to i1.
 -- Predefined types are lazily emitted at module level on first use.
 -- MLIR: ada.type @standard.boolean : i1 = #ada.enum_info<"false" = 0, "true" = 1>
--- MLIR-LABEL: ada.subp @test_boolean
+-- MLIR-LABEL: ada.subp @boolean_object
 -- MLIR:         %[[C:.*]] = ada.constant : !ada.qual<i1, @standard.boolean> = true
--- MLIR:         ada.object : !ada.ref<!ada.qual<i1, @standard.boolean>> <- %[[C]]
--- MLIR:         ada.null
+-- MLIR-NEXT:    ada.object : !ada.ref<!ada.qual<i1, @standard.boolean>> <- %[[C]]
+-- MLIR-NEXT:    ada.null
 -- MLIR-NEXT:    ada.return
 
--- LLVM-LABEL: define void @_ada_test_boolean(
+-- LLVM-LABEL: define void @_ada_boolean_object(
 -- LLVM:          ret void
 
-procedure Test_Boolean is
+procedure Boolean_Object is
    B : Boolean := True;
 begin
    null;
-end Test_Boolean;
+end Boolean_Object;
