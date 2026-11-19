@@ -50,8 +50,8 @@ std::unique_ptr<mlir::Pass> createDICompileUnitAdaPass();
 /// after DIScopeForLLVMFuncOpPass so that DISubprogramAttr is available on
 /// each llvm.func.
 ///
-/// Enum types use an empty `DICompositeTypeAttr` stub; `buildEnumDITypes` in
-/// PostTranslationDITypes.h replaces those stubs with full
+/// Enum types use an empty `DICompositeTypeAttr` stub.
+/// `buildPostTranslationDITypes` replaces those stubs with full
 /// `DW_TAG_enumeration_type` nodes via LLVM's DIBuilder after MLIR-to-LLVM
 /// translation.
 ///
