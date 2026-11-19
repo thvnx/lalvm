@@ -4,6 +4,7 @@
 #include "ada/PostTranslationDITypes.h"
 #include "ada/Dialect.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/SymbolTable.h"
@@ -206,13 +207,23 @@ static llvm::DIType *basicTypeFor(llvm::DIBuilder &db,
                             enc->sizeInBits, enc->encoding);
 }
 
-mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
-                                                       mlir::ModuleOp module) {
-  DITypeBySymName types;
-  llvm::DICompileUnit *cu = firstCompileUnit(llvmModule);
-  if (!cu)
-    return types;
+/// Nodes built by a builder, keyed by the `ada.type` sym_name.
+using DITypeBySymName = llvm::DenseMap<mlir::StringAttr, llvm::DIType *>;
 
+/// Build a DW_TAG_enumeration_type for each surviving enum `ada.type` op and
+/// substitute it for the op's empty DICompositeType stub. A local type is
+/// scoped to its subprogram. For `type Color is (Red, Green)`:
+///
+///   !DICompositeType(tag: DW_TAG_enumeration_type, name: "p.color", size: 8)
+///
+/// becomes
+///
+///   !DICompositeType(tag: DW_TAG_enumeration_type, name: "color", scope: !p,
+///       size: 8, elements: !{!red, !green})
+///   !red = !DIEnumerator(name: "red", value: 0)
+///   !green = !DIEnumerator(name: "green", value: 1)
+static void buildEnumDITypes(llvm::Module &llvmModule, mlir::ModuleOp module,
+                             llvm::DICompileUnit *cu, DITypeBySymName &types) {
   // Collect surviving enum ada.type ops; skip the IR scan if none exist.
   llvm::SmallVector<mlir::ada::TypeOp> enumTypeOps;
   module.walk([&](mlir::ada::TypeOp typeOp) {
@@ -224,7 +235,7 @@ mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
       enumTypeOps.push_back(typeOp);
   });
   if (enumTypeOps.empty())
-    return types;
+    return;
 
   llvm::DIBuilder db(llvmModule, /*AllowUnresolved=*/false, cu);
   llvm::DenseMap<llvm::StringRef, llvm::DIFile *> fileCache;
@@ -295,17 +306,22 @@ mlir::ada::DITypeBySymName mlir::ada::buildEnumDITypes(llvm::Module &llvmModule,
   rewriteSignatureTypes(db, llvmModule, replace);
 
   db.finalize();
-  return types;
 }
 
-mlir::ada::DITypeBySymName
-mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
-                                mlir::ModuleOp module) {
-  DITypeBySymName types;
-  llvm::DICompileUnit *cu = firstCompileUnit(llvmModule);
-  if (!cu)
-    return types;
-
+/// Build a DW_TAG_subrange_type for each surviving constrained integer subtype
+/// (static or dynamic range) and substitute it for the op's typedef stub. The
+/// bounds come from `int_info`, the underlying type from the `base` link. For
+/// `subtype Small is Integer range 1 .. 10`:
+///
+///   !DIDerivedType(tag: DW_TAG_typedef, name: "p.small", baseType: !integer)
+///
+/// becomes
+///
+///   !DISubrangeType(name: "small", scope: !p, size: 32, baseType: !integer,
+///       lowerBound: i32 1, upperBound: i32 10)
+static void buildSubrangeDITypes(llvm::Module &llvmModule,
+                                 mlir::ModuleOp module, llvm::DICompileUnit *cu,
+                                 DITypeBySymName &types) {
   // Collect constrained integer subtypes (any recorded range, static or
   // dynamic). A static bound becomes a constant; a dynamic one references the
   // bound variable AdaDebugInfoPass recorded for it (a parameter's own
@@ -320,7 +336,7 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
       subtypeOps.push_back(typeOp);
   });
   if (subtypeOps.empty())
-    return types;
+    return;
 
   // Index the artificial bound variables (short name + bound suffix) emitted by
   // AdaDebugInfoPass, keyed by (scope, name): the name is unique only within
@@ -398,16 +414,26 @@ mlir::ada::buildSubrangeDITypes(llvm::Module &llvmModule,
   rewriteSignatureTypes(db, llvmModule, replace);
 
   db.finalize();
-  return types;
 }
 
-void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
-                                  mlir::ModuleOp module,
-                                  const DITypeBySymName &types) {
-  llvm::DICompileUnit *cu = firstCompileUnit(llvmModule);
-  if (!cu)
-    return;
-
+/// Build a DW_TAG_array_type for each surviving statically constrained array
+/// and substitute it for the op's empty DICompositeType stub. The element type
+/// is the component's node in `types`, else the DW_TAG_base_type of its numeric
+/// base; each dimension is a DW_TAG_subrange_type of the index's numeric base
+/// with the bounds. For `type Vec is array (5 .. 14) of Integer`:
+///
+///   !DICompositeType(tag: DW_TAG_array_type, name: "p.vec",
+///       baseType: !integer)
+///
+/// becomes
+///
+///   !DICompositeType(tag: DW_TAG_array_type, name: "vec", scope: !p,
+///       baseType: !integer, size: 320, elements: !{!dim})
+///   !dim = !DISubrangeType(scope: !p, size: 32, baseType: !integer,
+///       lowerBound: i32 5, upperBound: i32 14)
+static void buildArrayDITypes(llvm::Module &llvmModule, mlir::ModuleOp module,
+                              llvm::DICompileUnit *cu,
+                              const DITypeBySymName &types) {
   // Statically constrained arrays only: the others have no stub.
   llvm::SmallVector<mlir::ada::TypeOp> arrayOps;
   module.walk([&](mlir::ada::TypeOp typeOp) {
@@ -499,4 +525,15 @@ void mlir::ada::buildArrayDITypes(llvm::Module &llvmModule,
   rewriteSignatureTypes(db, llvmModule, replace);
 
   db.finalize();
+}
+
+void mlir::ada::buildPostTranslationDITypes(llvm::Module &llvmModule,
+                                            mlir::ModuleOp module) {
+  auto *cu = firstCompileUnit(llvmModule);
+  if (!cu)
+    return;
+  DITypeBySymName types;
+  buildEnumDITypes(llvmModule, module, cu, types);
+  buildSubrangeDITypes(llvmModule, module, cu, types);
+  buildArrayDITypes(llvmModule, module, cu, types);
 }

@@ -295,15 +295,8 @@ static int emitLLVMIR(mlir::MLIRContext &context,
     llvmModule->addModuleFlag(llvm::Module::Max, "Dwarf Version", 5);
 
   // The bind module declares no Ada type.
-  if (debugInfo && !bindAction) {
-    // Arrays reuse enum and subrange nodes for components and indices.
-    mlir::ada::DITypeBySymName diTypes =
-        mlir::ada::buildEnumDITypes(*llvmModule, *module);
-    mlir::ada::DITypeBySymName subranges =
-        mlir::ada::buildSubrangeDITypes(*llvmModule, *module);
-    diTypes.insert(subranges.begin(), subranges.end());
-    mlir::ada::buildArrayDITypes(*llvmModule, *module, diTypes);
-  }
+  if (debugInfo && !bindAction)
+    mlir::ada::buildPostTranslationDITypes(*llvmModule, *module);
 
   // Initialize the host target backend.
   llvm::InitializeNativeTarget();
