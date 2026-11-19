@@ -20,9 +20,17 @@
 
 -- LLVM-LABEL: define i32 @_ada_scalar_attr(
 -- LLVM:         extractvalue { i32, i32 } %{{.*}}, 1
+-- LLVM-LABEL: define internal i32 @scalar_attr__lower(
+-- LLVM:         %[[FIRST:.*]] = extractvalue { i32, i32 } %{{.*}}, 0
+-- LLVM:         ret i32 %[[FIRST]]
 
 function Scalar_Attr (N : Integer) return Integer is
    subtype S is Integer range 1 .. N;
+   function Lower (Lo, Hi : Integer) return Integer is
+      subtype T is Integer range Lo .. Hi;
+   begin
+      return T'First;
+   end Lower;
 begin
    return S'Last - S'First;
 end Scalar_Attr;
