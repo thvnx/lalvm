@@ -78,34 +78,18 @@ void ClosureConversionPass::runOnOperation() {
         makeRegionIsolatedFromAbove(rewriter, subp.getBody());
 
     if (!captures.empty()) {
-      // Extend the function type with the captured values' types, then keep
-      // arg_attrs in sync: MLIRGen marks by-reference parameters with an
-      // `ada.mode` arg attr. Tag the appended arguments as captures so
-      // reference verification distinguishes them from source formals.
-      FunctionType fnType = subp.getFunctionType();
-      llvm::SmallVector<Type> inputs(fnType.getInputs());
-      for (Value capture : captures)
-        inputs.push_back(capture.getType());
-      subp.setFunctionType(FunctionType::get(ctx, inputs, fnType.getResults()));
-
-      llvm::SmallVector<Attribute> attrs;
-      for (unsigned i = 0; i < fnType.getNumInputs(); ++i) {
-        auto attr = subp.getArgAttrDict(i);
-        attrs.push_back(attr ? attr : DictionaryAttr::get(ctx));
-      }
+      // The entry block already has the lifted arguments. Match its signature
+      // and mark the captures after the original argument attributes.
+      SmallVector<DictionaryAttr> attrs;
+      subp.getAllArgAttrs(attrs);
+      auto &entry = subp.getBody().front();
+      subp.setFunctionType(rewriter.getFunctionType(entry.getArgumentTypes(),
+                                                    subp.getResultTypes()));
       auto captureAttrs = DictionaryAttr::get(
           ctx, {rewriter.getNamedAttr("ada.capture", rewriter.getUnitAttr())});
       attrs.append(captures.size(), captureAttrs);
-      subp.setArgAttrsAttr(ArrayAttr::get(ctx, attrs));
-
-      // The new block arguments (the lifted parameters) are the last
-      // `captures.size()` arguments of the entry block.
-      auto args = subp.getBody().getArguments();
-      ValueRange liftedArgs = args.drop_front(args.size() - captures.size());
-
-      // Also rewrite the uses in nested regions.
-      for (auto [capture, arg] : llvm::zip(captures, liftedArgs))
-        replaceAllUsesInRegionWith(capture, arg, subp.getBody());
+      subp.setAllArgAttrs(attrs);
+      ValueRange liftedArgs = entry.getArguments().take_back(captures.size());
 
       // Pass the captures at every call to this subprogram (matched by its
       // dialect FQN; mangling happens later).
