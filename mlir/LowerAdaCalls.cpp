@@ -199,12 +199,10 @@ static void lowerCallee(Signature &signature) {
     oldArgs[i].replaceAllUsesWith(inputs[firstCapture++]);
   entry.eraseArguments(0, oldArgs.size());
 
-  SmallVector<ada::ReturnOp> returns;
-  function.walk([&](ada::ReturnOp op) {
-    if (op->getParentOp() == function)
-      returns.push_back(op);
-  });
-  for (auto returned : returns) {
+  for (Block &block : function.getBody()) {
+    auto returned = dyn_cast<ada::ReturnOp>(block.getTerminator());
+    if (!returned)
+      continue;
     builder.setInsertionPoint(returned);
     SmallVector<Value> values(returned.getOperands());
     for (auto [i, formal] : llvm::enumerate(signature.formals))
