@@ -26,6 +26,12 @@ def run(*cmd: str) -> None:
 
 
 def main() -> None:
+    print(
+        "warning: lalvm-make is deprecated. Compile with 'lalvm --emit=obj', "
+        "generate the binder object with 'lalvm --bind', and link both objects "
+        "with the runtime using your C compiler.",
+        file=sys.stderr,
+    )
     if len(sys.argv) != 2:
         print("Usage: lalvm-make <file.adb>", file=sys.stderr)
         sys.exit(1)
