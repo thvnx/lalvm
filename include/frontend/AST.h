@@ -165,6 +165,9 @@ std::optional<ada_node> expressionType(ada_node &expr);
 /// resolution fails or finds nothing.
 std::optional<ada_node> referencedDecl(ada_node &name);
 
+/// Return the effective Default_Value aspect expression, if present (@rm{3-5}).
+std::optional<ada_node> defaultValueExpr(ada_node &typeDecl);
+
 /// Return the type declaration `typeExpr` designates, or `std::nullopt` when
 /// name resolution fails or finds nothing.
 std::optional<ada_node> designatedTypeDecl(ada_node &typeExpr);
