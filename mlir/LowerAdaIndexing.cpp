@@ -46,10 +46,10 @@ struct IndexOpLowering : OpRewritePattern<ada::IndexOp> {
         checked = range.hasStaticBounds(lower, upper);
     if (!checked && !ada::isKnownInStaticRange(op, index, lower, upper)) {
       auto indexSym = info.getIndexTypes()[0];
-      auto base = ada::baseOfAdaType(op, indexSym);
-      if (!base)
-        return rewriter.notifyMatchFailure(op, "unresolved index base type");
       auto subtype = ada::lookupAdaType(op, indexSym);
+      if (!subtype)
+        return rewriter.notifyMatchFailure(op, "unresolved index subtype");
+      auto base = subtype.getBaseAttr() ? subtype.getBaseAttr() : indexSym;
       auto machine = subtype.getMlirType();
       auto baseQual = ada::QualType::get(getContext(), machine, base);
       auto checkedQual = ada::QualType::get(getContext(), machine, indexSym);
