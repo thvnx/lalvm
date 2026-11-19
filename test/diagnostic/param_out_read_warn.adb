@@ -1,14 +1,8 @@
--- XFAIL: *
 -- RUN: %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
-
--- Known limitation: warning for reading an uninitialized out parameter uses
--- "variable" and "read before first assignment". Should say something like
--- "formal parameter 'A' may be referenced before it has a value".
-
--- CHECK-NOT: warning: variable 'A' is read before first assignment
 
 procedure Param_Out_Read_Warn is
    procedure P (A : out Integer) is
+      -- CHECK: param_out_read_warn.adb:[[#@LINE+1]]:22: warning: {{.*}}'A' is read before first assignment
       X : Integer := A;
    begin
       A := X;
