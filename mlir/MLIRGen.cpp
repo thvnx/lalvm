@@ -2388,6 +2388,10 @@ private:
     if (!lo || !hi)
       return mlir::failure();
 
+    auto extent = mlir::ada::arrayExtent(lo.value(), hi.value());
+    if (!extent)
+      return mlir::emitError(location, "array extent exceeds the layout limit");
+
     // The index constraint defines an anonymous index subtype (@rm{3-6}(13)),
     // emitted next to the array type so it shares its scope.
     mlir::ada::TypeOp indexBaseOp = indexOp;
@@ -2400,13 +2404,11 @@ private:
         indexBaseOp, lo_node, hi_node, location);
     indexSym = mlir::FlatSymbolRefAttr::get(indexSubtype.getSymNameAttr());
 
-    int64_t extent =
-        mlir::ada::arrayExtent(lo->getSExtValue(), hi->getSExtValue());
     auto *ctx = builder.getContext();
 
     // Build the !ada.array machine type
-    auto arrayType =
-        mlir::ada::ArrayType::get(ctx, componentType, {indexType}, {extent});
+    auto arrayType = mlir::ada::ArrayType::get(ctx, componentType, {indexType},
+                                               {extent.value()});
     // Build the array_info attribute
     auto typeInfo = mlir::ada::ArrayTypeInfoAttr::get(
         ctx, componentSym, {indexSym}, {minimalWidthIntAttr(*lo)},

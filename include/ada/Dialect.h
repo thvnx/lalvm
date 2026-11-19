@@ -106,8 +106,10 @@ bool inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,
 bool isKnownInStaticRange(mlir::Operation *from, mlir::Value value,
                           const llvm::APSInt &lo, const llvm::APSInt &hi);
 
-/// Number of components in lower..upper, or zero for a null range.
-int64_t arrayExtent(int64_t lower, int64_t upper);
+/// Number of components between signed bounds, zero for a null range, or
+/// std::nullopt if the extent does not fit the layout.
+std::optional<int64_t> arrayExtent(const llvm::APInt &lower,
+                                   const llvm::APInt &upper);
 
 /// The value of a static bound attribute (`int_info`, `array_info`), stored
 /// signless at its minimal signed width, so read as signed.
