@@ -3010,6 +3010,17 @@ private:
       mlir::cf::BranchOp::create(builder, location, mergeBlock);
   }
 
+  /// If the merge is unreachable, keep a terminated insertion block so the
+  /// next statement is diagnosed as unreachable.
+  void continueAtMerge(mlir::Block *merge, mlir::Block *fallback) {
+    if (merge->hasNoPredecessors()) {
+      merge->erase();
+      builder.setInsertionPointToEnd(fallback);
+    } else {
+      builder.setInsertionPointToEnd(merge);
+    }
+  }
+
   /// The CFG block a goto label marks (@rm{5-8}), created on first reference
   /// and appended to the current subprogram region, so a forward `goto` and its
   /// later `<<label>>` agree on one block. Leaves the insertion point
@@ -3172,15 +3183,7 @@ private:
       branchToMergeIfOpen(mergeBlock, loc(if_stmt));
     }
 
-    if (mergeBlock->hasNoPredecessors()) {
-      // Every path terminated (e.g. all branches return): the merge is dead.
-      // Leave the insertion point in a terminated block so the enclosing
-      // statement loop reports any following statements as unreachable.
-      mergeBlock->erase();
-      builder.setInsertionPointToEnd(condBlock);
-    } else {
-      builder.setInsertionPointToEnd(mergeBlock);
-    }
+    continueAtMerge(mergeBlock, condBlock);
     return mlir::success();
   }
 
@@ -3238,15 +3241,7 @@ private:
       return mlir::failure();
     branchToMergeIfOpen(headerBlock, loc(loopNode));
 
-    if (mergeBlock->hasNoPredecessors()) {
-      // Bare loop with no reachable `exit`: the merge is dead. Leave a
-      // terminated insertion point so following code reads as unreachable
-      // (mirrors `mlirGenIf`).
-      mergeBlock->erase();
-      builder.setInsertionPointToEnd(bodyBlock);
-    } else {
-      builder.setInsertionPointToEnd(mergeBlock);
-    }
+    continueAtMerge(mergeBlock, bodyBlock);
     return mlir::success();
   }
 
