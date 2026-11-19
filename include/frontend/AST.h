@@ -182,6 +182,9 @@ rangeConstraintBounds(ada_node &constraint);
 /// (`Integer range 1..10`), or `std::nullopt` otherwise.
 std::optional<ada_node> subtypeConstraint(ada_node &typeExpr);
 
+/// Return the declaration or body wrapped by a compilation unit's library item.
+std::optional<ada_node> libraryItem(ada_node &root);
+
 /// Return the specification kind of the compilation unit `root` ("package
 /// spec", "subprogram spec" or "spec"), or `std::nullopt` if it is not one.
 std::optional<llvm::StringRef> specKind(ada_node &root);
