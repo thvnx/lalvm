@@ -177,23 +177,22 @@ static int runPassManager(mlir::PassManager &pm, mlir::ModuleOp module,
   return mlir::failed(pm.run(module)) ? 1 : 0;
 }
 
-static int applyMLIRPasses(mlir::OwningOpRef<mlir::ModuleOp> &module,
-                           mlir::TimingScope &timing) {
+static int applyMLIRPasses(mlir::ModuleOp module, mlir::TimingScope &timing) {
   // -O0 leaves locals in memory and the IR as MLIRGen emits it (see optLevel);
   // the MLIR optimization passes run from -O1.
   if (optLevel < 1)
     return 0;
   // Separate PM so --mlir-print-ir-before/after isolate these passes.
-  mlir::PassManager pm(module.get()->getName());
+  mlir::PassManager pm(module->getName());
   pm.addPass(mlir::createMem2Reg());
   pm.addPass(mlir::createCanonicalizerPass());
-  return runPassManager(pm, *module, timing);
+  return runPassManager(pm, module, timing);
 }
 
 // Lower Ada dialect ops to LLVM dialect and attach debug info.
 // Pre-condition: context must have AdaDialect and ArithDialect loaded.
 static int applyLoweringPasses(mlir::MLIRContext &context,
-                               mlir::OwningOpRef<mlir::ModuleOp> &module,
+                               mlir::ModuleOp module,
                                mlir::TimingScope &timing) {
   // DI attribute types (DIFileAttr, DICompileUnitAttr, ...) belong to the LLVM
   // dialect; load it before creating them.
@@ -202,7 +201,7 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
   // Lift and hoist subprograms before choosing their ABI. Promote semantic
   // objects before storage conversion and LLVM lowering. Keep
   // --emit=mlir as the nested dialect view.
-  mlir::PassManager adaLoweringPm(module.get()->getName());
+  mlir::PassManager adaLoweringPm(module->getName());
   adaLoweringPm.addPass(mlir::ada::createClosureConversionPass());
   adaLoweringPm.addPass(mlir::ada::createHoistNestedSymbolOperationsPass());
   adaLoweringPm.addPass(mlir::ada::createLowerAdaCallsPass());
@@ -213,13 +212,13 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
     adaLoweringPm.addPass(mlir::createCanonicalizerPass());
   }
   adaLoweringPm.addPass(mlir::ada::createLowerAdaReferencesPass());
-  if (int error = runPassManager(adaLoweringPm, *module, timing))
+  if (int error = runPassManager(adaLoweringPm, module, timing))
     return error;
 
   if (int error = applyMLIRPasses(module, timing))
     return error;
 
-  mlir::PassManager pm(module.get()->getName());
+  mlir::PassManager pm(module->getName());
   // The DI passes run only under -g. The Ada DI markers earlier passes fuse
   // onto locations stay, but are inert without these consumers: translation
   // drops them and, with no DISubprogram scope, emits no !dbg.
@@ -237,11 +236,10 @@ static int applyLoweringPasses(mlir::MLIRContext &context,
     pm.addPass(mlir::ada::createAdaDebugInfoPass());
   }
 
-  return runPassManager(pm, *module, timing);
+  return runPassManager(pm, module, timing);
 }
 
-static int emitLLVMIR(mlir::MLIRContext &context,
-                      mlir::OwningOpRef<mlir::ModuleOp> &module,
+static int emitLLVMIR(mlir::MLIRContext &context, mlir::ModuleOp module,
                       mlir::TimingScope &timing) {
   // The bind module is LLVM dialect already: nothing to lower. Under -g, it
   // only needs a compile unit and a DISubprogram for `main`.
@@ -249,10 +247,10 @@ static int emitLLVMIR(mlir::MLIRContext &context,
     if (int error = applyLoweringPasses(context, module, timing))
       return error;
   } else if (debugInfo) {
-    mlir::PassManager pm(module.get()->getName());
+    mlir::PassManager pm(module->getName());
     pm.addPass(mlir::ada::createDICompileUnitAdaPass());
     pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
-    if (int error = runPassManager(pm, *module, timing))
+    if (int error = runPassManager(pm, module, timing))
       return error;
   }
 
@@ -263,7 +261,7 @@ static int emitLLVMIR(mlir::MLIRContext &context,
 
   // Convert the module to LLVM IR in a new LLVM IR context.
   llvm::LLVMContext llvmContext;
-  auto llvmModule = mlir::translateModuleToLLVMIR(*module, llvmContext);
+  auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
   if (!llvmModule) {
     frontend::emitErrorDiag("failed to emit LLVM IR");
     return 1;
@@ -296,7 +294,7 @@ static int emitLLVMIR(mlir::MLIRContext &context,
 
   // The bind module declares no Ada type.
   if (debugInfo && !bindAction)
-    mlir::ada::buildPostTranslationDITypes(*llvmModule, *module);
+    mlir::ada::buildPostTranslationDITypes(*llvmModule, module);
 
   // Initialize the host target backend.
   llvm::InitializeNativeTarget();
@@ -495,7 +493,7 @@ int main(int argc, char **argv) {
 
   switch (emitAction) {
   case Action::EmitMLIR: {
-    if (int error = applyMLIRPasses(module, timing))
+    if (int error = applyMLIRPasses(*module, timing))
       return error;
     // Under -g, show the debug info in the dump (source locations and local
     // scope), so the NameLocs and DI markers are visible without the explicit
@@ -511,7 +509,7 @@ int main(int argc, char **argv) {
   case Action::EmitLLVMIR:
   case Action::EmitObject:
   case Action::EmitAssembly:
-    return emitLLVMIR(context, module, timing);
+    return emitLLVMIR(context, *module, timing);
   default:
     llvm_unreachable("unhandled emit action");
   }
