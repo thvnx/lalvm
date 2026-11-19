@@ -34,6 +34,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Casting.h"
+#include <algorithm>
 #include <string>
 
 using namespace mlir;
@@ -340,12 +341,15 @@ llvm::LogicalResult TypeOp::verify() {
                  << "dimension " << d
                  << ": extent and bounds disagree on being dynamic";
         if (boundsStatic) {
-          int64_t count = arrayExtent(lo.getValue().getSExtValue(),
-                                      hi.getValue().getSExtValue());
-          if (count != extents[d])
-            return emitOpError() << "array_info bounds imply extent " << count
-                                 << " but type extent is " << extents[d]
-                                 << " at dimension " << d;
+          auto count = arrayExtent(lo.getValue(), hi.getValue());
+          if (!count)
+            return emitOpError() << "array extent exceeds the layout limit at "
+                                    "dimension "
+                                 << d;
+          if (count.value() != extents[d])
+            return emitOpError() << "array_info bounds imply extent "
+                                 << count.value() << " but type extent is "
+                                 << extents[d] << " at dimension " << d;
         }
       }
     }
@@ -1530,8 +1534,16 @@ bool mlir::ada::isKnownInStaticRange(mlir::Operation *from, mlir::Value value,
          inStaticRange(bounds->second, lo, hi);
 }
 
-int64_t mlir::ada::arrayExtent(int64_t lower, int64_t upper) {
-  return upper < lower ? 0 : upper - lower + 1;
+std::optional<int64_t> mlir::ada::arrayExtent(const llvm::APInt &lower,
+                                              const llvm::APInt &upper) {
+  // Only the extent must fit in int64_t. Use two extra bits so the signed
+  // difference and the inclusive +1 are both exact before narrowing.
+  unsigned width = std::max(lower.getBitWidth(), upper.getBitWidth()) + 2;
+  llvm::APInt lo = lower.sext(width);
+  llvm::APInt hi = upper.sext(width);
+  if (hi.slt(lo))
+    return 0;
+  return (hi - lo + 1).trySExtValue();
 }
 
 bool mlir::ada::isUnsignedOrderQualType(mlir::Operation *from, QualType qual) {

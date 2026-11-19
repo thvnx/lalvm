@@ -23,6 +23,11 @@ module {
   // CHECK: ada.type @neg : !ada.array<i32[i32 x 11]> = #ada.array_info<component @standard.integer, dim @standard.integer range -5 to 5>
   ada.type @neg : !ada.array<i32[i32 x 11]> = #ada.array_info<component @standard.integer, dim @standard.integer range -5 to 5>
 
+  // Wide bounds can still describe a small array.
+  ada.type @wide : i128 = #ada.int_info
+  // CHECK: ada.type @pair : !ada.array<i32[i128 x 2]>
+  ada.type @pair : !ada.array<i32[i128 x 2]> = #ada.array_info<component @standard.integer, dim @wide range 18446744073709551616 to 18446744073709551617>
+
   // Null ranges have zero extent, including nonadjacent negative bounds.
   // CHECK: ada.type @adjacent : !ada.array<i32[i32 x 0]> = #ada.array_info<component @standard.integer, dim @standard.integer range 5 to 4>
   ada.type @adjacent : !ada.array<i32[i32 x 0]> = #ada.array_info<component @standard.integer, dim @standard.integer range 5 to 4>
