@@ -80,16 +80,15 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
     return error(root, "cannot bind a " + *kind +
                            ": the main unit must be a subprogram body");
 
-  ada_node body = {}, item = {};
-  ada_compilation_unit_f_body(&root, &body);
-  if (ada_node_is_null(&body) || ada_node_kind(&body) != ada_library_item ||
-      !ada_library_item_f_item(&body, &item) || ada_node_is_null(&item))
+  auto item = libadalang::libraryItem(root);
+  if (!item)
     return error(root, "the main unit must be a library-level subprogram body");
-  if (ada_node_kind(&item) != ada_subp_body)
-    return error(item, "the main unit must be a subprogram body");
+  ada_node &body = item.value();
+  if (ada_node_kind(&body) != ada_subp_body)
+    return error(body, "the main unit must be a subprogram body");
 
   ada_node spec = {};
-  ada_base_subp_body_f_subp_spec(&item, &spec);
+  ada_base_subp_body_f_subp_spec(&body, &spec);
 
   ada_node_array params = nullptr;
   if (ada_base_subp_spec_p_params(&spec, &params) && params->n > 0) {
@@ -108,7 +107,7 @@ static std::optional<Program> describeProgram(mlir::MLIRContext &context,
       return error(returns, "the main function must return Integer");
   }
 
-  auto defName = libadalang::declDefiningName(item);
+  auto defName = libadalang::declDefiningName(body);
   if (!defName)
     return std::nullopt;
   std::string symbol =

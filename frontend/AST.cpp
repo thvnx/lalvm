@@ -634,6 +634,15 @@ std::optional<ada_node> libadalang::designatedTypeDecl(ada_node &typeExpr) {
   return std::nullopt;
 }
 
+std::optional<ada_node> libadalang::libraryItem(ada_node &root) {
+  ada_node body = {}, item = {};
+  if (ada_compilation_unit_f_body(&root, &body) && !ada_node_is_null(&body) &&
+      ada_node_kind(&body) == ada_library_item &&
+      ada_library_item_f_item(&body, &item) && !ada_node_is_null(&item))
+    return item;
+  return std::nullopt;
+}
+
 std::optional<llvm::StringRef> libadalang::specKind(ada_node &root) {
   if (ada_node_is_null(&root) || ada_node_kind(&root) != ada_compilation_unit)
     return std::nullopt;
@@ -641,11 +650,8 @@ std::optional<llvm::StringRef> libadalang::specKind(ada_node &root) {
   if (!ada_compilation_unit_p_unit_kind(&root, &kind) ||
       kind != ADA_ANALYSIS_UNIT_KIND_UNIT_SPECIFICATION)
     return std::nullopt;
-  ada_node body = {}, item = {};
-  if (ada_compilation_unit_f_body(&root, &body) &&
-      ada_node_kind(&body) == ada_library_item &&
-      ada_library_item_f_item(&body, &item))
-    switch (ada_node_kind(&item)) {
+  if (auto item = libraryItem(root))
+    switch (ada_node_kind(&item.value())) {
     case ada_package_decl:
     case ada_generic_package_decl:
       return "package spec";
