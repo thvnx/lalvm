@@ -854,11 +854,6 @@ def CallOp : Ada_Op<"call",
     mlir::MutableOperandRange getArgOperandsMutable() {
       return getInputsMutable();
     }
-
-    /// Walk enclosing SymbolTable scopes from `from` upward and return the
-    /// first symbol named `name`, or null.
-    static mlir::Operation *lookupCallee(mlir::Operation *from,
-                                         llvm::StringRef name);
   }];
 }
 

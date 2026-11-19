@@ -323,8 +323,8 @@ struct LowerAdaCallsPass
     module.walk([&](ada::CallOp call) { calls.push_back(call); });
     SymbolTableCollection symbols;
     for (auto call : calls) {
-      auto found =
-          calleeIndices.find(ada::CallOp::lookupCallee(call, call.getCallee()));
+      auto found = calleeIndices.find(
+          ada::lookupSymbolFrom(call, call.getCallee(), &symbols));
       if (found == calleeIndices.end()) {
         call.emitOpError("requires an Ada callee declaration");
         return signalPassFailure();

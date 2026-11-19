@@ -1641,13 +1641,6 @@ mlir::Location mlir::ada::attachAdaTypeRef(mlir::Location loc,
 // CallOp
 //===----------------------------------------------------------------------===//
 
-/// Resolve a callee symbol for dialect verification and lowering. MLIRGen
-/// resolves source calls by Libadalang node identity instead.
-mlir::Operation *CallOp::lookupCallee(mlir::Operation *from,
-                                      llvm::StringRef name) {
-  return mlir::ada::lookupSymbolFrom(from, name);
-}
-
 llvm::LogicalResult CallOp::verify() {
   if (getResult() && mlir::isa<RefType>(getResult().getType()))
     return emitOpError("cannot return an object reference");
@@ -1693,8 +1686,10 @@ llvm::LogicalResult CallOp::verify() {
   return mlir::success();
 }
 
-llvm::LogicalResult CallOp::verifySymbolUses(mlir::SymbolTableCollection &) {
-  auto subp = mlir::dyn_cast_or_null<SubpOp>(lookupCallee(*this, getCallee()));
+llvm::LogicalResult
+CallOp::verifySymbolUses(mlir::SymbolTableCollection &symbolTables) {
+  auto subp = mlir::dyn_cast_or_null<SubpOp>(
+      lookupSymbolFrom(*this, getCallee(), &symbolTables));
   if (!subp)
     return mlir::success();
 
