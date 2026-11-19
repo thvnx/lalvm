@@ -2756,11 +2756,11 @@ private:
         subpParams(ada_subp_spec);
     if (!params)
       return nullptr;
-    mlir::Operation *op = mlirGenSubpSpec(ada_subp_spec, isProc, *params);
-    if (!op)
+    auto subp = mlirGenSubpSpec(ada_subp_spec, isProc, *params);
+    if (!subp)
       return nullptr;
     // Enter the subprogram's naming scope for the declarations in its body.
-    auto scopeGuard = pushScope(mlir::SymbolTable::getSymbolName(op).str());
+    auto scopeGuard = pushScope(subp.getSymName().str());
 
     // Neither a loop nor a goto label is reachable across a subprogram boundary
     // (@rm{5-7}, @rm{5-8}), so both are subprogram-local: clear them for this
@@ -2778,7 +2778,7 @@ private:
       labelBlocks = std::move(savedLabels);
       pendingLabels = std::move(savedLabelMarkers);
     });
-    mlir::Block *entryBlock = &op->getRegion(0).front();
+    mlir::Block *entryBlock = &subp.getBody().front();
 
     builder.setInsertionPointToStart(entryBlock);
 
@@ -2801,14 +2801,14 @@ private:
     ada_subp_body_f_stmts(&subp_body, &stmts);
 
     if (!ada_node_is_null(&stmts) && mlir::failed(visit(stmts))) {
-      op->erase();
+      subp.erase();
       return nullptr;
     }
 
     // Procedures can have no explicit return statement, so add an implicit one
     // unless the body already ended in a terminator. It is located at the end
     // name, if any, where a debugger stops last.
-    if (isProc && !currentBlockTerminated()) {
+    if (subp.isProcedure() && !currentBlockTerminated()) {
       ada_node endName = {};
       mlir::Location retLoc = ada_subp_body_f_end_name(&subp_body, &endName) &&
                                       !ada_node_is_null(&endName)
@@ -2825,15 +2825,14 @@ private:
       if (ada_node_is_null(&expr)) {
         mlir::emitError(loc(subp_body),
                         "can't get the expression of the expression function");
-        op->erase();
+        subp.erase();
         return nullptr;
       }
 
-      mlir::FailureOr<mlir::Value> retVal =
-          mlirGenReturnExpr(expr, mlir::cast<mlir::ada::SubpOp>(op));
+      mlir::FailureOr<mlir::Value> retVal = mlirGenReturnExpr(expr, subp);
 
       if (mlir::failed(retVal)) {
-        op->erase();
+        subp.erase();
         return nullptr;
       }
 
@@ -2841,7 +2840,7 @@ private:
     }
 
     anchorPendingLabels();
-    return op;
+    return subp;
   }
 
   /// Fuse each label recorded in `pendingLabels` as a `DILabelRef` marker onto
@@ -3661,8 +3660,8 @@ private:
 
   /// Create an ada.subp with the signature derived from the Ada subprogram
   /// spec and its `params`. Returns nullptr on failure.
-  mlir::Operation *mlirGenSubpSpec(ada_node &subp_spec, bool isProc,
-                                   llvm::ArrayRef<SubpParam> params) {
+  mlir::ada::SubpOp mlirGenSubpSpec(ada_node &subp_spec, bool isProc,
+                                    llvm::ArrayRef<SubpParam> params) {
     auto location = loc(libadalang::parent(&subp_spec));
 
     ada_node name;
