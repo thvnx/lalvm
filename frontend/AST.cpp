@@ -626,6 +626,26 @@ std::optional<ada_node> libadalang::subtypeConstraint(ada_node &typeExpr) {
   return constraint;
 }
 
+std::optional<ada_node> libadalang::defaultValueExpr(ada_node &typeDecl) {
+  if (ada_node_is_null(&typeDecl))
+    return std::nullopt;
+  ada_analysis_context ctx = ada_unit_context(ada_node_unit(&typeDecl));
+  llvm::StringRef aspectName = "default_value";
+  ada_text name;
+  ada_text_from_utf8(aspectName.data(), aspectName.size(), &name);
+  ada_symbol_type sym;
+  bool ok = ada_context_symbol(ctx, &name, &sym);
+  ada_destroy_text(&name);
+  if (!ok)
+    return std::nullopt;
+  ada_internal_aspect aspect;
+  if (!ada_basic_decl_p_get_aspect(&typeDecl, &sym, /*previous_parts_only=*/0,
+                                   /*imprecise_fallback=*/0, &aspect) ||
+      !aspect.exists || ada_node_is_null(&aspect.value))
+    return std::nullopt;
+  return aspect.value;
+}
+
 std::optional<ada_node> libadalang::designatedTypeDecl(ada_node &typeExpr) {
   ada_node typeDecl = {};
   if (ada_type_expr_p_designated_type_decl(&typeExpr, &typeDecl) &&

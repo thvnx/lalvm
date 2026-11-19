@@ -2205,11 +2205,8 @@ private:
 
     auto typeOp = typeDecls.lookup(type_decl.node);
     if (typeOp && mlir::ada::isNumericMachineType(typeOp.getMlirType()) &&
-        !typeOp.hasDefaultValue()) {
-      ada_node value;
-      if (defaultValueExpr(type_decl, value))
-        typeOp.setHasDefaultValueAttr(builder.getUnitAttr());
-    }
+        !typeOp.hasDefaultValue() && libadalang::defaultValueExpr(type_decl))
+      typeOp.setHasDefaultValueAttr(builder.getUnitAttr());
     return mlir::success();
   }
 
@@ -2484,30 +2481,6 @@ private:
     return mlir::success();
   }
 
-  /// If `typeDecl`'s scalar type has a `Default_Value` aspect (@rm{3-5}), set
-  /// `out` to its expression and return true. `p_get_aspect` resolves the
-  /// effective value through subtypes and derived-type overrides.
-  bool defaultValueExpr(ada_node &typeDecl, ada_node &out) {
-    if (ada_node_is_null(&typeDecl))
-      return false;
-    ada_analysis_context ctx = ada_unit_context(ada_node_unit(&typeDecl));
-    llvm::StringRef aspectName = "default_value";
-    ada_text name;
-    ada_text_from_utf8(aspectName.data(), aspectName.size(), &name);
-    ada_symbol_type sym;
-    bool ok = ada_context_symbol(ctx, &name, &sym);
-    ada_destroy_text(&name);
-    if (!ok)
-      return false;
-    ada_internal_aspect aspect;
-    if (!ada_basic_decl_p_get_aspect(&typeDecl, &sym, /*previous_parts_only=*/0,
-                                     /*imprecise_fallback=*/0, &aspect) ||
-        !aspect.exists || ada_node_is_null(&aspect.value))
-      return false;
-    out = aspect.value;
-    return true;
-  }
-
   /// Emit an object declaration (@rm{3-3-1}) with its explicit or default
   /// initialization. The subtype indication gives the object's nominal subtype
   /// (a range constraint in it gives each object its own anonymous subtype, see
@@ -2603,8 +2576,8 @@ private:
         // Default_Value aspect (@rm{3-5}) if it has one. (A constant object
         // instead requires an initializer, handled above.)
         if (!init)
-          if (ada_node dv; defaultValueExpr(typeDecl.value(), dv)) {
-            init = visit_expr(dv);
+          if (auto value = libadalang::defaultValueExpr(typeDecl.value())) {
+            init = visit_expr(value.value());
             if (!init)
               return mlir::failure();
           }
