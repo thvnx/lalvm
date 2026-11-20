@@ -94,37 +94,36 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
         ada::baseOfAdaType(op, source.getAdaType()))
       return rewriter.notifyMatchFailure(op, "different or unresolved bases");
 
-    // An unconstrained target (a base type or a pure renaming) needs no check.
-    // @todo Check float and enumeration constraints; like MLIRGen, only integer
-    // ranges are checked for now.
-    auto required = base ? dyn_cast_or_null<ada::IntegerTypeInfoAttr>(
-                               targetOp.getTypeInfoAttr())
-                         : ada::IntegerTypeInfoAttr();
-    if (!required) {
+    Attribute info = base ? targetOp.getTypeInfoAttr() : Attribute{};
+    std::optional<std::pair<APSInt, APSInt>> bounds;
+    if (auto integer = dyn_cast_or_null<ada::IntegerTypeInfoAttr>(info)) {
+      bounds = integer.staticBounds();
+      if (!bounds) {
+        // A dynamic bound: check against the descriptor elaborated at the
+        // subtype declaration, which the conversion carries.
+        Value range = op.getRange();
+        if (!range)
+          return rewriter.notifyMatchFailure(op, "no range descriptor");
+        rewriter.replaceOpWithNewOp<ada::RangeCheckOp>(op, target,
+                                                       op.getInput(), range);
+        return success();
+      }
+    } else if (auto enumeration =
+                   dyn_cast_or_null<ada::EnumTypeInfoAttr>(info)) {
+      auto lo = enumeration.staticLower(), hi = enumeration.staticUpper();
+      if (lo && hi)
+        bounds.emplace(ada::boundValue(lo), ada::boundValue(hi));
+      // @todo Elaborate range descriptors for dynamic enumeration constraints.
+    }
+
+    if (!bounds || ada::isKnownInStaticRange(op, op.getInput(), bounds->first,
+                                             bounds->second)) {
       rewriter.replaceOp(
           op, ada::requalify(rewriter, op.getLoc(), op.getInput(), target));
       return success();
     }
-    auto bounds = required.staticBounds();
-    if (!bounds) {
-      // A dynamic bound: check against the descriptor elaborated at the subtype
-      // declaration, which the conversion carries.
-      Value range = op.getRange();
-      if (!range)
-        return rewriter.notifyMatchFailure(op, "no range descriptor");
-      rewriter.replaceOpWithNewOp<ada::RangeCheckOp>(op, target, op.getInput(),
-                                                     range);
-      return success();
-    }
 
-    // A value known to lie within the target's range needs no check either.
     auto [lo, hi] = *bounds;
-    if (ada::isKnownInStaticRange(op, op.getInput(), lo, hi)) {
-      rewriter.replaceOp(
-          op, ada::requalify(rewriter, op.getLoc(), op.getInput(), target));
-      return success();
-    }
-
     // Otherwise check the value against the target's bounds, which have the
     // base type (@rm{3-5}). The check yields the target subtype.
     auto baseQual =
