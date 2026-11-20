@@ -135,6 +135,12 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
   if (mlir::failed(fn))
     return mlir::failure();
 
+  // Failed checks are rare and raise an exception without returning normally.
+  rewriter.modifyOpInPlace(*fn, [&] {
+    fn->setCold(true);
+    fn->setNoreturn(true);
+  });
+
   // Split the block at the check; later uses of the value move to `cont`.
   mlir::Block *opBlock = rewriter.getInsertionBlock();
   mlir::Block *cont =

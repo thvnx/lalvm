@@ -13,6 +13,7 @@
 
 module {
   // CHECK: private constant [10 x i8] c"check.adb\00"
+  // CHECK: declare void @__gnat_rcheck_CE_Range_Check(ptr, i32) #[[RAISE:[0-9]+]]
   // CHECK-LABEL: define i32 @_ada_check
   ada.subp @check(%v: !ada.qual<i32, @integer>, %lo: !ada.qual<i32, @integer>,
                   %hi: !ada.qual<i32, @integer>) -> !ada.qual<i32, @positive> {
@@ -26,6 +27,7 @@ module {
     // CHECK:      call void @__gnat_rcheck_CE_Range_Check(ptr {{.*}}, i32 42)
     // CHECK:      unreachable
     // CHECK:      ret i32 %0
+    // CHECK:      attributes #[[RAISE]] = { cold noreturn }
     %c = ada.range_check %v, %r : !ada.qual<i32, @integer> to !ada.qual<i32, @positive> loc(fused[unknown, "checked"("check.adb":42:3)])
     ada.return %c : !ada.qual<i32, @positive>
   }
