@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -79,6 +80,12 @@ std::optional<llvm::APSInt> bigIntToAPSInt(ada_big_integer bigint);
 /// Whether `expr` is a static expression (@rm{4-9}).
 bool isStaticExpr(ada_node &expr);
 
+/// Whether `expr` contains any of the named attribute references.
+/// @todo Remove this Libadalang 26 workaround and its call sites once the
+/// evaluator handles 'Pos, 'Val, 'Succ and 'Pred correctly for enumerations
+/// with explicit representation codes.
+bool containsAttribute(ada_node &expr, llvm::ArrayRef<llvm::StringRef> names);
+
 /// Evaluate `expr` as an integer, or nullopt when it cannot be evaluated
 /// (`eval_as_int` fails, or the result does not parse as an APSInt).
 std::optional<llvm::APSInt> evalExprAsInt(ada_node &expr);
@@ -142,7 +149,10 @@ constexpr llvm::StringLiteral kUniversalRealTypeName = "universal_real_type_";
 bool isBaseTypeDecl(ada_node &node);
 bool isEnumTypeDecl(ada_node &typeDecl);
 bool isUniversalTypeDecl(ada_node &typeDecl);
+bool isRootIntegerTypeDecl(ada_node &typeDecl);
 bool isRealTypeDecl(ada_node &typeDecl);
+/// Whether the root type is one of Standard's character types.
+bool isPredefinedCharacterType(ada_node &typeDecl);
 bool isNumericTypeDecl(ada_node &typeDecl);
 bool isArrayTypeDecl(ada_node &typeDecl);
 /// Number of dimensions of `arrayType`, or 0 if it is not an array.

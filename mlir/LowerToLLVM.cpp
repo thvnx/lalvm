@@ -32,6 +32,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/Support/Path.h"
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 using namespace mlir;
@@ -68,9 +69,8 @@ struct AdaToLLVMLoweringPass
 } // namespace
 
 /// Build an `arith.constant` of integer `type` holding `value`.
-static mlir::Value constInt(mlir::ConversionPatternRewriter &rewriter,
-                            mlir::Location loc, mlir::Type type,
-                            int64_t value) {
+static mlir::Value constInt(mlir::OpBuilder &rewriter, mlir::Location loc,
+                            mlir::Type type, int64_t value) {
   return arith::ConstantOp::create(rewriter, loc,
                                    rewriter.getIntegerAttr(type, value));
 }
@@ -99,7 +99,7 @@ static bool isModularQualType(mlir::Operation *from, ada::QualType qual) {
 /// `file` argument of the runtime raise. lalvm compiles one source unit per
 /// run, so all checks share a single `@lalvm.file` global, created on first
 /// use and reused after.
-static mlir::Value emitFileNamePtr(mlir::ConversionPatternRewriter &rewriter,
+static mlir::Value emitFileNamePtr(mlir::OpBuilder &rewriter,
                                    mlir::Location loc, mlir::ModuleOp module,
                                    llvm::StringRef fileName) {
   auto global = module.lookupSymbol<LLVM::GlobalOp>("lalvm.file");
@@ -116,16 +116,9 @@ static mlir::Value emitFileNamePtr(mlir::ConversionPatternRewriter &rewriter,
                              llvm::ArrayRef<LLVM::GEPArg>{0, 0});
 }
 
-/// Emit a Constraint_Check trap (@rm{11-5}): split the current block, build a
-/// `raise` block that calls the GNAT runtime `fnName(file, line)` and is
-/// unreachable, and branch there when `cond` is true, otherwise fall through to
-/// the continuation. `cond` must already be materialized in the current block.
-/// On return the rewriter is positioned at the start of the continuation block,
-/// so a caller can keep emitting on the live (non-raising) path or chain a
-/// second check. Returns failure if the runtime function cannot be declared.
 static mlir::LogicalResult
-emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
-                    mlir::Location loc, mlir::ModuleOp module, mlir::Value cond,
+emitConstraintError(mlir::ConversionPatternRewriter &rewriter,
+                    mlir::Location loc, mlir::ModuleOp module,
                     llvm::StringRef fnName) {
   auto ptrTy = LLVM::LLVMPointerType::get(rewriter.getContext());
   mlir::Type i32Ty = rewriter.getI32Type();
@@ -141,13 +134,6 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
     fn->setNoreturn(true);
   });
 
-  // Split the block at the check; later uses of the value move to `cont`.
-  mlir::Block *opBlock = rewriter.getInsertionBlock();
-  mlir::Block *cont =
-      rewriter.splitBlock(opBlock, rewriter.getInsertionPoint());
-
-  // Raise block: fnName(file, line); unreachable.
-  mlir::Block *raise = rewriter.createBlock(cont);
   llvm::StringRef fileName;
   unsigned line = 0;
   if (auto flc = loc->findInstanceOf<mlir::FileLineColRange>()) {
@@ -159,12 +145,30 @@ emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
   LLVM::CallOp::create(rewriter, loc, *fn, mlir::ValueRange{file, lineVal});
   LLVM::UnreachableOp::create(rewriter, loc);
 
-  // Test in the original block: bad -> raise, else -> continue.
-  rewriter.setInsertionPointToEnd(opBlock);
-  LLVM::CondBrOp::create(rewriter, loc, cond, raise, cont);
+  return mlir::success();
+}
 
-  // Resume on the live path so the caller can emit the guarded operation (or
-  // chain another check) after the branch.
+/// Branch to a fresh failure block when the condition holds. Leave the
+/// rewriter in that block and return the continuation for the success path.
+static Block *createFailureBlock(ConversionPatternRewriter &rewriter,
+                                 Location loc, Value cond) {
+  Block *current = rewriter.getInsertionBlock();
+  Block *cont = rewriter.splitBlock(current, rewriter.getInsertionPoint());
+  Block *failure = rewriter.createBlock(cont);
+  rewriter.setInsertionPointToEnd(current);
+  LLVM::CondBrOp::create(rewriter, loc, cond, failure, cont);
+  rewriter.setInsertionPointToStart(failure);
+  return cont;
+}
+
+/// Raise Constraint_Error when the condition holds, then resume on success.
+static mlir::LogicalResult
+emitConstraintRaise(mlir::ConversionPatternRewriter &rewriter,
+                    mlir::Location loc, mlir::ModuleOp module, mlir::Value cond,
+                    llvm::StringRef fnName) {
+  Block *cont = createFailureBlock(rewriter, loc, cond);
+  if (mlir::failed(emitConstraintError(rewriter, loc, module, fnName)))
+    return mlir::failure();
   rewriter.setInsertionPointToStart(cont);
   return mlir::success();
 }
@@ -261,7 +265,32 @@ static llvm::StringRef raiseEntry(ada::IndexCheckOp) {
   return "__gnat_rcheck_CE_Index_Check";
 }
 
+static llvm::StringRef raiseEntry(ada::ConstraintErrorOp op) {
+  switch (op.getKind()) {
+  case ada::AdaConstraintErrorKind::Overflow:
+    return "__gnat_rcheck_CE_Overflow_Check";
+  case ada::AdaConstraintErrorKind::InvalidData:
+    return "__gnat_rcheck_CE_Invalid_Data";
+  }
+  llvm_unreachable("unknown Constraint_Error kind");
+}
+
 namespace {
+struct ConstraintErrorOpLowering : OpConversionPattern<ada::ConstraintErrorOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(ada::ConstraintErrorOp op, OpAdaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (failed(emitConstraintError(rewriter, op.getLoc(),
+                                   op->getParentOfType<ModuleOp>(),
+                                   raiseEntry(op))))
+      return failure();
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 // OpConversionPattern: lowers the Constraint_Check (@rm{11-5}) to a compare
 // against the bound pair and a conditional branch to a raise block that calls
 // the GNAT runtime and is unreachable. Representation-preserving: the machine
@@ -810,14 +839,15 @@ private:
   }
 };
 
-// Lowers ada.cmp to arith.cmpi/arith.cmpf, dispatching on the relational
-// operator kind and on integer vs. float operand type. The result is i1,
-// matching the lowered Boolean (i1) result type.
-struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
-  using OpConversionPattern<ada::CmpOp>::OpConversionPattern;
+// Both operations use Ada's comparison predicates. An overflow check raises
+// when the comparison succeeds and otherwise forwards its left operand.
+template <typename OpTy>
+struct ComparisonLowering : public OpConversionPattern<OpTy> {
+  using OpConversionPattern<OpTy>::OpConversionPattern;
+  using OpAdaptor = typename OpConversionPattern<OpTy>::OpAdaptor;
 
   LogicalResult
-  matchAndRewrite(ada::CmpOp op, OpAdaptor adaptor,
+  matchAndRewrite(OpTy op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type type = adaptor.getLhs().getType();
     bool isInt = mlir::isa<mlir::IntegerType>(type);
@@ -869,12 +899,21 @@ struct CmpOpLowering : public OpConversionPattern<ada::CmpOp> {
       break;
     }
 
+    Value result;
     if (isInt)
-      rewriter.replaceOpWithNewOp<arith::CmpIOp>(op, iPred, adaptor.getLhs(),
-                                                 adaptor.getRhs());
+      result = arith::CmpIOp::create(rewriter, op.getLoc(), iPred,
+                                     adaptor.getLhs(), adaptor.getRhs());
     else
-      rewriter.replaceOpWithNewOp<arith::CmpFOp>(op, fPred, adaptor.getLhs(),
-                                                 adaptor.getRhs());
+      result = arith::CmpFOp::create(rewriter, op.getLoc(), fPred,
+                                     adaptor.getLhs(), adaptor.getRhs());
+    if constexpr (std::is_same_v<OpTy, ada::OverflowCheckOp>) {
+      Block *cont = createFailureBlock(rewriter, op.getLoc(), result);
+      ada::ConstraintErrorOp::create(rewriter, op.getLoc(),
+                                     ada::AdaConstraintErrorKind::Overflow);
+      rewriter.setInsertionPointToStart(cont);
+      result = adaptor.getLhs();
+    }
+    rewriter.replaceOp(op, result);
     return success();
   }
 };
@@ -1172,14 +1211,16 @@ void AdaToLLVMLoweringPass::runOnOperation() {
   populateFinalizeMemRefToLLVMConversionPatterns(typeConverter, patterns);
 
   patterns.add<NullOpLowering>(&getContext());
-  patterns.add<CallOpLowering, BinOpLowering, CmpOpLowering, UnOpLowering,
-               FunctionOpLowering, ConstantOpLowering, RangeOpLowering,
-               InRangeCheckOpLowering<ada::RangeCheckOp>,
-               InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
-               IndexOpLowering, QualificationOpLowering<ada::UnwrapOp>,
-               QualificationOpLowering<ada::WrapOp>,
-               QualificationOpLowering<ada::RequalifyOp>>(typeConverter,
-                                                          &getContext());
+  patterns
+      .add<CallOpLowering, BinOpLowering, ComparisonLowering<ada::CmpOp>,
+           ComparisonLowering<ada::OverflowCheckOp>, UnOpLowering,
+           FunctionOpLowering, ConstantOpLowering, RangeOpLowering,
+           ConstraintErrorOpLowering, InRangeCheckOpLowering<ada::RangeCheckOp>,
+           InRangeCheckOpLowering<ada::IndexCheckOp>, AttrOpLowering,
+           IndexOpLowering, QualificationOpLowering<ada::UnwrapOp>,
+           QualificationOpLowering<ada::WrapOp>,
+           QualificationOpLowering<ada::RequalifyOp>>(typeConverter,
+                                                      &getContext());
   patterns
       .add<AllocaAdaTypedLowering, LoadAdaTypedLowering, StoreAdaTypedLowering>(
           typeConverter, &getContext(), PatternBenefit(2));

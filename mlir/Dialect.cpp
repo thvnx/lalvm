@@ -109,6 +109,12 @@ void AdaDialect::initialize() {
 // EnumTypeInfoAttr
 //===----------------------------------------------------------------------===//
 
+bool EnumTypeInfoAttr::hasPositionalRepresentation() const {
+  return llvm::all_of(llvm::enumerate(getValues()), [](auto entry) {
+    return entry.value() == static_cast<int64_t>(entry.index());
+  });
+}
+
 std::optional<int64_t> EnumTypeInfoAttr::enumRep(llvm::StringRef name) const {
   for (auto [n, v] : literals())
     if (n == name)
@@ -1092,6 +1098,14 @@ static void checkEffects(
     llvm::SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
   if (checks && *checks != AdaChecks{})
     effects.emplace_back(mlir::MemoryEffects::Write::get());
+}
+
+//===----------------------------------------------------------------------===//
+// OverflowCheckOp
+//===----------------------------------------------------------------------===//
+
+llvm::LogicalResult OverflowCheckOp::verify() {
+  return verifyNumeric(*this, machineTypeOf(getLhs().getType()));
 }
 
 //===----------------------------------------------------------------------===//

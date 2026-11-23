@@ -7,6 +7,7 @@
 #include "frontend/AST.h"
 #include "frontend/DiagnosticPrinter.h"
 #include "libadalang.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
@@ -233,6 +234,10 @@ private:
   // to the callee op (function type, procedure-vs-function).
   llvm::DenseMap<ada_base_node, mlir::ada::SubpOp> subpDecls;
   llvm::DenseMap<mlir::Operation *, llvm::SmallVector<ada_node>> subpFormals;
+
+  // Share each attribute's mapping across uses of the same base enumeration.
+  llvm::DenseMap<mlir::Operation *, llvm::StringMap<mlir::ada::SubpOp>>
+      enumAttributeFunctions;
 
   /// Return the canonical defining name for a defining-name node, collapsing
   /// spec/body and partial/full views. Falls back to the input on failure.
@@ -737,6 +742,11 @@ private:
   std::optional<mlir::Value> tryEmitStaticIntExpr(ada_node &expr) {
     if (!libadalang::isStaticExpr(expr))
       return std::nullopt;
+    // @todo Libadalang 26 confuses enumeration positions and representation
+    // codes. Keep executable expressions unfolded until its evaluator is fixed.
+    // Named numbers and type bounds still use that evaluator.
+    if (libadalang::containsAttribute(expr, {"pos", "val", "succ", "pred"}))
+      return std::nullopt;
     mlir::Location location = loc(expr);
     ada_node type_decl = resolveLiteralType(expr, location);
     if (ada_node_is_null(&type_decl))
@@ -1179,7 +1189,7 @@ private:
                              typeOp.getTypeInfoAttr())
                        : mlir::ada::IntegerTypeInfoAttr();
     auto bounds = info ? info.staticBounds() : std::nullopt;
-    if (info && !bounds) {
+    if (info && info.hasRange() && !bounds) {
       range = findDynamicRange(target.getAdaType());
       if (!range) {
         mlir::emitError(location, "no range descriptor in scope for '")
@@ -1493,7 +1503,9 @@ private:
                      libadalang::isStaticExpr(operand);
     bool realOperand =
         universal && libadalang::isRealTypeDecl(operandType.value());
-    if (universal && !realOperand) {
+    if (universal && !realOperand &&
+        !libadalang::containsAttribute(operand,
+                                       {"pos", "val", "succ", "pred"})) {
       // Evaluate universal integers exactly before converting (@rm{4-9}(35)).
       std::optional<llvm::APSInt> staticValue =
           libadalang::evalExprAsInt(operand);
@@ -1642,27 +1654,258 @@ private:
     return elt ? readObject(elt, loc(index)) : mlir::Value{};
   }
 
-  /// Emit a scalar attribute reference (@rm{3-5}): `'First`/`'Last` on an
-  /// integer subtype prefix. The decision is per bound: a static bound is read
-  /// straight from the subtype's `int_info` and emitted as a constant; a
-  /// dynamic bound is read at run time from the range descriptor elaborated at
-  /// the subtype declaration, via `ada.attr`. So `range 1 .. N` yields a
-  /// constant `'First` but a dynamic `'Last`.
+  /// Map a representation code to a position or a neighboring literal.
+  mlir::Value mapEnumAttribute(llvm::StringRef name, mlir::Value value,
+                               mlir::ada::TypeOp root,
+                               mlir::ada::EnumTypeInfoAttr info,
+                               mlir::ada::QualType resultType,
+                               mlir::Location location) {
+    auto values = info.getValues();
+    auto mappedValue = [&](size_t i) -> std::optional<int64_t> {
+      if (name == "pos")
+        return i;
+      if (name == "succ") {
+        if (i + 1 < values.size())
+          return values[i + 1];
+      } else if (i > 0) {
+        return values[i - 1];
+      }
+      return std::nullopt;
+    };
+    if (auto constant = value.getDefiningOp<mlir::ada::ConstantOp>()) {
+      auto code = constant.getIntValue().value().getExtValue();
+      auto it = llvm::find(values, code);
+      if (it != values.end())
+        if (auto result = mappedValue(it - values.begin()))
+          return emitIntConstant(llvm::APInt(64, *result), resultType,
+                                 location);
+    }
+
+    auto enumType = qualTypeFor(root, root.getMlirType());
+    auto &helper = enumAttributeFunctions[root][name];
+    if (!helper) {
+      mlir::OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointAfter(root);
+      auto symbol = makeUnique((root.getSymName() + "." + name).str());
+      auto signature = builder.getFunctionType({enumType}, {resultType});
+      helper =
+          mlir::ada::SubpOp::create(builder, root.getLoc(), symbol, signature);
+      helper.setPrivate();
+      auto loc = root.getLoc();
+      auto &body = helper.getBody();
+      auto &entry = body.front();
+      auto *invalid = builder.createBlock(&body);
+      mlir::ada::ConstraintErrorOp::create(
+          builder, loc, mlir::ada::AdaConstraintErrorKind::InvalidData);
+      llvm::SmallVector<llvm::APInt> codes;
+      llvm::SmallVector<mlir::Block *> cases;
+      for (auto [position, code] : llvm::enumerate(values)) {
+        codes.push_back(
+            builder.getIntegerAttr(root.getMlirType(), code).getValue());
+        cases.push_back(builder.createBlock(&body));
+        if (auto output = mappedValue(position)) {
+          auto result =
+              emitIntConstant(llvm::APInt(64, *output), resultType, loc);
+          mlir::ada::ReturnOp::create(builder, loc, result);
+        } else {
+          mlir::ada::ConstraintErrorOp::create(
+              builder, loc, mlir::ada::AdaConstraintErrorKind::Overflow);
+        }
+      }
+      builder.setInsertionPointToStart(&entry);
+      auto raw = unwrap(entry.getArgument(0), loc);
+      llvm::SmallVector<mlir::ValueRange> operands(cases.size());
+      mlir::cf::SwitchOp::create(builder, loc, raw, invalid, mlir::ValueRange{},
+                                 codes, cases, operands);
+    }
+    auto arg = mlir::ada::requalify(builder, location, value, enumType);
+    auto callee = mlir::FlatSymbolRefAttr::get(helper.getSymNameAttr());
+    return mlir::ada::CallOp::create(builder, location, callee, resultType, arg)
+        .getResult();
+  }
+
+  /// Check the endpoint before stepping in the enumeration's representation.
+  mlir::Value stepEnumeration(ada_node &expr, mlir::Value value,
+                              mlir::ada::QualType type,
+                              mlir::ada::EnumTypeInfoAttr info, bool character,
+                              bool successor) {
+    auto location = loc(expr);
+    auto machineType = mlir::cast<mlir::IntegerType>(type.getMlirType());
+    auto codes = info.getValues();
+    unsigned width = machineType.getWidth();
+    auto endpoint =
+        character
+            ? builder.getIntegerAttr(machineType,
+                                     successor ? llvm::APInt::getMaxValue(width)
+                                               : llvm::APInt::getZero(width))
+            : builder.getIntegerAttr(machineType,
+                                     successor ? codes.back() : codes.front());
+    auto bound =
+        mlir::ada::ConstantOp::create(builder, location, type, endpoint);
+    value = mlir::ada::requalify(builder, location, value, type);
+    auto checked = mlir::ada::OverflowCheckOp::create(
+        builder, location, type, mlir::ada::AdaRelationalOp::Eq, value, bound);
+    if (!character && codes.size() == 1)
+      return checked;
+    auto one = emitIntConstant(llvm::APInt(width, 1), type, location);
+    return mlir::ada::BinOp::create(builder, location, type,
+                                    successor ? mlir::ada::AdaBinaryOp::Plus
+                                              : mlir::ada::AdaBinaryOp::Minus,
+                                    checked, one, mlir::ada::AdaChecksAttr{});
+  }
+
+  mlir::ada::QualType getPositionType(ada_node &expr, mlir::Location location) {
+    ada_node declaration{};
+    if (!ada_ada_node_p_universal_int_type(&expr, &declaration) ||
+        ada_node_is_null(&declaration)) {
+      mlir::emitError(location, "failed to resolve position type");
+      return {};
+    }
+    return getAdaQualType(declaration, location);
+  }
+
+  /// Emit 'Pos, 'Val, 'Succ and 'Pred for discrete types (@rm{3-5-5},
+  /// @rm{3-5}).
+  /// Libadalang does not provide the correct bounds for predefined character
+  /// types'First and 'Last. Consequently, 'Succ and 'Pred use the 8 bit
+  /// representation bounds, and Wide_Character and Wide_Wide_Character
+  /// positions above 255 are unsupported.
+  mlir::Value mlirGenDiscreteAttribute(ada_node &expr, ada_node &subtype,
+                                       mlir::ada::TypeOp typeOp, ada_node &args,
+                                       llvm::StringRef name) {
+    auto location = loc(expr);
+    ada_node assoc{}, argument{};
+    if (ada_node_is_null(&args) || ada_node_children_count(&args) != 1 ||
+        !ada_node_child(&args, 0, &assoc) ||
+        !ada_param_assoc_f_r_expr(&assoc, &argument)) {
+      mlir::emitError(location, "'") << name << "' requires one argument";
+      return nullptr;
+    }
+    auto root = mlir::ada::rootOfAdaType(typeOp);
+    auto baseType = qualTypeFor(root, root.getMlirType());
+    if (!mlir::isa<mlir::IntegerType>(baseType.getMlirType())) {
+      // @todo Lower floating point 'Succ and 'Pred as adjacent machine values.
+      mlir::emitError(location, "'")
+          << name << "' is only supported on discrete types";
+      return nullptr;
+    }
+    auto info = mlir::dyn_cast_or_null<mlir::ada::EnumTypeInfoAttr>(
+        root.getTypeInfoAttr());
+    bool character = libadalang::isPredefinedCharacterType(subtype);
+    bool identity = !info || character || info.hasPositionalRepresentation();
+    mlir::Value value = visit_expr(argument);
+    if (!value)
+      return nullptr;
+    mlir::ada::QualType resultType;
+    if (name == "pos") {
+      auto resultDecl = libadalang::expressionType(expr);
+      if (!resultDecl)
+        return nullptr;
+      ada_node expected{};
+      if (!ada_expr_p_expected_expression_type(&expr, &expected) ||
+          ada_node_is_null(&expected))
+        expected = resultDecl.value();
+      expected = libadalang::canonicalType(expected).value_or(expected);
+      resultType = getAdaQualType(expected, location);
+      if (!resultType)
+        return nullptr;
+      if (identity)
+        return convertImplicitly(value, resultType, location);
+    }
+
+    unsigned width = baseType.getMlirType().getIntOrFloatBitWidth();
+    bool unsignedBase = mlir::ada::isUnsignedOrderQualType(root, baseType);
+    llvm::APSInt lo = llvm::APSInt::getMinValue(width, unsignedBase);
+    llvm::APSInt hi = llvm::APSInt::getMaxValue(width, unsignedBase);
+    bool stepping = name == "succ" || name == "pred";
+    if (stepping) {
+      if (!identity)
+        return mapEnumAttribute(name, value, root, info, baseType, location);
+      if (info)
+        return stepEnumeration(expr, value, baseType, info, character,
+                               name == "succ");
+      value = convertImplicitly(value, baseType, location);
+      if (!value)
+        return nullptr;
+      auto checks =
+          unsignedBase
+              ? mlir::ada::AdaChecksAttr{}
+              : mlir::ada::AdaChecksAttr::get(builder.getContext(),
+                                              mlir::ada::AdaChecks::Overflow);
+      auto one = emitIntConstant(llvm::APInt(width, 1), baseType, location);
+      return mlir::ada::BinOp::create(builder, location, baseType,
+                                      name == "succ"
+                                          ? mlir::ada::AdaBinaryOp::Plus
+                                          : mlir::ada::AdaBinaryOp::Minus,
+                                      value, one, checks);
+    }
+    if (name == "val" && info && !character)
+      return convertImplicitly(value, baseType, location);
+    // A conversion checks the modular base range or a full signed range.
+    if (name == "val" && !info) {
+      auto integer =
+          mlir::cast<mlir::ada::IntegerTypeInfoAttr>(root.getTypeInfoAttr());
+      if (integer.getModulus())
+        return convertImplicitly(value, baseType, location);
+      if (auto bounds = integer.staticBounds();
+          bounds && llvm::APSInt::isSameValue(bounds->first, lo) &&
+          llvm::APSInt::isSameValue(bounds->second, hi))
+        return convertImplicitly(value, baseType, location);
+    }
+
+    auto positionType = getPositionType(expr, location);
+    if (!positionType)
+      return nullptr;
+    // Work in position space, using the base range rather than prefix bounds.
+    mlir::Value position =
+        !identity
+            ? mapEnumAttribute(name, value, root, info, positionType, location)
+            : convertImplicitly(value, positionType, location);
+    if (!position)
+      return nullptr;
+    if (name == "pos")
+      return convertImplicitly(position, resultType, location);
+    unsigned positionWidth = positionType.getMlirType().getIntOrFloatBitWidth();
+    lo = lo.extOrTrunc(positionWidth);
+    hi = hi.extOrTrunc(positionWidth);
+    auto range = mlir::ada::getOrCreateStaticRange(
+        builder, location, positionType.getAdaType(), positionType, lo, hi);
+    position = mlir::ada::RangeCheckOp::create(builder, location, positionType,
+                                               position, range, false);
+    auto raw = mlir::ada::UnwrapOp::create(
+        builder, location, positionType.getMlirType(), position);
+    mlir::Value result = raw;
+    if (width < positionType.getMlirType().getIntOrFloatBitWidth())
+      result = mlir::arith::TruncIOp::create(builder, location,
+                                             baseType.getMlirType(), raw);
+    return mlir::ada::WrapOp::create(builder, location, baseType, result);
+  }
+
+  /// Emit scalar attributes (@rm{3-5}). Static bounds are constants, while
+  /// dynamic bounds come from the subtype's elaborated range descriptor.
   mlir::Value mlirGenAttributeRef(ada_node &expr) {
     mlir::Location location = loc(expr);
 
+    ada_node attribute = expr, args{};
+    if (ada_node_kind(&expr) == ada_call_expr) {
+      ada_call_expr_f_name(&expr, &attribute);
+      ada_call_expr_f_suffix(&expr, &args);
+    } else {
+      ada_attribute_ref_f_args(&attribute, &args);
+    }
     ada_node attrId;
-    ada_attribute_ref_f_attribute(&expr, &attrId);
+    ada_attribute_ref_f_attribute(&attribute, &attrId);
     std::string name = libadalang::getName(&attrId, /*canonical=*/true);
     // @todo Support the other scalar/enumeration attributes (@rm{3-5-5}):
-    //       'Pos, 'Val, 'Succ, 'Pred, 'Image, 'Value.
-    if (name != "first" && name != "last") {
+    //       'Image, 'Value.
+    if (name != "first" && name != "last" && name != "pos" && name != "val" &&
+        name != "succ" && name != "pred") {
       mlir::emitError(location, "unsupported attribute '") << name << "'";
       return nullptr;
     }
 
     ada_node prefix, subtype;
-    ada_attribute_ref_f_prefix(&expr, &prefix);
+    ada_attribute_ref_f_prefix(&attribute, &prefix);
     if (!ada_name_p_name_designated_type(&prefix, &subtype) ||
         ada_node_is_null(&subtype)) {
       mlir::emitError(location, "'") << name << "' prefix is not a subtype";
@@ -1672,6 +1915,8 @@ private:
     if (!type)
       return nullptr;
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(subtype, location);
+    if (name == "pos" || name == "val" || name == "succ" || name == "pred")
+      return mlirGenDiscreteAttribute(expr, subtype, typeOp, args, name);
     auto info = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
         typeOp ? typeOp.getTypeInfoAttr() : mlir::Attribute());
     if (!info) {
@@ -1766,6 +2011,10 @@ private:
     case ada_un_op:
       return mlirGenUnOp(expr);
     case ada_call_expr: {
+      ada_node name{};
+      ada_call_expr_f_name(&expr, &name);
+      if (ada_node_kind(&name) == ada_attribute_ref)
+        return mlirGenAttributeRef(expr);
       ada_call_expr_kind kind;
       if (!ada_call_expr_p_kind(&expr, &kind)) {
         mlir::emitError(loc(expr), "can't get kind of call expr");
@@ -2273,7 +2522,13 @@ private:
       // in LAL's Standard (-1 .. 1 standing for an infinite range) must
       // not be recorded.
       mlir::Attribute lower, upper;
-      if (!libadalang::isUniversalTypeDecl(type_decl)) {
+      if (libadalang::isRootIntegerTypeDecl(type_decl)) {
+        // Libadalang's root_integer range is a placeholder, like
+        // universal_integer.
+        unsigned bits = mlirType.getIntOrFloatBitWidth();
+        lower = minimalWidthIntAttr(llvm::APInt::getSignedMinValue(bits));
+        upper = minimalWidthIntAttr(llvm::APInt::getSignedMaxValue(bits));
+      } else if (!libadalang::isUniversalTypeDecl(type_decl)) {
         ada_internal_discrete_range range;
         if (ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
             !ada_node_is_null(&range.low_bound) &&
@@ -3346,6 +3601,8 @@ private:
     auto [lowNode, highNode] = *bounds;
 
     // A statically null range (`lo > hi`) provably runs zero iterations; warn.
+    // @todo Libadalang 26 evaluates enumeration 'Pos using representation
+    // codes, so this warning can report a nonempty range as null.
     if (libadalang::isStaticExpr(lowNode) && libadalang::isStaticExpr(highNode))
       if (auto staticLo = libadalang::evalExprAsInt(lowNode))
         if (auto staticHi = libadalang::evalExprAsInt(highNode))
@@ -4015,6 +4272,8 @@ private:
                                           &is_int) ||
         !is_int)
       return std::nullopt;
+    if (libadalang::isRootIntegerTypeDecl(canon_type))
+      return builder.getIntegerType(512);
     ada_internal_discrete_range range;
     if (!ada_base_type_decl_p_discrete_range(&canon_type, &range) ||
         ada_node_is_null(&range.low_bound) ||

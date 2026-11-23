@@ -39,6 +39,8 @@ def EnumTypeInfoAttr : AttrDef<Ada_Dialect, "EnumTypeInfo"> {
     /// Returns the integer representation value for the given enumerator name,
     /// or std::nullopt if not found.
     std::optional<int64_t> enumRep(::llvm::StringRef name) const;
+    /// Whether each literal's representation equals its position.
+    bool hasPositionalRepresentation() const;
     /// Returns a zip range of (StringRef name, int64_t value) pairs.
     auto literals() const {
       return llvm::zip_equal(getNames().getAsValueRange<::mlir::StringAttr>(),

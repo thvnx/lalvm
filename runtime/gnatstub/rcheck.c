@@ -30,3 +30,7 @@ _Noreturn void __gnat_rcheck_CE_Index_Check(const char *file, int line) {
 _Noreturn void __gnat_rcheck_CE_Divide_By_Zero(const char *file, int line) {
   raiseConstraintError(file, line, "divide by zero");
 }
+
+_Noreturn void __gnat_rcheck_CE_Invalid_Data(const char *file, int line) {
+  raiseConstraintError(file, line, "invalid data");
+}

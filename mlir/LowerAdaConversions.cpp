@@ -67,6 +67,27 @@ static Value changeRepresentation(PatternRewriter &rewriter, Location loc,
   return ada::WrapOp::create(rewriter, unnamed, targetQual, raw);
 }
 
+/// Map a checked position to the representation of its enumeration literal.
+static Value enumValue(OpBuilder &builder, Location loc, Value position,
+                       ada::QualType target, ada::EnumTypeInfoAttr info) {
+  auto inputType = cast<ada::QualType>(position.getType()).getMlirType();
+  auto outputType = cast<IntegerType>(target.getMlirType());
+  auto raw = ada::UnwrapOp::create(builder, loc, inputType, position);
+  Value result = arith::ConstantIntOp::create(builder, loc, outputType,
+                                              info.getValues().front());
+  for (auto [index, code] : llvm::enumerate(info.getValues())) {
+    if (index == 0 || !llvm::isUIntN(inputType.getIntOrFloatBitWidth(), index))
+      continue;
+    auto key = arith::ConstantOp::create(
+        builder, loc, builder.getIntegerAttr(inputType, index));
+    auto matches =
+        arith::CmpIOp::create(builder, loc, arith::CmpIPredicate::eq, raw, key);
+    auto mapped = arith::ConstantIntOp::create(builder, loc, outputType, code);
+    result = arith::SelectOp::create(builder, loc, matches, mapped, result);
+  }
+  return ada::WrapOp::create(builder, loc, target, result);
+}
+
 namespace {
 
 /// Lower a value conversion that keeps the machine representation: a range
@@ -172,7 +193,7 @@ struct RepresentationChangeConversion
     if (ada::IntegerTypeInfoAttr required =
             ada::intTypeInfoOfAdaType(op, target.getAdaType())) {
       bounds = required.staticBounds();
-      if (!bounds) {
+      if (!bounds && required.hasRange()) {
         // A dynamic bound: the value must first fit the target's base, then the
         // descriptor elaborated at the subtype declaration, which the
         // conversion carries.
@@ -188,6 +209,19 @@ struct RepresentationChangeConversion
       }
     }
 
+    // 'Val checks the position before converting it to a representation code.
+    ada::EnumTypeInfoAttr enumeration;
+    if (op.getKind() == ada::AdaConversionKind::Implicit &&
+        ada::intTypeInfoOfAdaType(op, source.getAdaType())) {
+      auto root = ada::lookupAdaType(op, targetBase);
+      if (root)
+        enumeration =
+            dyn_cast_or_null<ada::EnumTypeInfoAttr>(root.getTypeInfoAttr());
+      if (enumeration && !enumeration.getValues().empty())
+        bounds.emplace(APSInt::get(0),
+                       APSInt::get(enumeration.getValues().size() - 1));
+    }
+
     bool sourceUnsigned = ada::isUnsignedOrderQualType(op, source);
     bool check = false, preserving = false;
     if (bounds) {
@@ -197,7 +231,8 @@ struct RepresentationChangeConversion
       bool targetUnsigned = ada::isUnsignedOrderQualType(op, targetBaseQual);
       // Widening preserves every value, except a negative one into a modular
       // type.
-      preserving = targetType.getIntOrFloatBitWidth() >
+      preserving = !enumeration &&
+                   targetType.getIntOrFloatBitWidth() >
                        sourceType.getIntOrFloatBitWidth() &&
                    (sourceUnsigned || !targetUnsigned);
     }
@@ -222,9 +257,11 @@ struct RepresentationChangeConversion
       check = false;
     }
 
-    // Representation change, to the target's base type.
-    value = changeRepresentation(rewriter, loc, value, targetBaseQual,
-                                 sourceUnsigned, target.getAdaType());
+    if (enumeration && !enumeration.hasPositionalRepresentation())
+      value = enumValue(rewriter, loc, value, targetBaseQual, enumeration);
+    else
+      value = changeRepresentation(rewriter, loc, value, targetBaseQual,
+                                   sourceUnsigned, target.getAdaType());
 
     // Check after a preserving widening, which establishes the target subtype,
     // or against a dynamic range, or requalify.

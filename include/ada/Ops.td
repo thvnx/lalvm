@@ -461,6 +461,37 @@ def RangeOp : Ada_Op<"range", [Pure, AllTypesMatch<["low", "high"]>]> {
   let hasVerifier = 1;
 }
 
+// TODO: Add range and index kinds so these checks can use
+// ada.constraint_error to share the code that emits the runtime call.
+def AdaConstraintErrorKind : I32EnumAttr<"AdaConstraintErrorKind",
+    "Constraint_Error kind", [I32EnumAttrCase<"InvalidData", 0, "invalid_data">,
+                              I32EnumAttrCase<"Overflow", 1, "overflow">]> {
+  let cppNamespace = "::mlir::ada";
+}
+
+// Raise Constraint_Error and terminate the block.
+def ConstraintErrorOp : Ada_Op<"constraint_error", [Terminator]> {
+  let summary = "Raise Constraint_Error for the given kind";
+  let arguments = (ins AdaConstraintErrorKind:$kind);
+  let assemblyFormat = "$kind attr-dict";
+}
+
+// Compare a value with a bound and raise Constraint_Error on overflow.
+def OverflowCheckOp : Ada_Op<"overflow_check",
+    [AllTypesMatch<["lhs", "rhs", "result"]>]> {
+  let summary = "Raise Constraint_Error when the comparison is true";
+  let description = [{
+    Compares the operands using the given Ada relational operator. Returns
+    the left operand when the comparison is false.
+  }];
+  let arguments = (ins AdaRelationalOp:$kind, Ada_QualType:$lhs, Ada_QualType:$rhs);
+  let results = (outs Ada_QualType:$result);
+  let assemblyFormat = [{
+    custom<Operator>($kind) $lhs `,` $rhs attr-dict `:` qualified(type($lhs))
+  }];
+  let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // InRangeCheckOps
 //===----------------------------------------------------------------------===//

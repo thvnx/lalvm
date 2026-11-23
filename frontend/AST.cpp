@@ -4,6 +4,7 @@
 #include "frontend/AST.h"
 
 #include "frontend/DiagnosticPrinter.h"
+#include "llvm/ADT/STLExtras.h"
 
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -440,6 +441,23 @@ bool libadalang::isStaticExpr(ada_node &expr) {
          isStatic;
 }
 
+bool libadalang::containsAttribute(ada_node &expr,
+                                   llvm::ArrayRef<llvm::StringRef> names) {
+  if (ada_node_kind(&expr) == ada_attribute_ref) {
+    ada_node attribute{};
+    if (ada_attribute_ref_f_attribute(&expr, &attribute) &&
+        llvm::is_contained(names, getName(&attribute)))
+      return true;
+  }
+  for (unsigned i = 0, count = ada_node_children_count(&expr); i < count; ++i) {
+    ada_node child{};
+    if (ada_node_child(&expr, i, &child) && !ada_node_is_null(&child) &&
+        containsAttribute(child, names))
+      return true;
+  }
+  return false;
+}
+
 std::optional<llvm::APSInt> libadalang::evalExprAsInt(ada_node &expr) {
   ada_big_integer bigint;
   if (!ada_expr_p_eval_as_int(&expr, &bigint))
@@ -522,6 +540,14 @@ bool libadalang::isUniversalTypeDecl(ada_node &typeDecl) {
   return false;
 }
 
+bool libadalang::isRootIntegerTypeDecl(ada_node &typeDecl) {
+  ada_node name{};
+  return ada_basic_decl_p_defining_name(&typeDecl, &name) &&
+         !ada_node_is_null(&name) &&
+         canonicalFullyQualifiedName(name) ==
+             "standard.root_types_.root_integer";
+}
+
 bool libadalang::isRealTypeDecl(ada_node &typeDecl) {
   ada_bool result = false;
   return ada_base_type_decl_p_is_real_type(&typeDecl, &kNullOrigin, &result) &&
@@ -541,6 +567,22 @@ bool libadalang::isNumericTypeDecl(ada_node &typeDecl) {
     return true;
   return isRealTypeDecl(typeDecl);
 #endif
+}
+
+bool libadalang::isPredefinedCharacterType(ada_node &typeDecl) {
+  ada_node root{};
+  if (!ada_base_type_decl_p_root_type(&typeDecl, &kNullOrigin, &root) ||
+      ada_node_is_null(&root))
+    return false;
+  for (auto getCharacter :
+       {ada_ada_node_p_std_char_type, ada_ada_node_p_std_wide_char_type,
+        ada_ada_node_p_std_wide_wide_char_type}) {
+    ada_node standard{};
+    if (getCharacter(&typeDecl, &standard) && !ada_node_is_null(&standard) &&
+        ada_node_is_equivalent(&root, &standard))
+      return true;
+  }
+  return false;
 }
 
 bool libadalang::isArrayTypeDecl(ada_node &typeDecl) {
