@@ -9,7 +9,7 @@
 
 -- CHECK-LABEL: ada.subp @loop_scope
 -- CHECK:         cf.cond_br
--- CHECK:         ada.type @loop_scope.b.step_range base @standard.integer
+-- CHECK:         ada.type @loop_scope.b.step_range subtype @standard.integer
 -- CHECK-NOT:     @loop_scope.outer.
 
 function Loop_Scope (N : Integer) return Integer is

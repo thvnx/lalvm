@@ -5,11 +5,11 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.type' op base symbol 'proc' is not an ada.type
+// CHECK: error: 'ada.type' op parent symbol 'proc' is not an ada.type
 
 module {
   ada.subp @proc() {
     ada.return
   }
-  ada.type @small base @proc : i8 = #ada.int_info
+  ada.type @small subtype @proc : i8 = #ada.int_info
 }

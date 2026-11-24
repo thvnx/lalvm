@@ -49,7 +49,7 @@ struct IndexOpLowering : OpRewritePattern<ada::IndexOp> {
       auto subtype = ada::lookupAdaType(op, indexSym);
       if (!subtype)
         return rewriter.notifyMatchFailure(op, "unresolved index subtype");
-      auto base = subtype.getBaseAttr() ? subtype.getBaseAttr() : indexSym;
+      auto base = ada::baseOfAdaType(subtype, indexSym);
       auto machine = subtype.getMlirType();
       auto baseQual = ada::QualType::get(getContext(), machine, base);
       auto checkedQual = ada::QualType::get(getContext(), machine, indexSym);

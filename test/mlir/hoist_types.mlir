@@ -19,14 +19,14 @@ module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
   ada.subp @first() {
     ada.decls {
-      ada.type @first.local base @integer : i32
+      ada.type @first.local subtype @integer : i32
     }
     ada.return
   }
   ada.type @late : i8 = #ada.int_info<range -128 to 127>
   ada.subp @second() {
     ada.decls {
-      ada.type @second.local base @integer : i32
+      ada.type @second.local subtype @integer : i32
     }
     ada.return
   }

@@ -13,7 +13,7 @@
 
 module @wrapped_locations {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10> loc(fused[unknown, "type"("wrapped.adb":4:3)])
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 10> loc(fused[unknown, "type"("wrapped.adb":4:3)])
   ada.subp @wrapped_locations(
       %x: !ada.qual<i32, @integer> loc(fused[unknown, "x"("wrapped.adb":7:3)])) -> !ada.qual<i32, @integer> {
     %v = ada.binop "+" %x, %x : (!ada.qual<i32, @integer>, !ada.qual<i32, @integer>) -> !ada.qual<i32, @integer> loc(fused[unknown, "v"(fused[unknown, "wrapped.adb":9:3])])

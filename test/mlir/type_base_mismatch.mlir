@@ -3,9 +3,9 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.type' op base type 'integer' has different mlir_type
+// CHECK: error: 'ada.type' op parent type 'integer' has different mlir_type
 
 module {
   ada.type @integer : i32 = #ada.int_info
-  ada.type @small base @integer : i8 = #ada.int_info
+  ada.type @small subtype @integer : i8 = #ada.int_info
 }

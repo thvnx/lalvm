@@ -74,7 +74,7 @@ mlir::FlatSymbolRefAttr baseOfAdaType(mlir::Operation *from,
 /// The qualified base type, preserving the machine type, or null.
 QualType baseOfAdaType(mlir::Operation *from, QualType type);
 
-/// The root of an Ada type, following `base` links, or null.
+/// The root of an Ada type, following `subtype` links, or null.
 TypeOp rootOfAdaType(TypeOp typeOp);
 TypeOp rootOfAdaType(mlir::Operation *from, mlir::FlatSymbolRefAttr sym);
 
@@ -83,8 +83,8 @@ mlir::IntegerAttr modulusOfAdaType(TypeOp typeOp);
 mlir::IntegerAttr modulusOfAdaType(mlir::Operation *from,
                                    mlir::FlatSymbolRefAttr sym);
 
-/// The integer metadata of the Ada type `sym`, or of its base for a pure
-/// renaming, or null.
+/// The integer metadata of the Ada type `sym`, or inherited through subtype
+/// marks for a pure renaming, or null.
 IntegerTypeInfoAttr intTypeInfoOfAdaType(mlir::Operation *from,
                                          mlir::FlatSymbolRefAttr sym);
 

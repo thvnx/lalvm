@@ -7,7 +7,7 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 10>
   ada.type @float : f32 = #ada.float_info<digits 6>
 
   // CHECK-LABEL: ada.subp @objects

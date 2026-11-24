@@ -8,7 +8,7 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @vec_index base @integer : i32 = #ada.int_info<range 1 to 10>
+  ada.type @vec_index subtype @integer : i32 = #ada.int_info<range 1 to 10>
   ada.subp @bad(%i: !ada.qual<i32, @integer>) {
     %lo = ada.constant : !ada.qual<i32, @integer> = 1
     %hi = ada.constant : !ada.qual<i32, @integer> = 10

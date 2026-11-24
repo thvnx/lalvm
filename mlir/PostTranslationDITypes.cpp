@@ -193,7 +193,7 @@ static TypeOrigin typeOrigin(llvm::Module &llvmModule, llvm::DICompileUnit *cu,
 static llvm::DIType *basicTypeFor(llvm::DIBuilder &db,
                                   mlir::ada::TypeOp typeOp) {
   typeOp = mlir::ada::rootOfAdaType(typeOp);
-  if (!typeOp || typeOp.getBaseAttr())
+  if (!typeOp || typeOp.isSubtype())
     return nullptr;
   auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
       typeOp.getTypeInfoAttr());
@@ -331,7 +331,7 @@ static void buildSubrangeDITypes(llvm::Module &llvmModule,
   module.walk([&](mlir::ada::TypeOp typeOp) {
     auto intInfo = mlir::dyn_cast_or_null<mlir::ada::IntegerTypeInfoAttr>(
         typeOp.getTypeInfoAttr());
-    if (intInfo && typeOp.getBaseAttr() && intInfo.hasRange() &&
+    if (intInfo && typeOp.isSubtype() && intInfo.hasRange() &&
         mlir::isa<mlir::IntegerType>(typeOp.getMlirType()))
       subtypeOps.push_back(typeOp);
   });

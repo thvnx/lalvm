@@ -9,12 +9,12 @@
 module {
   ada.type @tiny : i8 = #ada.int_info<range -100 to 100>
   ada.type @short_integer : i16 = #ada.int_info<range -32768 to 32767>
-  ada.type @negative base @short_integer : i16 = #ada.int_info<range -100 to -1>
+  ada.type @negative subtype @short_integer : i16 = #ada.int_info<range -100 to -1>
   ada.type @word : i16 = #ada.int_info<mod 65536>
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
+  ada.type @positive subtype @integer : i32 = #ada.int_info<range 1 to 2147483647>
   ada.type @long_integer : i64 = #ada.int_info<range -9223372036854775808 to 9223372036854775807>
-  ada.type @small base @long_integer : i64 = #ada.int_info<range 0 to 100>
+  ada.type @small subtype @long_integer : i64 = #ada.int_info<range 0 to 100>
   ada.type @float : f32 = #ada.float_info<digits 6>
   ada.type @long_float : f64 = #ada.float_info<digits 15>
   ada.type @my_float : f32 = #ada.float_info<digits 6>
@@ -170,7 +170,7 @@ module {
     %lo = ada.constant : !ada.qual<i32, @integer> = 1
     %r = ada.range %lo, %n : !ada.qual<i32, @integer> -> !ada.range<i32, @widen_dynamic.s>
     ada.decls {
-      ada.type @widen_dynamic.s base @integer : i32 = #ada.int_info<range 1 to ?>
+      ada.type @widen_dynamic.s subtype @integer : i32 = #ada.int_info<range 1 to ?>
     }
     %c = ada.convert explicit %v, %r : !ada.qual<i16, @short_integer> to !ada.qual<i32, @widen_dynamic.s>
     ada.return %c : !ada.qual<i32, @widen_dynamic.s>
@@ -191,7 +191,7 @@ module {
     %lo = ada.constant : !ada.qual<i32, @integer> = 1
     %r = ada.range %lo, %n : !ada.qual<i32, @integer> -> !ada.range<i32, @narrow_dynamic.s>
     ada.decls {
-      ada.type @narrow_dynamic.s base @integer : i32 = #ada.int_info<range 1 to ?>
+      ada.type @narrow_dynamic.s subtype @integer : i32 = #ada.int_info<range 1 to ?>
     }
     %c = ada.convert explicit %v, %r : !ada.qual<i64, @long_integer> to !ada.qual<i32, @narrow_dynamic.s>
     ada.return %c : !ada.qual<i32, @narrow_dynamic.s>
@@ -250,7 +250,7 @@ module {
     %lo = ada.constant : !ada.qual<i16, @word> = 1
     %r = ada.range %lo, %n : !ada.qual<i16, @word> -> !ada.range<i16, @narrow_modular_dynamic.s>
     ada.decls {
-      ada.type @narrow_modular_dynamic.s base @word : i16 = #ada.int_info<range 1 to ?>
+      ada.type @narrow_modular_dynamic.s subtype @word : i16 = #ada.int_info<range 1 to ?>
     }
     %c = ada.convert explicit %v, %r : !ada.qual<i32, @integer> to !ada.qual<i16, @narrow_modular_dynamic.s>
     ada.return %c : !ada.qual<i16, @narrow_modular_dynamic.s>

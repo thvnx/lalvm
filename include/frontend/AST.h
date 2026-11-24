@@ -163,6 +163,9 @@ unsigned arrayNdims(ada_node &arrayType);
 std::optional<ada_node> typeDefOfKind(ada_node &typeDecl,
                                       ada_node_kind_enum kind);
 
+/// Return the base type of `typeDecl` or `std::nullopt` when resolution fails.
+std::optional<ada_node> baseType(ada_node &typeDecl);
+
 /// Return the canonical type of `typeDecl` (for subtypes, it will return the
 /// base type), or `std::nullopt` when resolution fails.
 std::optional<ada_node> canonicalType(ada_node &typeDecl);

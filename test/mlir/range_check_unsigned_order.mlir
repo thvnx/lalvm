@@ -16,9 +16,9 @@
 // CHECK-NEXT:    icmp sgt i2 %0, 1
 module {
   ada.type @character : i8 = #ada.enum_info<"a" = 97, "y_diaeresis" = 255>
-  ada.type @latin_upper base @character : i8 = #ada.enum_info<range 192 to 255>
+  ada.type @latin_upper subtype @character : i8 = #ada.enum_info<range 192 to 255>
   ada.type @signed : i2 = #ada.enum_info<"neg" = -1, "zero" = 0, "pos" = 1>
-  ada.type @nonnegative base @signed : i2 = #ada.enum_info<range 0 to 1>
+  ada.type @nonnegative subtype @signed : i2 = #ada.enum_info<range 0 to 1>
 
   ada.subp @upper(%c: !ada.qual<i8, @character>) -> !ada.qual<i8, @latin_upper> {
     %lo = ada.constant : !ada.qual<i8, @character> = -64

@@ -6,7 +6,7 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.type' op base type 'outer.t' has different mlir_type
+// CHECK: error: 'ada.type' op parent type 'outer.t' has different mlir_type
 
 module {
   ada.subp @outer() {
@@ -14,7 +14,7 @@ module {
       ada.type @outer.t : i32 = #ada.int_info<range 0 to 9>
       ada.subp private @outer.inner() {
         ada.decls {
-          ada.type @outer.inner.s base @outer.t : i8 = #ada.int_info<range 0 to 9>
+          ada.type @outer.inner.s subtype @outer.t : i8 = #ada.int_info<range 0 to 9>
         }
         ada.return
       }

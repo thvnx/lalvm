@@ -8,6 +8,7 @@
 // Prefer a single builder per op to keep the generated docs warning-free.
 
 #include "ada/Dialect.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
@@ -278,19 +279,22 @@ void IntegerTypeInfoAttr::print(mlir::AsmPrinter &p) const {
 /// @param mlirType   Corresponding MLIR type wrapped in a `TypeAttr`.
 /// @param typeInfo   Kind-specific metadata. One of the Ada dialect type info
 ///                   attributes, or null (unconstrained subtype).
-/// @param base       Canonical base type symbol. Null when the type is its own
-///                   base.
+/// @param parent     Immediate subtype mark, or null for a type declaration.
 void TypeOp::build(mlir::OpBuilder &odsBuilder, mlir::OperationState &odsState,
                    llvm::StringRef name, mlir::Type mlirType,
-                   mlir::Attribute typeInfo, mlir::FlatSymbolRefAttr base) {
+                   mlir::Attribute typeInfo, mlir::FlatSymbolRefAttr parent) {
   odsState.addAttribute(getSymNameAttrName(odsState.name),
                         odsBuilder.getStringAttr(name));
   odsState.addAttribute(getMlirTypeAttrName(odsState.name),
                         mlir::TypeAttr::get(mlirType));
   if (typeInfo)
     odsState.addAttribute(getTypeInfoAttrName(odsState.name), typeInfo);
-  if (base)
-    odsState.addAttribute(getBaseAttrName(odsState.name), base);
+  if (parent) {
+    odsState.addAttribute(getKindAttrName(odsState.name),
+                          odsBuilder.getI32IntegerAttr(
+                              static_cast<int32_t>(AdaTypeKind::Subtype)));
+    odsState.addAttribute(getParentAttrName(odsState.name), parent);
+  }
 }
 
 bool TypeOp::isAnonymous() {
@@ -301,18 +305,32 @@ bool TypeOp::hasDefaultValue() {
   for (TypeOp type = *this; type;) {
     if (type.getHasDefaultValueAttr())
       return true;
-    auto base = type.getBaseAttr();
+    auto base = type.getParentAttr();
     type = base ? lookupAdaType(type, base) : TypeOp{};
   }
   return false;
 }
 
+TypeOp TypeOp::getConstraintType() {
+  TypeOp type = *this;
+  while (type.isSubtype() && !type.getTypeInfoAttr()) {
+    auto parent = lookupAdaType(type, type.getParentAttr());
+    if (!parent)
+      break;
+    type = parent;
+  }
+  return type;
+}
+
 bool TypeOp::hasDynamicRange() {
-  auto info = mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(getTypeInfoAttr());
-  return info && !info.staticBounds();
+  auto info = mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(
+      getConstraintType().getTypeInfoAttr());
+  return info && info.hasRange() && !info.staticBounds();
 }
 
 llvm::LogicalResult TypeOp::verify() {
+  if (static_cast<bool>(getKindAttr()) != static_cast<bool>(getParentAttr()))
+    return emitOpError("kind and parent must be specified together");
   if (mlir::Attribute info = getTypeInfoAttr()) {
     if (!mlir::isa<EnumTypeInfoAttr, IntegerTypeInfoAttr, FloatTypeInfoAttr,
                    ArrayTypeInfoAttr>(info))
@@ -359,9 +377,9 @@ llvm::LogicalResult TypeOp::verify() {
         }
       }
     }
-  } else if (!getBaseAttr()) {
+  } else if (!isSubtype()) {
     return emitOpError()
-           << "type without a base must carry a type_info attribute";
+           << "non-subtype declaration must carry a type_info attribute";
   }
   return mlir::success();
 }
@@ -381,19 +399,19 @@ TypeOp::verifySymbolUses(mlir::SymbolTableCollection &symbolTables) {
                << "array component '" << arrayInfo.getComponent().getValue()
                << "' has mlir_type " << compOp.getMlirType() << ", expected "
                << arrayType.getComponentType();
-  if (auto base = getBaseAttr()) {
+  if (auto parent = getParentAttr()) {
     // Best-effort cross-check: hoisting moves type symbols across scopes
-    // mid-pipeline, so an unresolved base is not an error here.
+    // mid-pipeline, so an unresolved parent is not an error here.
     auto *sym =
-        lookupSymbolFrom(getOperation(), base.getValue(), &symbolTables);
-    if (auto baseOp = mlir::dyn_cast_or_null<TypeOp>(sym)) {
-      if (baseOp.getMlirType() != getMlirType())
+        lookupSymbolFrom(getOperation(), parent.getValue(), &symbolTables);
+    if (auto parentOp = mlir::dyn_cast_or_null<TypeOp>(sym)) {
+      if (parentOp.getMlirType() != getMlirType())
         return emitOpError()
-               << "base type '" << base.getValue()
-               << "' has different mlir_type (" << baseOp.getMlirType()
+               << "parent type '" << parent.getValue()
+               << "' has different mlir_type (" << parentOp.getMlirType()
                << " vs " << getMlirType() << ")";
     } else if (sym) {
-      return emitOpError() << "base symbol '" << base.getValue()
+      return emitOpError() << "parent symbol '" << parent.getValue()
                            << "' is not an ada.type";
     }
   }
@@ -411,7 +429,7 @@ static mlir::Value createDefaultObjectValue(mlir::Operation *op,
   if (auto integerType = mlir::dyn_cast<mlir::IntegerType>(machineType)) {
     auto typeOp = lookupAdaType(op, typedType.getAdaType());
     if (typeOp) {
-      auto info = typeOp.getTypeInfoAttr();
+      auto info = typeOp.getConstraintType().getTypeInfoAttr();
       if (auto integer = mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(info)) {
         if (auto bounds = integer.staticBounds()) {
           llvm::APSInt zero(llvm::APInt(1, 0));
@@ -765,7 +783,7 @@ llvm::LogicalResult ConvertOp::verifySymbolUses(mlir::SymbolTableCollection &) {
   if (getRange() || getInput().getType() == target)
     return mlir::success();
   TypeOp typeOp = lookupAdaType(*this, target.getAdaType());
-  if (!typeOp || !typeOp.getBaseAttr())
+  if (!typeOp || !typeOp.isSubtype())
     return mlir::success();
   if (typeOp.hasDynamicRange())
     return emitOpError() << "target subtype " << target.getAdaType()
@@ -1472,7 +1490,9 @@ mlir::FlatSymbolRefAttr mlir::ada::baseOfAdaType(mlir::Operation *from,
   TypeOp typeOp = lookupAdaType(from, sym);
   if (!typeOp)
     return {};
-  return typeOp.getBaseAttr() ? typeOp.getBaseAttr() : sym;
+  auto root = rootOfAdaType(typeOp);
+  return root ? mlir::FlatSymbolRefAttr::get(root.getSymNameAttr())
+              : mlir::FlatSymbolRefAttr{};
 }
 
 QualType mlir::ada::baseOfAdaType(mlir::Operation *from, QualType type) {
@@ -1482,8 +1502,8 @@ QualType mlir::ada::baseOfAdaType(mlir::Operation *from, QualType type) {
 }
 
 TypeOp mlir::ada::rootOfAdaType(TypeOp typeOp) {
-  while (typeOp && typeOp.getBaseAttr()) {
-    TypeOp baseOp = lookupAdaType(typeOp, typeOp.getBaseAttr());
+  while (typeOp && typeOp.isSubtype()) {
+    TypeOp baseOp = lookupAdaType(typeOp, typeOp.getParentAttr());
     if (!baseOp)
       break;
     typeOp = baseOp;
@@ -1515,17 +1535,9 @@ IntegerTypeInfoAttr
 mlir::ada::intTypeInfoOfAdaType(mlir::Operation *from,
                                 mlir::FlatSymbolRefAttr sym) {
   TypeOp typeOp = lookupAdaType(from, sym);
-  if (!typeOp)
-    return {};
-  if (auto info =
-          mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
-    return info;
-  if (!typeOp.getBaseAttr())
-    return {};
-  TypeOp baseOp = lookupAdaType(typeOp, typeOp.getBaseAttr());
-  return baseOp ? mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(
-                      baseOp.getTypeInfoAttr())
-                : IntegerTypeInfoAttr();
+  return typeOp ? mlir::dyn_cast_or_null<IntegerTypeInfoAttr>(
+                      typeOp.getConstraintType().getTypeInfoAttr())
+                : IntegerTypeInfoAttr{};
 }
 
 bool mlir::ada::inStaticRange(const llvm::APSInt &value, const llvm::APSInt &lo,

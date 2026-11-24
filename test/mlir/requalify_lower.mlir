@@ -7,8 +7,8 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @natural base @integer : i32 = #ada.int_info<range 0 to 2147483647>
-  ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
+  ada.type @natural subtype @integer : i32 = #ada.int_info<range 0 to 2147483647>
+  ada.type @positive subtype @integer : i32 = #ada.int_info<range 1 to 2147483647>
 
   // CHECK-LABEL: define i32 @_ada_chain(
   // CHECK-NEXT:    ret i32 %0

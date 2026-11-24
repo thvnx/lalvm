@@ -10,7 +10,7 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 10>
   ada.subp @neg(%a: !ada.qual<i32, @small>) -> !ada.qual<i32, @integer> {
     %0 = ada.unop "-" %a checks<overflow> : (!ada.qual<i32, @small>) -> !ada.qual<i32, @integer>
     %1 = ada.unop "abs" %0 checks<overflow> : (!ada.qual<i32, @integer>) -> !ada.qual<i32, @integer>

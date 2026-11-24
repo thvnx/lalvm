@@ -615,6 +615,14 @@ std::optional<ada_node> libadalang::typeDefOfKind(ada_node &typeDecl,
   return std::nullopt;
 }
 
+std::optional<ada_node> libadalang::baseType(ada_node &typeDecl) {
+  ada_node base = {};
+  if (ada_base_type_decl_p_base_type(&typeDecl, &kNullOrigin, &base) &&
+      !ada_node_is_null(&base))
+    return base;
+  return std::nullopt;
+}
+
 std::optional<ada_node> libadalang::canonicalType(ada_node &typeDecl) {
   ada_node canon = {};
   if (ada_base_type_decl_p_canonical_type(&typeDecl, &kNullOrigin, &canon) &&

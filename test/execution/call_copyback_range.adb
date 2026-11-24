@@ -16,8 +16,9 @@
 procedure Call_Copyback_Range is
    procedure Run (N : Integer) is
       subtype Small is Integer range 1 .. N;
+      subtype Alias is Small;
       X : Integer := 0;
-      Y : Small := 1;
+      Y : Alias := 1;
       procedure Update (A, B : out Integer) is
       begin
          A := 2;
@@ -29,7 +30,7 @@ procedure Call_Copyback_Range is
       -- CALL: %[[RESULTS:.*]]:2 = call @call_copyback_range__run__update()
       -- CALL-NEXT: %[[A:.*]] = ada.convert implicit %[[RESULTS]]#0
       -- CALL-NEXT: ada.write %[[A]], %{{.*}}
-      -- CALL-NEXT: %[[B:.*]] = ada.convert implicit %[[RESULTS]]#1, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @call_copyback_range.run.small>
+      -- CALL-NEXT: %[[B:.*]] = ada.convert implicit %[[RESULTS]]#1, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @call_copyback_range.run.alias>
       -- CALL-NEXT: ada.write %[[B]], %{{.*}}
       -- CHECK: raised CONSTRAINT_ERROR : call_copyback_range.adb:[[#@LINE+1]] range check failed
       Update (X, Y);

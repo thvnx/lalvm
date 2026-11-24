@@ -8,9 +8,9 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 10>
   ada.type @defaulted : i32 = #ada.int_info<range -2147483648 to 2147483647> {has_default_value}
-  ada.type @defaulted_small base @defaulted : i32 = #ada.int_info<range 1 to 10>
+  ada.type @defaulted_small subtype @defaulted : i32 = #ada.int_info<range 1 to 10>
 
   // Out has no input. In out receives a checked value and its own object.
   // CALLEE-LABEL: func.func @_ada_procedure(

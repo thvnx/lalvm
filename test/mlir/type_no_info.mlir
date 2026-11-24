@@ -3,7 +3,7 @@
 
 // RUN: %not %lalvm --emit=mlir %s 2>&1 | %FileCheck %s
 
-// CHECK: error: 'ada.type' op type without a base must carry a type_info attribute
+// CHECK: error: 'ada.type' op non-subtype declaration must carry a type_info attribute
 
 module {
   ada.type @orphan : i32

@@ -20,7 +20,7 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 10>
   ada.type @short : i16 = #ada.int_info<range -32768 to 32767>
   ada.subp @named(%v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @small> {
     %c = ada.convert implicit %v : !ada.qual<i32, @integer> to !ada.qual<i32, @small> loc("x"("f.adb":3:5))

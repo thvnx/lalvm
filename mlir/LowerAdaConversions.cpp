@@ -110,16 +110,17 @@ struct SameRepresentationConversion : public OpRewritePattern<ada::ConvertOp> {
     ada::TypeOp targetOp = ada::lookupAdaType(op, target.getAdaType());
     if (!targetOp)
       return rewriter.notifyMatchFailure(op, "unresolved target type");
-    FlatSymbolRefAttr base = targetOp.getBaseAttr();
-    if ((base ? base : target.getAdaType()) !=
-        ada::baseOfAdaType(op, source.getAdaType()))
+    FlatSymbolRefAttr base = ada::baseOfAdaType(op, target.getAdaType());
+    if (base != ada::baseOfAdaType(op, source.getAdaType()))
       return rewriter.notifyMatchFailure(op, "different or unresolved bases");
 
-    Attribute info = base ? targetOp.getTypeInfoAttr() : Attribute{};
+    Attribute info = targetOp.isSubtype()
+                         ? targetOp.getConstraintType().getTypeInfoAttr()
+                         : Attribute{};
     std::optional<std::pair<APSInt, APSInt>> bounds;
     if (auto integer = dyn_cast_or_null<ada::IntegerTypeInfoAttr>(info)) {
       bounds = integer.staticBounds();
-      if (!bounds) {
+      if (!bounds && integer.hasRange()) {
         // A dynamic bound: check against the descriptor elaborated at the
         // subtype declaration, which the conversion carries.
         Value range = op.getRange();

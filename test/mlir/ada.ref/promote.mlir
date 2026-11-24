@@ -5,7 +5,7 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 10>
   ada.type @nonzero : i32 = #ada.int_info<range 5 to 10>
 
   // The initializer is defined inside the entry block, not at its start.

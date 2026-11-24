@@ -8,7 +8,7 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 10>
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 10>
   ada.type @array : !ada.array<i32[i32 x 10]> = #ada.array_info<component @small, dim @integer range 1 to 10>
 
   // LOWER-LABEL: func.func @_ada_element
@@ -53,7 +53,7 @@ module {
   }
 
   ada.type @byte : i8 = #ada.int_info<mod 256>
-  ada.type @upper_byte base @byte : i8 = #ada.int_info<range 128 to 255>
+  ada.type @upper_byte subtype @byte : i8 = #ada.int_info<range 128 to 255>
   ada.type @bytes : !ada.array<i32[i8 x 128]> = #ada.array_info<component @integer, dim @upper_byte range 128 to 255>
 
   // Recognize an existing check even when its bounds set the machine sign bit.

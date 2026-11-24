@@ -7,9 +7,9 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @natural base @integer : i32 = #ada.int_info<range 0 to 2147483647>
-  ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
-  ada.type @int base @integer : i32
+  ada.type @natural subtype @integer : i32 = #ada.int_info<range 0 to 2147483647>
+  ada.type @positive subtype @integer : i32 = #ada.int_info<range 1 to 2147483647>
+  ada.type @int subtype @integer : i32
 
   // CHECK-LABEL: IR Dump After {{.*}}ada-lower-conversions
 
@@ -82,7 +82,7 @@ module {
     %lo = ada.constant : !ada.qual<i32, @integer> = 1
     %r = ada.range %lo, %n : !ada.qual<i32, @integer> -> !ada.range<i32, @to_dynamic.s>
     ada.decls {
-      ada.type @to_dynamic.s base @integer : i32 = #ada.int_info<range 1 to ?>
+      ada.type @to_dynamic.s subtype @integer : i32 = #ada.int_info<range 1 to ?>
     }
     %c = ada.convert implicit %v, %r : !ada.qual<i32, @integer> to !ada.qual<i32, @to_dynamic.s>
     ada.return %c : !ada.qual<i32, @to_dynamic.s>
@@ -98,7 +98,7 @@ module {
     %lo = ada.constant : !ada.qual<i32, @integer> = 1
     %r = ada.range %lo, %n : !ada.qual<i32, @integer> -> !ada.range<i32, @outer.s>
     ada.decls {
-      ada.type @outer.s base @integer : i32 = #ada.int_info<range 1 to ?>
+      ada.type @outer.s subtype @integer : i32 = #ada.int_info<range 1 to ?>
       ada.subp private @outer.inner(%x: !ada.qual<i32, @integer>) -> !ada.qual<i32, @outer.s> {
         %c = ada.convert implicit %x, %r : !ada.qual<i32, @integer> to !ada.qual<i32, @outer.s>
         ada.return %c : !ada.qual<i32, @outer.s>

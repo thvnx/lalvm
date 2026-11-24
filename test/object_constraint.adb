@@ -11,11 +11,12 @@
 -- CHECK:         ada.range {{.*}} -> !ada.range<i32, @object_constraint.__anonymous_z>
 -- CHECK:         ada.object : !ada.ref<!ada.qual<i32, @object_constraint.__anonymous_z>>
 -- CHECK:         ada.decls {
--- CHECK-DAG:       ada.type @object_constraint.__anonymous_y base @standard.integer : i32 = #ada.int_info<range 1 to ?>
--- CHECK-DAG:       ada.type @object_constraint.__anonymous_z base @standard.integer : i32 = #ada.int_info<range 1 to ?>
+-- CHECK-DAG:       ada.type @object_constraint.__anonymous_y subtype @object_constraint.s : i32 = #ada.int_info<range 1 to ?>
+-- CHECK-DAG:       ada.type @object_constraint.__anonymous_z subtype @object_constraint.s : i32 = #ada.int_info<range 1 to ?>
 
 procedure Object_Constraint (N : Integer) is
-   Y, Z : Integer range 1 .. N;
+   subtype S is Positive;
+   Y, Z : S range 1 .. N;
 begin
    null;
 end Object_Constraint;

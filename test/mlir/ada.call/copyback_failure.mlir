@@ -30,7 +30,7 @@
 // check, and A's assignment follows that check.
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @small base @integer : i32 = #ada.int_info<range 1 to 5>
+  ada.type @small subtype @integer : i32 = #ada.int_info<range 1 to 5>
   ada.subp @target(%a: !ada.ref<!ada.qual<i32, @integer>> {ada.mode = #ada<mode out>}, %b: !ada.ref<!ada.qual<i32, @integer>> {ada.mode = #ada<mode out>}, %c: !ada.ref<!ada.qual<i32, @integer>> {ada.mode = #ada<mode out>}) {
     %two = ada.constant : !ada.qual<i32, @integer> = 2
     %six = ada.constant : !ada.qual<i32, @integer> = 6

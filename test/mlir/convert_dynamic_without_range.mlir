@@ -9,7 +9,7 @@
 
 module {
   ada.type @integer : i32 = #ada.int_info<range -2147483648 to 2147483647>
-  ada.type @s base @integer : i32 = #ada.int_info<range 1 to ?>
+  ada.type @s subtype @integer : i32 = #ada.int_info<range 1 to ?>
   ada.subp @bad(%v: !ada.qual<i32, @integer>) -> !ada.qual<i32, @s> {
     %c = ada.convert implicit %v : !ada.qual<i32, @integer> to !ada.qual<i32, @s>
     ada.return %c : !ada.qual<i32, @s>

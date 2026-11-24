@@ -194,7 +194,8 @@ static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   // Subtypes that carry no range of their own (no literals/representation)
   // are described as their base type. Base links are acyclic by construction.
   if (!typeOp.getTypeInfoAttr() || (enumInfo && enumInfo.getNames().empty())) {
-    auto baseAttr = typeOp.getBaseAttr();
+    auto baseAttr =
+        typeOp.isSubtype() ? typeOp.getParentAttr() : FlatSymbolRefAttr{};
     if (!baseAttr)
       return {};
     auto baseOp = ada::lookupAdaType(typeOp, baseAttr);
@@ -217,8 +218,8 @@ static LLVM::DITypeAttr makeDITypeAttr(MLIRContext *ctx, ada::TypeOp typeOp) {
   // bounds.
   if (auto intInfo =
           dyn_cast<ada::IntegerTypeInfoAttr>(typeOp.getTypeInfoAttr()))
-    if (typeOp.getBaseAttr() && intInfo.hasRange()) {
-      auto baseOp = ada::lookupAdaType(typeOp, typeOp.getBaseAttr());
+    if (typeOp.isSubtype() && intInfo.hasRange()) {
+      auto baseOp = ada::lookupAdaType(typeOp, typeOp.getParentAttr());
       return makeDISubrangeStub(ctx, typeOp,
                                 baseOp ? makeDITypeAttr(ctx, baseOp)
                                        : LLVM::DITypeAttr());
@@ -765,7 +766,8 @@ struct AdaDebugInfoPass
         // (the same node the subrange's baseType uses), not a generic
         // integer_N.
         LLVM::DITypeAttr boundType;
-        if (auto baseAttr = subtypeOp.getBaseAttr())
+        if (auto baseAttr = subtypeOp.isSubtype() ? subtypeOp.getParentAttr()
+                                                  : FlatSymbolRefAttr{})
           if (auto baseOp = ada::lookupAdaType(subtypeOp, baseAttr))
             boundType = makeDITypeAttr(ctx, baseOp);
         if (!boundType)

@@ -8,7 +8,7 @@
 -- MLIR:         %[[LO:.*]] = ada.constant : !ada.qual<i32, @standard.integer> = 1
 -- MLIR:         ada.range %[[LO]], %{{.*}} : !ada.qual<i32, @standard.integer> -> !ada.range<i32, @subtype_dynamic.s>
 -- MLIR:         ada.decls {
--- MLIR-NEXT:      ada.type @subtype_dynamic.s base @standard.integer : i32 = #ada.int_info<range 1 to ?>
+-- MLIR-NEXT:      ada.type @subtype_dynamic.s subtype @standard.integer : i32 = #ada.int_info<range 1 to ?>
 
 -- LLVM-LABEL: define i32 @_ada_subtype_dynamic(
 

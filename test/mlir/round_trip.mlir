@@ -34,14 +34,14 @@ module {
   // CHECK: ada.type @dyn_both : i32 = #ada.int_info<range ? to ?>
   ada.type @dyn_both : i32 = #ada.int_info<range ? to ?>
 
-  // CHECK: ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
-  ada.type @positive base @integer : i32 = #ada.int_info<range 1 to 2147483647>
+  // CHECK: ada.type @positive subtype @integer : i32 = #ada.int_info<range 1 to 2147483647>
+  ada.type @positive subtype @integer : i32 = #ada.int_info<range 1 to 2147483647>
 
-  // CHECK: ada.type @int_alias base @integer : i32{{$}}
-  ada.type @int_alias base @integer : i32
+  // CHECK: ada.type @int_alias subtype @integer : i32{{$}}
+  ada.type @int_alias subtype @integer : i32
 
-  // CHECK: ada.type @mid base @color : i8 = #ada.enum_info<range 1 to ?>
-  ada.type @mid base @color : i8 = #ada.enum_info<range 1 to ?>
+  // CHECK: ada.type @mid subtype @color : i8 = #ada.enum_info<range 1 to ?>
+  ada.type @mid subtype @color : i8 = #ada.enum_info<range 1 to ?>
 
   // CHECK: ada.type @float : f32 = #ada.float_info<digits 6>
   ada.type @float : f32 = #ada.float_info<digits 6>
