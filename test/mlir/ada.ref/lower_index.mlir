@@ -45,7 +45,7 @@ module {
   // INDEXING-LABEL: func.func @_ada_unused(
   // INDEXING: ada.index_check
   // LLVM-LABEL: define void @_ada_unused(
-  // LLVM: call void @__gnat_rcheck_CE_Index_Check
+  // LLVM: call void @__lalvm_rcheck_CE_Index_Check
   ada.subp @unused(%index: !ada.qual<i32, @integer>) {
     %array = ada.object : !ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>
     %element = ada.index %array[%index] : (!ada.ref<!ada.qual<!ada.array<i32[i32 x 10]>, @array>>, !ada.qual<i32, @integer>) -> !ada.ref<!ada.qual<i32, @small>>
@@ -75,4 +75,4 @@ module {
 }
 
 // OPT-LABEL: define {{.*}}void @_ada_unused(
-// OPT: call void @__gnat_rcheck_CE_Index_Check
+// OPT: call void @__lalvm_rcheck_CE_Index_Check

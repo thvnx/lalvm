@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --implicit-check-not=__gnat_rcheck_CE_Overflow_Check
+-- RUN: %lalvm --emit=llvm %s | %FileCheck %s --implicit-check-not=__lalvm_rcheck_CE_Overflow_Check
 
 -- Modular `/` (RM 11.5, RM 3.5.4) is unsigned and wraps, so it carries only the
 -- zero-divisor Division_Check, never the signed `Integer'First / -1` overflow
@@ -7,7 +7,7 @@
 
 -- CHECK-LABEL: define {{.*}} @division_check_modular__div_k
 -- CHECK:         icmp eq i16 %{{.*}}, 0
--- CHECK:         call void @__gnat_rcheck_CE_Divide_By_Zero
+-- CHECK:         call void @__lalvm_rcheck_CE_Divide_By_Zero
 -- CHECK:         udiv i16
 
 procedure Division_Check_Modular is

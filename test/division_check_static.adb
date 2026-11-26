@@ -1,4 +1,4 @@
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --implicit-check-not=__gnat_rcheck_CE_Divide_By_Zero --implicit-check-not=__gnat_rcheck_CE_Overflow_Check
+-- RUN: %lalvm --emit=llvm %s | %FileCheck %s --implicit-check-not=__lalvm_rcheck_CE_Divide_By_Zero --implicit-check-not=__lalvm_rcheck_CE_Overflow_Check
 
 -- A static nonzero divisor resolves the Division_Check at compile time
 -- (RM 11.5), GNAT-style: neither the zero-divisor check nor the

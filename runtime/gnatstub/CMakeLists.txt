@@ -1,5 +1,4 @@
-# Temporary substitutes for the GNAT runtime entry points, to link the programs
-# lalvm binds with until the Ada runtime provides them.
+# Temporary LALVM check failure handlers until the Ada runtime provides them.
 
 # Drop sanitizers and coverage instrumentation since this is target code.
 set(CMAKE_C_FLAGS "")

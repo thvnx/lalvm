@@ -19,11 +19,11 @@
 -- MLIR: ada.unop "abs" {{.*}} checks<overflow>
 -- LLVM-LABEL: define internal void @unused_operator_checks__checked(
 -- LLVM: @llvm.sadd.with.overflow.i32
--- LLVM: @__gnat_rcheck_CE_Overflow_Check
--- LLVM: @__gnat_rcheck_CE_Divide_By_Zero
+-- LLVM: @__lalvm_rcheck_CE_Overflow_Check
+-- LLVM: @__lalvm_rcheck_CE_Divide_By_Zero
 -- LLVM: @llvm.ssub.with.overflow.i32
--- LLVM: @__gnat_rcheck_CE_Overflow_Check
--- LLVM: @__gnat_rcheck_CE_Overflow_Check
+-- LLVM: @__lalvm_rcheck_CE_Overflow_Check
+-- LLVM: @__lalvm_rcheck_CE_Overflow_Check
 -- LLVM: ret void
 
 procedure Unused_Operator_Checks is

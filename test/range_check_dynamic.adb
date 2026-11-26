@@ -20,7 +20,7 @@
 -- LLVM-LABEL: define i32 @_ada_range_check_dynamic(
 -- LLVM:         icmp slt
 -- LLVM:         icmp sgt
--- LLVM:         call void @__gnat_rcheck_CE_Range_Check(
+-- LLVM:         call void @__lalvm_rcheck_CE_Range_Check(
 
 function Range_Check_Dynamic (N, M : Integer) return Integer is
    subtype S is Integer range 1 .. N;

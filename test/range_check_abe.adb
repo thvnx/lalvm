@@ -13,7 +13,7 @@
 -- detect never forms.
 -- CHECK:      warning: cannot call "p" before body seen
 -- CHECK:      warning: Program_Error will be raised at run time
--- CHECK:      call void @__gnat_rcheck_PE_Access_Before_Elaboration(
+-- CHECK:      call void @__lalvm_rcheck_PE_Access_Before_Elaboration(
 
 function Range_Check_Abe return Integer is
    function P return Integer;

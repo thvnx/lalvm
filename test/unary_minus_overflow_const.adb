@@ -7,7 +7,7 @@
 -- LLVM folds into an unconditional raise.
 
 -- CHECK-LABEL: define {{.*}}i32 @_ada_unary_minus_overflow_const(
--- CHECK-NEXT:    call void @__gnat_rcheck_CE_Overflow_Check(
+-- CHECK-NEXT:    call void @__lalvm_rcheck_CE_Overflow_Check(
 -- CHECK-NEXT:    unreachable
 
 function Unary_Minus_Overflow_Const return Integer is

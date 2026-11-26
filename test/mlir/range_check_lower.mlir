@@ -4,7 +4,7 @@
 // `ada.range_check` lowers to a signedness-aware compare (here signed, the
 // default for a non-modular subtype) of the value against the two bounds read
 // from the descriptor, and a conditional branch to a raise block that calls
-// the GNAT runtime `__gnat_rcheck_CE_Range_Check(file, line)` and is
+// the LALVM runtime `__lalvm_rcheck_CE_Range_Check(file, line)` and is
 // unreachable. The machine value flows through unchanged, although the result
 // is qualified by the subtype and the value by its base. Fed as MLIR. The
 // bound `!ada.qual`s erase to their machine type on lowering.
@@ -13,7 +13,7 @@
 
 module {
   // CHECK: private constant [10 x i8] c"check.adb\00"
-  // CHECK: declare void @__gnat_rcheck_CE_Range_Check(ptr, i32) #[[RAISE:[0-9]+]]
+  // CHECK: declare void @__lalvm_rcheck_CE_Range_Check(ptr, i32) #[[RAISE:[0-9]+]]
   // CHECK-LABEL: define i32 @_ada_check
   ada.subp @check(%v: !ada.qual<i32, @integer>, %lo: !ada.qual<i32, @integer>,
                   %hi: !ada.qual<i32, @integer>) -> !ada.qual<i32, @positive> {
@@ -24,7 +24,7 @@ module {
     // CHECK:      icmp sgt i32 %0, %[[HI]]
     // CHECK:      or i1
     // CHECK:      br i1
-    // CHECK:      call void @__gnat_rcheck_CE_Range_Check(ptr {{.*}}, i32 42)
+    // CHECK:      call void @__lalvm_rcheck_CE_Range_Check(ptr {{.*}}, i32 42)
     // CHECK:      unreachable
     // CHECK:      ret i32 %0
     // CHECK:      attributes #[[RAISE]] = { cold noreturn }

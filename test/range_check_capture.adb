@@ -13,7 +13,7 @@
 
 -- LOWERED:   ada.range_check %{{.*}}, %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @range_check_capture.s>
 
--- LLVM:      call void @__gnat_rcheck_CE_Range_Check(
+-- LLVM:      call void @__lalvm_rcheck_CE_Range_Check(
 
 function Range_Check_Capture (N : Integer) return Integer is
    subtype S is Integer range 1 .. N;

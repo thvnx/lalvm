@@ -2,7 +2,7 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
--- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM --implicit-check-not=__gnat_rcheck_CE_Overflow_Check
+-- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM --implicit-check-not=__lalvm_rcheck_CE_Overflow_Check
 
 -- Check divisor checks, signed remainders and unsigned modular lowering.
 
@@ -13,7 +13,7 @@
 
 -- LLVM-LABEL: define i32 @_ada_mod_rem(
 -- LLVM:         icmp eq i32 %[[B:[0-9]+]], 0
--- LLVM:         call void @__gnat_rcheck_CE_Divide_By_Zero
+-- LLVM:         call void @__lalvm_rcheck_CE_Divide_By_Zero
 -- LLVM:         %[[NEG1:[0-9]+]] = icmp eq i32 %[[B]], -1
 -- LLVM-NEXT:    %[[DIV:[0-9]+]] = select i1 %[[NEG1]], i32 1, i32 %[[B]]
 -- LLVM-NEXT:    %[[REM:[0-9]+]] = srem i32 %{{[0-9]+}}, %[[DIV]]
@@ -26,19 +26,19 @@
 -- LLVM-NEXT:    ret i32 %[[RES]]
 
 -- LLVM-LABEL: define internal i8 @mod_rem__byte_mod(
--- LLVM:         call void @__gnat_rcheck_CE_Divide_By_Zero
+-- LLVM:         call void @__lalvm_rcheck_CE_Divide_By_Zero
 -- LLVM-NOT:     select
 -- LLVM:         %[[UREM:[0-9]+]] = urem i8
 -- LLVM-NEXT:    ret i8 %[[UREM]]
 
 -- LLVM-LABEL: define internal i32 @mod_rem__int_rem(
--- LLVM:         call void @__gnat_rcheck_CE_Divide_By_Zero
+-- LLVM:         call void @__lalvm_rcheck_CE_Divide_By_Zero
 -- LLVM:         select i1 %{{[0-9]+}}, i32 1, i32
 -- LLVM-NEXT:    %[[SREM:[0-9]+]] = srem i32
 -- LLVM-NEXT:    ret i32 %[[SREM]]
 
 -- LLVM-LABEL: define internal i32 @mod_rem__rem_minus_one(
--- LLVM-NOT:     __gnat_rcheck_CE_Divide_By_Zero
+-- LLVM-NOT:     __lalvm_rcheck_CE_Divide_By_Zero
 -- LLVM:         ret i32
 
 function Mod_Rem (A, B : Integer) return Integer is

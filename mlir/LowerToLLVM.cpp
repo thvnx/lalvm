@@ -187,7 +187,7 @@ emitOverflowChecked(mlir::ConversionPatternRewriter &rewriter,
   mlir::Value res = extractField(rewriter, loc, wo, 0);
   mlir::Value ovf = extractField(rewriter, loc, wo, 1);
   if (mlir::failed(emitConstraintRaise(rewriter, loc, module, ovf,
-                                       "__gnat_rcheck_CE_Overflow_Check")))
+                                       "__lalvm_rcheck_CE_Overflow_Check")))
     return mlir::failure();
   return res;
 }
@@ -256,21 +256,21 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
 };
 } // namespace
 
-/// The GNAT runtime entry point raising Constraint_Error for each check kind.
+/// The LALVM runtime entry point raising Constraint_Error for each check kind.
 static llvm::StringRef raiseEntry(ada::RangeCheckOp op) {
-  return op.isOverflowCheck() ? "__gnat_rcheck_CE_Overflow_Check"
-                              : "__gnat_rcheck_CE_Range_Check";
+  return op.isOverflowCheck() ? "__lalvm_rcheck_CE_Overflow_Check"
+                              : "__lalvm_rcheck_CE_Range_Check";
 }
 static llvm::StringRef raiseEntry(ada::IndexCheckOp) {
-  return "__gnat_rcheck_CE_Index_Check";
+  return "__lalvm_rcheck_CE_Index_Check";
 }
 
 static llvm::StringRef raiseEntry(ada::ConstraintErrorOp op) {
   switch (op.getKind()) {
   case ada::AdaConstraintErrorKind::Overflow:
-    return "__gnat_rcheck_CE_Overflow_Check";
+    return "__lalvm_rcheck_CE_Overflow_Check";
   case ada::AdaConstraintErrorKind::InvalidData:
-    return "__gnat_rcheck_CE_Invalid_Data";
+    return "__lalvm_rcheck_CE_Invalid_Data";
   }
   llvm_unreachable("unknown Constraint_Error kind");
 }
@@ -293,7 +293,7 @@ struct ConstraintErrorOpLowering : OpConversionPattern<ada::ConstraintErrorOp> {
 
 // OpConversionPattern: lowers the Constraint_Check (@rm{11-5}) to a compare
 // against the bound pair and a conditional branch to a raise block that calls
-// the GNAT runtime and is unreachable. Representation-preserving: the machine
+// the LALVM runtime and is unreachable. Representation-preserving: the machine
 // value flows through unchanged into the continuation, whatever subtype the
 // result is qualified by.
 template <typename OpTy>
@@ -541,7 +541,7 @@ private:
     ada::AdaBinaryOp kind = op.getKind();
 
     // Signed +/-/* carrying the overflow flag lower to the LLVM checked
-    // intrinsic and trap to the GNAT runtime on overflow (@rm{4-5}). An
+    // intrinsic and raise through the LALVM runtime on overflow (@rm{4-5}). An
     // unflagged or provably-safe compile-time-constant +/-/* is left to the
     // plain lowering, which LLVM folds.
     if (hasOverflowCheck(op) && !evalConstInt(op.getResult())) {
@@ -590,7 +590,7 @@ private:
             rewriter, loc, arith::CmpIPredicate::eq, rhs, zero);
         if (mlir::failed(
                 emitConstraintRaise(rewriter, loc, module, isZero,
-                                    "__gnat_rcheck_CE_Divide_By_Zero")))
+                                    "__lalvm_rcheck_CE_Divide_By_Zero")))
           return mlir::failure();
 
         // Only signed division can overflow, for `Integer'First / -1`.
@@ -607,7 +607,7 @@ private:
               arith::AndIOp::create(rewriter, loc, lhsIsMin, rhsIsNegOne);
           if (mlir::failed(
                   emitConstraintRaise(rewriter, loc, module, ovf,
-                                      "__gnat_rcheck_CE_Overflow_Check")))
+                                      "__lalvm_rcheck_CE_Overflow_Check")))
             return mlir::failure();
         }
       }
@@ -969,7 +969,7 @@ struct UnOpLowering : public OpConversionPattern<ada::UnOp> {
           auto module = op->getParentOfType<mlir::ModuleOp>();
           if (mlir::failed(
                   emitConstraintRaise(rewriter, loc, module, isMin,
-                                      "__gnat_rcheck_CE_Overflow_Check")))
+                                      "__lalvm_rcheck_CE_Overflow_Check")))
             return mlir::failure();
         }
         rewriter.replaceOpWithNewOp<math::AbsIOp>(op, x);

@@ -16,7 +16,7 @@
 -- LLVM:         %[[O:.*]] = extractvalue { i32, i1 } %[[WO]], 1
 -- LLVM:         br i1 %[[O]], label %[[RAISE:[0-9]+]], label %{{[0-9]+}}
 -- LLVM:       [[RAISE]]:
--- LLVM:         call void @__gnat_rcheck_CE_Overflow_Check(ptr {{.*}}, i32 {{.*}})
+-- LLVM:         call void @__lalvm_rcheck_CE_Overflow_Check(ptr {{.*}}, i32 {{.*}})
 -- LLVM:         unreachable
 
 -- LLVM-DAG:     call { i32, i1 } @llvm.ssub.with.overflow.i32

@@ -99,7 +99,7 @@ module {
   // CHECK-NEXT:    %[[W:.*]] = ada.wrap %[[T]] : i16 to !ada.qual<i16, @short_integer>
   // CHECK-NEXT:    return %[[W]]
   // LLVM-LABEL: define i16 @_ada_narrow(
-  // LLVM:         call void @__gnat_rcheck_CE_Range_Check(
+  // LLVM:         call void @__lalvm_rcheck_CE_Range_Check(
   // LLVM:         trunc i32 %0 to i16
   ada.subp @narrow(%v: !ada.qual<i32, @integer>) -> !ada.qual<i16, @short_integer> {
     %r = ada.convert explicit %v : !ada.qual<i32, @integer> to !ada.qual<i16, @short_integer>

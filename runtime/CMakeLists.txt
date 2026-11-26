@@ -1,5 +1,5 @@
 # LALVM's runtimes. `babbage` is the Ada runtime and is not built yet.
-# `gnatstub` is a temporary substitute for the GNAT entry points.
+# `gnatstub` is a temporary implementation of the LALVM check failure handlers.
 add_subdirectory(gnatstub)
 
 # Babbage's Ada sources, laid out like GNAT's adainclude/adalib pair.

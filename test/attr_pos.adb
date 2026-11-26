@@ -25,7 +25,7 @@
 -- CHECK-NEXT: {{.*}} = ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 2
 
 -- LLVM-LABEL: define internal i512 @attr_pos__color__pos(
--- LLVM: call void @__gnat_rcheck_CE_Invalid_Data(
+-- LLVM: call void @__lalvm_rcheck_CE_Invalid_Data(
 -- LLVM-NEXT: unreachable
 
 -- CHECK: %[[BOOL:.*]] = ada.convert implicit %b : !ada.qual<i1, @standard.boolean> to !ada.qual<i32, @standard.integer>

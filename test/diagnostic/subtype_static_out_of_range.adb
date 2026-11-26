@@ -8,7 +8,7 @@
 
 -- CHECK: warning: value not in range of type "{{.*}}small"
 -- CHECK: warning: Constraint_Error will be raised at run time
--- CHECK: call void @__gnat_rcheck_CE_Range_Check(
+-- CHECK: call void @__lalvm_rcheck_CE_Range_Check(
 
 procedure Subtype_Static_Out_Of_Range is
    subtype Small is Integer range 1 .. 10;

@@ -5,7 +5,7 @@ target triple = "x86_64-pc-linux-gnu"
 
 @lalvm.file = private constant [12 x i8] c"compute.adb\00"
 
-declare void @__gnat_rcheck_CE_Overflow_Check(ptr, i32)
+declare void @__lalvm_rcheck_CE_Overflow_Check(ptr, i32)
 
 define i32 @_ada_compute(i32 %0) {
   %2 = call i32 @compute__double(i32 %0)
@@ -19,7 +19,7 @@ define internal i32 @compute__double(i32 %0) {
   br i1 %4, label %5, label %6
 
 5:                                                ; preds = %1
-  call void @__gnat_rcheck_CE_Overflow_Check(ptr @lalvm.file, i32 4)
+  call void @__lalvm_rcheck_CE_Overflow_Check(ptr @lalvm.file, i32 4)
   unreachable
 
 6:                                                ; preds = %1

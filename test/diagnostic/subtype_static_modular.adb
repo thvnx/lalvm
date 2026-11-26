@@ -7,7 +7,7 @@
 -- so it neither warns nor is checked.
 
 -- CHECK-LABEL: define {{.*}}@_ada_subtype_static_modular(
--- CHECK-NOT:     call void @__gnat_rcheck_CE_Range_Check(
+-- CHECK-NOT:     call void @__lalvm_rcheck_CE_Range_Check(
 
 procedure Subtype_Static_Modular is
    type Byte is mod 256;

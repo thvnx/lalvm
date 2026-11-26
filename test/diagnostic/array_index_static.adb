@@ -9,7 +9,7 @@
 
 -- CHECK: warning: value not in range of type
 -- CHECK: warning: Constraint_Error will be raised at run time
--- CHECK: call void @__gnat_rcheck_CE_Index_Check(
+-- CHECK: call void @__lalvm_rcheck_CE_Index_Check(
 
 procedure Array_Index_Static is
    type Vec is array (1 .. 10) of Integer;

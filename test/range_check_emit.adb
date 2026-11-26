@@ -23,7 +23,7 @@
 -- LLVM-LABEL: define i32 @_ada_range_check_emit(
 -- LLVM:      icmp slt i32 %0, 1
 -- LLVM:      icmp sgt i32 %0, 10
--- LLVM:      call void @__gnat_rcheck_CE_Range_Check(
+-- LLVM:      call void @__lalvm_rcheck_CE_Range_Check(
 
 function Range_Check_Emit (X : Integer) return Integer is
    subtype Small is Integer range 1 .. 10;

@@ -20,7 +20,7 @@
 -- LLVM-NEXT:     [[ISMIN:%[0-9]+]] = icmp eq i32 %0, -2147483648
 -- LLVM-NEXT:     br i1 [[ISMIN]], label %[[RAISE:[0-9]+]], label %[[OK:[0-9]+]]
 -- LLVM:        [[RAISE]]:
--- LLVM-NEXT:     call void @__gnat_rcheck_CE_Overflow_Check(ptr @lalvm.file, i32 {{[0-9]+}})
+-- LLVM-NEXT:     call void @__lalvm_rcheck_CE_Overflow_Check(ptr @lalvm.file, i32 {{[0-9]+}})
 -- LLVM-NEXT:     unreachable
 -- LLVM:        [[OK]]:
 -- LLVM-NEXT:     [[R:%[0-9]+]] = call i32 @llvm.abs.i32(i32 %0, i1 false)

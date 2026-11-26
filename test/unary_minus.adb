@@ -26,7 +26,7 @@
 -- LLVM-NEXT:     [[OVF:%[0-9]+]] = extractvalue { i32, i1 } [[WO]], 1
 -- LLVM-NEXT:     br i1 [[OVF]], label %[[RAISE:[0-9]+]], label %[[OK:[0-9]+]]
 -- LLVM:        [[RAISE]]:
--- LLVM-NEXT:     call void @__gnat_rcheck_CE_Overflow_Check(ptr @lalvm.file, i32 {{[0-9]+}})
+-- LLVM-NEXT:     call void @__lalvm_rcheck_CE_Overflow_Check(ptr @lalvm.file, i32 {{[0-9]+}})
 -- LLVM-NEXT:     unreachable
 -- LLVM:        [[OK]]:
 -- LLVM-NEXT:     ret i32 [[NEG]]
