@@ -18,13 +18,13 @@
 -- CHECK: ^[[INVALID]]:
 -- CHECK-NEXT: ada.constraint_error invalid_data
 -- CHECK: ^[[RED]]:
--- CHECK-NEXT: {{.*}} = ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 0
+-- CHECK-NEXT: {{.*}} = ada.constant : !ada.qual<i128, @standard.universal_int_type_> = 0
 -- CHECK: ^[[GREEN]]:
--- CHECK-NEXT: {{.*}} = ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 1
+-- CHECK-NEXT: {{.*}} = ada.constant : !ada.qual<i128, @standard.universal_int_type_> = 1
 -- CHECK: ^[[BLUE]]:
--- CHECK-NEXT: {{.*}} = ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 2
+-- CHECK-NEXT: {{.*}} = ada.constant : !ada.qual<i128, @standard.universal_int_type_> = 2
 
--- LLVM-LABEL: define internal i512 @attr_pos__color__pos(
+-- LLVM-LABEL: define internal i128 @attr_pos__color__pos(
 -- LLVM: call void @__lalvm_rcheck_CE_Invalid_Data(
 -- LLVM-NEXT: unreachable
 
@@ -37,10 +37,10 @@
 -- CHECK-NEXT: ada.call @attr_pos.color.pos(%[[AGAIN]])
 
 -- Executable expressions containing 'Pos must avoid Libadalang's incorrect fold.
--- CHECK: %[[STATIC:.*]] = ada.convert implicit %{{.*}} : !ada.qual<i512, @standard.universal_int_type_> to !ada.qual<i512, @standard.root_types_.root_integer>
--- CHECK-NEXT: %[[ADDEND:.*]] = ada.constant : !ada.qual<i512, @standard.root_types_.root_integer> = 1
+-- CHECK: %[[STATIC:.*]] = ada.convert implicit %{{.*}} : !ada.qual<i128, @standard.universal_int_type_> to !ada.qual<i128, @standard.root_types_.root_integer>
+-- CHECK-NEXT: %[[ADDEND:.*]] = ada.constant : !ada.qual<i128, @standard.root_types_.root_integer> = 1
 -- CHECK-NEXT: %[[SUM:.*]] = ada.binop "+" %[[STATIC]], %[[ADDEND]]
--- CHECK-NEXT: ada.convert explicit %[[SUM]] : !ada.qual<i512, @standard.root_types_.root_integer> to !ada.qual<i32, @standard.integer>
+-- CHECK-NEXT: ada.convert explicit %[[SUM]] : !ada.qual<i128, @standard.root_types_.root_integer> to !ada.qual<i32, @standard.integer>
 
 function Attr_Pos (X : Integer; B : Boolean; C : Character) return Integer is
    type Color is (Red, Green, Blue);

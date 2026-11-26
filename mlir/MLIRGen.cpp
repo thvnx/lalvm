@@ -179,11 +179,15 @@ private:
   // outside their scope before MLIRGen runs.
   llvm::DenseMap<ada_base_node, mlir::Value> declValues;
 
-  // Named numbers (@rm{3-3-2}): maps each DefiningName node to the
-  // pre-evaluated arith.constant (null only when Libadalang fails to evaluate
-  // the static expression, diagnosed at the use site). Use-site resolution
-  // re-emits the constant in the concrete target type.
-  llvm::DenseMap<ada_node, mlir::Value, AdaNodeDenseMapInfo> numberDecls;
+  // Named numbers (@rm{3-3-2}): store exact integer values and representable
+  // constants for debug info. Uses convert the constant or materialize the
+  // exact value in their contextual type. Evaluation failures are diagnosed at
+  // use.
+  struct NamedNumber {
+    std::optional<llvm::APSInt> integer;
+    mlir::Value value;
+  };
+  llvm::DenseMap<ada_node, NamedNumber, AdaNodeDenseMapInfo> numberDecls;
 
   // Cache from type decl node to its emitted ada.type op. Populated by
   // mlirGenTypeDecl; queried via lookupOrEmitTypeOp (which also handles lazy
@@ -755,9 +759,26 @@ private:
     // constraint (@rm{4-5}): its root type stands for it.
     type_decl = libadalang::canonicalType(type_decl).value_or(type_decl);
     mlir::ada::TypeOp typeOp = lookupOrEmitTypeOp(type_decl, location);
-    if (!typeOp || !mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
-                       typeOp.getTypeInfoAttr()))
+    if (!typeOp)
       return std::nullopt;
+    if (!mlir::isa_and_nonnull<mlir::ada::IntegerTypeInfoAttr>(
+            typeOp.getTypeInfoAttr())) {
+      if (ada_node_kind(&expr) != ada_relation_op)
+        return std::nullopt;
+      ada_node left{}, right{};
+      ada_bin_op_f_left(&expr, &left);
+      ada_bin_op_f_right(&expr, &right);
+      // Evaluate static universal and root integer comparisons exactly before
+      // materialization (@rm{4-9}). Libadalang may resolve universal arithmetic
+      // to root_integer.
+      for (ada_node operand : {left, right}) {
+        auto type = libadalang::expressionType(operand);
+        if (!type || (!libadalang::isRootIntegerTypeDecl(type.value()) &&
+                      (!libadalang::isUniversalTypeDecl(type.value()) ||
+                       libadalang::isRealTypeDecl(type.value()))))
+          return std::nullopt;
+      }
+    }
     // @todo Libadalang 27 evaluates modular arithmetic without wrapping
     //       (@rm{3-5-4}(19)). Keep it unfolded until the evaluator is fixed.
     if (isModularTypeOp(typeOp))
@@ -820,7 +841,7 @@ private:
     ada_bin_op_f_op(&binop, &op);
 
     // Resolve the operation's result type from libadalang.
-    ada_node type_decl = libadalang::expressionType(binop).value_or(ada_node{});
+    ada_node type_decl = resolveLiteralType(binop, loc(binop));
     mlir::ada::QualType resultType;
     if (!ada_node_is_null(&type_decl))
       resultType = getAdaQualType(type_decl, loc(binop));
@@ -892,7 +913,7 @@ private:
       return nullptr;
     }
 
-    ada_node type_decl = libadalang::expressionType(unop).value_or(ada_node{});
+    ada_node type_decl = resolveLiteralType(unop, loc(unop));
     if (ada_node_is_null(&type_decl)) {
       mlir::emitError(loc(unop), "failed to resolve type of unary operation");
       return nullptr;
@@ -944,13 +965,13 @@ private:
       return {};
     }
     if (libadalang::isUniversalTypeDecl(type_decl)) {
-      if (!ada_expr_p_expected_expression_type(&node, &type_decl) ||
-          ada_node_is_null(&type_decl)) {
-        if (!ada_node_is_null(&universalOperandType))
-          return universalOperandType;
-        mlir::emitError(location, "failed to resolve expected type of literal");
-        return {};
-      }
+      ada_node expected{};
+      if (ada_expr_p_expected_expression_type(&node, &expected) &&
+          !ada_node_is_null(&expected) &&
+          !libadalang::isUniversalTypeDecl(expected))
+        return expected;
+      if (!ada_node_is_null(&universalOperandType))
+        return universalOperandType;
     }
     return type_decl;
   }
@@ -988,6 +1009,19 @@ private:
     }
     return mlir::ada::ConstantOp::create(
         builder, location, type, mlir::FloatAttr::get(floatType, value));
+  }
+
+  /// Round an exact integer once to a floating point type.
+  mlir::Value emitRealConstant(const llvm::APSInt &value,
+                               mlir::ada::QualType type,
+                               mlir::Location location) {
+    auto floatType = mlir::cast<mlir::FloatType>(type.getMlirType());
+    llvm::APFloat f(floatType.getFloatSemantics());
+    // @todo Diagnose APFloat overflow, while accepting inexact rounding.
+    f.convertFromAPInt(value, value.isSigned(),
+                       llvm::APFloat::rmNearestTiesToEven);
+    return mlir::ada::ConstantOp::create(builder, location, type,
+                                         mlir::FloatAttr::get(floatType, f));
   }
 
   /// Extract the value of an ada_int_literal node via `p_denoted_value`, as an
@@ -1050,32 +1084,47 @@ private:
     return true;
   }
 
-  /// Emit integer `value` of type `type_decl`. A value outside the base range
-  /// is an error. Otherwise the value is a constant of the base type (a literal
-  /// has a type, not a subtype, @rm{8-6}(22)), converted to the subtype: in
-  /// range, or checked at run time for a dynamic subtype, or with a warning and
-  /// a check that raises when out of a static range (@rm{5-2}). Returns null on
-  /// error (a diagnostic is emitted).
+  /// Check a static integer against its resolved base range (@rm{4-9}).
+  ada_node checkedIntegerBase(const llvm::APSInt &value, ada_node type_decl,
+                              mlir::Location location) {
+    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
+    ada_node base = canon ? canon.value() : type_decl;
+    if (libadalang::isUniversalTypeDecl(base) &&
+        !libadalang::isRealTypeDecl(base)) {
+      auto [lo, hi] = getRuntimeIntegerBounds();
+      if (diagnoseOutOfBaseRange(value, lo, hi, "root_integer", location))
+        return {};
+    } else if (auto b = subtypeStaticBounds(base, location)) {
+      ada_node defName;
+      std::string name = ada_basic_decl_p_defining_name(&base, &defName)
+                             ? canonicalFqn(defName)
+                             : libadalang::getName(&base);
+      if (diagnoseOutOfBaseRange(value, b->first, b->second, name, location))
+        return {};
+    }
+    return base;
+  }
+
+  /// Emit an integer in its contextual type. Reject values outside the base
+  /// range. Literals have a type, not a subtype (@rm{8-6}(22)), so emit the
+  /// base value before applying subtype checks (@rm{5-2}). Floating point
+  /// contexts round once. Return null after a diagnostic.
   mlir::Value emitCheckedIntConstant(const llvm::APSInt &value,
                                      ada_node type_decl,
                                      mlir::Location location) {
-    std::optional<ada_node> canon = libadalang::canonicalType(type_decl);
-    ada_node base = canon ? canon.value() : type_decl;
-    if (!libadalang::isUniversalTypeDecl(base))
-      if (auto b = subtypeStaticBounds(base, location)) {
-        ada_node defName;
-        std::string name = ada_basic_decl_p_defining_name(&base, &defName)
-                               ? canonicalFqn(defName)
-                               : libadalang::getName(&base);
-        if (diagnoseOutOfBaseRange(value, b->first, b->second, name, location))
-          return nullptr;
-      }
+    ada_node base = checkedIntegerBase(value, type_decl, location);
+    if (ada_node_is_null(&base))
+      return nullptr;
     mlir::ada::QualType type = getAdaQualType(type_decl, location);
     mlir::ada::QualType baseType = getAdaQualType(base, location);
     if (!type || !baseType)
       return nullptr;
-    return convertImplicitly(emitIntConstant(value, baseType, location), type,
-                             location);
+    mlir::Value constant;
+    if (mlir::isa<mlir::FloatType>(baseType.getMlirType()))
+      constant = emitRealConstant(value, baseType, location);
+    else
+      constant = emitIntConstant(value, baseType, location);
+    return convertImplicitly(constant, type, location);
   }
 
   mlir::Value mlirGenIntLiteral(ada_node &node) {
@@ -1521,12 +1570,8 @@ private:
         mlir::emitError(location, "unsupported type conversion");
         return nullptr;
       }
-      llvm::APFloat f(floatType.getFloatSemantics());
-      // @todo Diagnose APFloat overflow, while accepting inexact rounding.
-      f.convertFromAPInt(staticValue.value(), staticValue.value().isSigned(),
-                         llvm::APFloat::rmNearestTiesToEven);
-      mlir::Value constant = mlir::ada::ConstantOp::create(
-          builder, location, baseType, mlir::FloatAttr::get(floatType, f));
+      mlir::Value constant =
+          emitRealConstant(staticValue.value(), baseType, location);
       if (constant.getType() == target)
         return constant;
       return emitConversion(constant, target,
@@ -1961,12 +2006,24 @@ private:
           !ada_node_is_null(&def_name)) {
         auto it = numberDecls.find(def_name);
         if (it != numberDecls.end()) {
-          if (mlir::Value value = it->second) {
-            mlir::Location exprLoc = loc(expr);
-            mlir::ada::QualType tgtType = resolveLiteralQualType(expr, exprLoc);
-            if (!tgtType)
+          auto &number = it->second;
+          mlir::Location exprLoc = loc(expr);
+          ada_node type = resolveLiteralType(expr, exprLoc);
+          if (ada_node_is_null(&type))
+            return nullptr;
+          if (number.integer) {
+            if (!number.value)
+              return emitCheckedIntConstant(number.integer.value(), type,
+                                            exprLoc);
+            auto base =
+                checkedIntegerBase(number.integer.value(), type, exprLoc);
+            if (ada_node_is_null(&base))
               return nullptr;
-            return convertImplicitly(value, tgtType, exprLoc);
+          }
+          if (number.value) {
+            auto target = getAdaQualType(type, exprLoc);
+            return target ? convertImplicitly(number.value, target, exprLoc)
+                          : nullptr;
           }
           mlir::emitError(loc(expr), "failed to evaluate named number");
           return nullptr;
@@ -2068,11 +2125,10 @@ private:
   /// @todo Named numbers can be used with (non-numeric) types that define
   ///       user-defined literals (Ada 2012).
   ///
-  /// **Implementation Details**: Each `DefiningName` is entered in
-  /// `numberDecls` with an `ada.constant` SSA value at universal type (null
-  /// only when Libadalang fails to evaluate the expression, diagnosed at the
-  /// use site). Use-site resolution emits an `ada.convert` from the universal
-  /// constant to the concrete type required by context.
+  /// **Implementation Details**: Store exact integers and representable
+  /// universal constants in `numberDecls`. Uses convert the constant or
+  /// materialize the exact integer in the required type. Real values retain a
+  /// universal constant. Diagnose evaluation failures at use.
   mlir::LogicalResult mlirGenNumberDecl(ada_node &number_decl) {
     ada_node expr;
     ada_number_decl_f_expr(&number_decl, &expr);
@@ -2084,32 +2140,42 @@ private:
     UniversalKind kind = UniversalKind::Unknown;
     std::string unknownTypeName;
     if (exprType) {
-      ada_node typeNameNode;
-      ada_base_type_decl_f_name(&exprType.value(), &typeNameNode);
-      if (!ada_node_is_null(&typeNameNode)) {
-        std::string typeName = libadalang::getName(&typeNameNode);
-        kind =
-            llvm::StringSwitch<UniversalKind>(typeName)
-                .Case(libadalang::kUniversalIntTypeName, UniversalKind::Int)
-                .Case(libadalang::kUniversalRealTypeName, UniversalKind::Real)
-                .Default(UniversalKind::Unknown);
-        if (kind == UniversalKind::Unknown)
-          unknownTypeName = std::move(typeName);
-      }
+      ada_bool integer = false;
+      if (ada_base_type_decl_p_is_int_type(
+              &exprType.value(), &libadalang::kNullOrigin, &integer) &&
+          integer)
+        kind = UniversalKind::Int;
+      else if (libadalang::isUniversalTypeDecl(exprType.value()) &&
+               libadalang::isRealTypeDecl(exprType.value()))
+        kind = UniversalKind::Real;
+      else if (auto name = libadalang::declDefiningName(exprType.value()))
+        unknownTypeName = libadalang::getName(&name.value());
+    }
+    if (kind != UniversalKind::Unknown) {
+      ada_node universal{};
+      auto getType = kind == UniversalKind::Int
+                         ? ada_ada_node_p_universal_int_type
+                         : ada_ada_node_p_universal_real_type;
+      if (!getType(&expr, &universal) || ada_node_is_null(&universal))
+        return mlir::emitError(loc(number_decl),
+                               "failed to resolve named number type");
+      exprType = universal;
     }
 
-    // Evaluate to a universal-typed constant; each use site converts it to the
-    // concrete type its context requires.
+    // Preserve the exact integer value independently of its debug constant.
+    std::optional<llvm::APSInt> integer;
     mlir::TypedAttr constAttr;
     mlir::ada::TypeOp typeOp;
     switch (kind) {
     case UniversalKind::Int: {
-      if (auto value = libadalang::evalExprAsInt(expr)) {
+      integer = libadalang::evalExprAsInt(expr);
+      if (integer) {
         typeOp = lookupOrEmitTypeOp(exprType.value(), loc(number_decl));
         if (typeOp) {
           auto intType = mlir::cast<mlir::IntegerType>(typeOp.getMlirType());
-          constAttr = mlir::IntegerAttr::get(
-              intType, value->sextOrTrunc(intType.getWidth()));
+          if (integer->getSignificantBits() <= intType.getWidth())
+            constAttr = mlir::IntegerAttr::get(
+                intType, integer->sextOrTrunc(intType.getWidth()));
         }
       }
       break;
@@ -2165,7 +2231,7 @@ private:
         setAdaNameLoc(mlir::Value(constOp), nameAttr);
         constValue = constOp.getResult();
       }
-      numberDecls[id] = constValue;
+      numberDecls[id] = {integer, constValue};
     }
     return mlir::success();
   }
@@ -2547,9 +2613,9 @@ private:
       if (libadalang::isRootIntegerTypeDecl(type_decl)) {
         // Libadalang's root_integer range is a placeholder, like
         // universal_integer.
-        unsigned bits = mlirType.getIntOrFloatBitWidth();
-        lower = minimalWidthIntAttr(llvm::APInt::getSignedMinValue(bits));
-        upper = minimalWidthIntAttr(llvm::APInt::getSignedMaxValue(bits));
+        auto [lo, hi] = getRuntimeIntegerBounds();
+        lower = minimalWidthIntAttr(lo);
+        upper = minimalWidthIntAttr(hi);
       } else if (!libadalang::isUniversalTypeDecl(type_decl)) {
         ada_internal_discrete_range range;
         if (ada_base_type_decl_p_discrete_range(&type_decl, &range) &&
@@ -4264,6 +4330,20 @@ private:
     return mlir::Type{};
   }
 
+  /// Representation of root_integer and unresolved universal integers.
+  mlir::IntegerType getRuntimeIntegerType() {
+    // @todo Derive the width and base range from System.Min_Int and
+    //       System.Max_Int instead of assuming a signed 128 bit range.
+    return builder.getIntegerType(128);
+  }
+
+  /// Base range of root_integer and unresolved universal integers.
+  std::pair<llvm::APSInt, llvm::APSInt> getRuntimeIntegerBounds() {
+    unsigned bits = getRuntimeIntegerType().getWidth();
+    return {llvm::APSInt::getMinValue(bits, false),
+            llvm::APSInt::getMaxValue(bits, false)};
+  }
+
   /// Signed integer type (@rm{3-5-4}): width from the base type's (static)
   /// range rather than the predefined name, rounded up to a power-of-two byte
   /// width (i8 .. i128; only enums get tight widths). Universal types skip this
@@ -4280,7 +4360,7 @@ private:
         !is_int)
       return std::nullopt;
     if (libadalang::isRootIntegerTypeDecl(canon_type))
-      return builder.getIntegerType(512);
+      return getRuntimeIntegerType();
     ada_internal_discrete_range range;
     if (!ada_base_type_decl_p_discrete_range(&canon_type, &range) ||
         ada_node_is_null(&range.low_bound) ||
@@ -4334,12 +4414,10 @@ private:
     return mlir::Float128Type::get(builder.getContext());
   }
 
-  /// Terminal fallback: map the type by its (lower-cased) defining name. Only
-  /// the universal types resolve here, to deliberately wide carriers
-  /// (unbounded/exact conceptually, and not reading like machine types). Values
-  /// are still bounded by the literal path (int64; reals text-parsed to
-  /// double); revisit with the APInt literal work. Any other name is
-  /// unsupported (a diagnosed error).
+  /// Map unresolved universal types by name. Integers use the runtime
+  /// representation, while reals keep a wide carrier. Static integers retain
+  /// exact precision until materialization. Real literals are still parsed
+  /// through double. Diagnose other types.
   mlir::Type getUniversalMLIRType(ada_node &canon_type,
                                   mlir::Location diagLoc) {
     ada_node type_name;
@@ -4360,7 +4438,7 @@ private:
 
     std::string name = libadalang::getName(&type_name);
     if (name == libadalang::kUniversalIntTypeName)
-      return builder.getIntegerType(512);
+      return getRuntimeIntegerType();
     if (name == libadalang::kUniversalRealTypeName)
       return mlir::Float128Type::get(builder.getContext());
 

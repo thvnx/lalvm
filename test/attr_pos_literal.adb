@@ -3,7 +3,7 @@
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --implicit-check-not=.pos
 
--- CHECK: %[[POS:.*]] = ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 1
+-- CHECK: %[[POS:.*]] = ada.constant : !ada.qual<i128, @standard.universal_int_type_> = 1
 -- CHECK-NEXT: %[[RESULT:.*]] = ada.convert implicit %[[POS]]
 -- CHECK-NEXT: ada.return %[[RESULT]]
 

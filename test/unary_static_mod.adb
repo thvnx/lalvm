@@ -2,9 +2,9 @@
 -- Copyright (c) 2026 The LALVM Project
 
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s
--- XFAIL: libadalang-26
 
 -- Libadalang 26 resolves the modular negation result to universal integer.
+-- The expected type from its context supplies M10.
 
 -- CHECK-LABEL: ada.subp private @unary_static_mod.minus_one_mod(
 -- CHECK:         [[ONE:%[0-9]+]] = ada.constant : !ada.qual<i8, @unary_static_mod.m10> = 1

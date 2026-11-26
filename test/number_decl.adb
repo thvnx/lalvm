@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+-- Copyright (c) 2026 The LALVM Project
+
 -- RUN: %lalvm --emit=mlir %s | %FileCheck %s --check-prefix=MLIR
 -- RUN: %lalvm --emit=llvm %s | %FileCheck %s --check-prefix=LLVM
 
@@ -6,11 +9,11 @@
 -- in the concrete MLIR type resolved from the use context.
 
 -- MLIR: ada.type @standard.universal_real_type_ : f128 = #ada.float_info
--- MLIR: ada.type @standard.universal_int_type_ : i512 = #ada.int_info
+-- MLIR: ada.type @standard.universal_int_type_ : i128 = #ada.int_info
 -- MLIR-LABEL: ada.subp @number_decl()
 -- MLIR:         ada.subp private @number_decl.f() -> !ada.qual<i32, @standard.integer>
--- MLIR:           %[[UMAX:.*]] = ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 200
--- MLIR-NEXT:      %[[MAX:.*]] = ada.convert implicit %[[UMAX]] : !ada.qual<i512, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
+-- MLIR:           %[[UMAX:.*]] = ada.constant : !ada.qual<i128, @standard.universal_int_type_> = 200
+-- MLIR-NEXT:      %[[MAX:.*]] = ada.convert implicit %[[UMAX]] : !ada.qual<i128, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
 -- MLIR-NEXT:      ada.return %[[MAX]] : !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.subp private @number_decl.g() -> !ada.qual<f32, @standard.float>
 -- MLIR:           %[[UPI:.*]] = ada.constant : !ada.qual<f128, @standard.universal_real_type_> = {{.*}}

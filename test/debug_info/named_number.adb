@@ -10,12 +10,12 @@
 
 -- MLIR-LABEL: ada.subp @named_number
 -- MLIR-SAME:    () -> !ada.qual<i32, @standard.integer>
--- MLIR:         ada.constant : !ada.qual<i512, @standard.universal_int_type_> = 200 loc("max"(
--- MLIR:         %[[MAX:.*]] = ada.convert implicit {{.*}} : !ada.qual<i512, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
+-- MLIR:         ada.constant : !ada.qual<i128, @standard.universal_int_type_> = 200 loc("max"(
+-- MLIR:         %[[MAX:.*]] = ada.convert implicit {{.*}} : !ada.qual<i128, @standard.universal_int_type_> to !ada.qual<i32, @standard.integer>
 -- MLIR:         ada.return %[[MAX]] : !ada.qual<i32, @standard.integer>
 
 -- LLVM-LABEL: define {{.*}}i32 @_ada_named_number(
--- LLVM:          #dbg_value(i512 200,
+-- LLVM:          #dbg_value(i128 200,
 -- LLVM:          DILocalVariable(name: "max",
 
 function Named_Number return Integer is
