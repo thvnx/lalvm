@@ -1017,9 +1017,13 @@ private:
                                mlir::Location location) {
     auto floatType = mlir::cast<mlir::FloatType>(type.getMlirType());
     llvm::APFloat f(floatType.getFloatSemantics());
-    // @todo Diagnose APFloat overflow, while accepting inexact rounding.
-    f.convertFromAPInt(value, value.isSigned(),
-                       llvm::APFloat::rmNearestTiesToEven);
+    auto status = f.convertFromAPInt(value, value.isSigned(),
+                                     llvm::APFloat::rmNearestTiesToEven);
+    if (status & llvm::APFloat::opOverflow) {
+      mlir::emitError(location, "integer constant out of range for ")
+          << floatType;
+      return nullptr;
+    }
     return mlir::ada::ConstantOp::create(builder, location, type,
                                          mlir::FloatAttr::get(floatType, f));
   }
@@ -1124,6 +1128,8 @@ private:
       constant = emitRealConstant(value, baseType, location);
     else
       constant = emitIntConstant(value, baseType, location);
+    if (!constant)
+      return nullptr;
     return convertImplicitly(constant, type, location);
   }
 
@@ -1572,6 +1578,8 @@ private:
       }
       mlir::Value constant =
           emitRealConstant(staticValue.value(), baseType, location);
+      if (!constant)
+        return nullptr;
       if (constant.getType() == target)
         return constant;
       return emitConversion(constant, target,

@@ -13,6 +13,7 @@
 -- CHECK-NEXT:  ada.write
 -- CHECK-NEXT:  ada.constant : !ada.qual<i32, @standard.integer> = 3
 -- CHECK-NEXT:  ada.write
+-- CHECK:       ada.constant : !ada.qual<f32, @standard.float> = 0x4B800000
 
 -- LOWERED-LABEL: func.func @_ada_type_conversion
 -- LOWERED:       %[[F:.*]] = ada.read %{{.*}} : !ada.ref<!ada.qual<f32, @standard.float>> -> !ada.qual<f32, @standard.float>
@@ -48,4 +49,5 @@ begin
    F := Float (I);
    I := Integer (2.5);
    Y := Small (F);
+   F := Float (16_777_217);
 end Type_Conversion;
