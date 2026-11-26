@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Copyright (c) 2026 The LALVM Project
 
-#include "ada/Binder.h"
+#include "lalvm/Binder.h"
 
 #include "ada/Dialect.h"
 #include "frontend/AST.h"

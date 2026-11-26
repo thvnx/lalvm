@@ -2,13 +2,13 @@
 // Copyright (c) 2024-2026 The LALVM Project
 
 #include "ada/AdaToLLVMIRTranslation.h"
-#include "ada/Binder.h"
 #include "ada/Dialect.h"
 #include "ada/MLIRGen.h"
 #include "ada/Passes.h"
 #include "ada/PostTranslationDITypes.h"
 #include "frontend/AST.h"
 #include "frontend/DiagnosticPrinter.h"
+#include "lalvm/Binder.h"
 #include "lalvm/Support.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -84,7 +84,7 @@ static cl::opt<enum Action> emitAction(
     cl::values(clEnumValN(EmitAssembly, "asm", "output target assembly")),
     cl::init(EmitObject), cl::cat(lalvmCategory));
 
-// Bind the program whose main unit is the input (see ada/Binder.h) instead of
+// Bind the program whose main unit is the input (see lalvm/Binder.h) instead of
 // the unit's code. The bind module is emitted as MLIR.
 static cl::opt<bool> bindAction(
     "bind",

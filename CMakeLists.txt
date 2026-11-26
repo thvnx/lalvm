@@ -133,7 +133,6 @@ add_llvm_executable(lalvm
   mlir/MLIRGenExpressions.cpp
   mlir/MLIRGenStatements.cpp
   mlir/MLIRGenTypes.cpp
-  mlir/Binder.cpp
   mlir/Dialect.cpp
   mlir/ClosureConversion.cpp
   mlir/LowerAdaCalls.cpp
@@ -146,6 +145,7 @@ add_llvm_executable(lalvm
   mlir/AdaDebugInfo.cpp
   mlir/PostTranslationDITypes.cpp
   frontend/AST.cpp
+  lalvm/Binder.cpp
   lalvm/Support.cpp
   lalvm.cpp
 

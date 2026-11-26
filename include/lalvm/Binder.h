@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 // Copyright (c) 2026 The LALVM Project
 
-#ifndef ADA_BINDER_H
-#define ADA_BINDER_H
+#ifndef LALVM_BINDER_H
+#define LALVM_BINDER_H
 
 #include "frontend/AST.h"
 
@@ -32,4 +32,4 @@ mlir::OwningOpRef<mlir::ModuleOp> bind(mlir::MLIRContext &context,
 
 } // namespace lalvm
 
-#endif // ADA_BINDER_H
+#endif // LALVM_BINDER_H
