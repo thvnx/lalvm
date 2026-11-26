@@ -128,6 +128,11 @@ add_subdirectory(test)
 add_llvm_executable(lalvm
   frontend/DiagnosticPrinter.cpp
   mlir/MLIRGen.cpp
+  mlir/MLIRGenAttributes.cpp
+  mlir/MLIRGenDeclarations.cpp
+  mlir/MLIRGenExpressions.cpp
+  mlir/MLIRGenStatements.cpp
+  mlir/MLIRGenTypes.cpp
   mlir/Binder.cpp
   mlir/Dialect.cpp
   mlir/ClosureConversion.cpp
