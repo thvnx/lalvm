@@ -56,6 +56,6 @@ begin
    if Integer (D (2.5)) /= 3 or Integer (D (5.0 / 2.0)) /= 3 then
       return;
    end if;
-   -- CHECK: raised CONSTRAINT_ERROR : conversion.adb:[[#@LINE+1]] overflow check failed
+   -- CHECK: raised CONSTRAINT_ERROR : conversion.adb:[[#@LINE+1]] range check failed
    I := Integer (Tie);
 end Conversion;

@@ -1869,7 +1869,7 @@ private:
     auto range = mlir::ada::getOrCreateStaticRange(
         builder, location, positionType.getAdaType(), positionType, lo, hi);
     position = mlir::ada::RangeCheckOp::create(builder, location, positionType,
-                                               position, range, false);
+                                               position, range);
     auto raw = mlir::ada::UnwrapOp::create(
         builder, location, positionType.getMlirType(), position);
     mlir::Value result = raw;

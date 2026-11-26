@@ -534,22 +534,12 @@ def RangeCheckOp : Ada_InRangeCheckOp<"range_check"> {
     Range_Check (@rm{11-5}): a value converted or assigned to a constrained
     subtype. The result carries the subtype and the machine value is forwarded
     unchanged.
-    The optional `overflow` marker identifies an Overflow_Check introduced by
-    conversion lowering (@rm{11-5}(16)).
 
     ```mlir
     %c = ada.range_check %v, %r
         : !ada.qual<i32, @standard.integer>
        to !ada.qual<i32, @standard.positive>
     ```
-  }];
-
-  let arguments = (ins Ada_QualType:$value, Ada_RangeType:$range,
-                       UnitAttr:$overflow);
-
-  let extraClassDeclaration = [{
-    /// Whether this operation performs an Overflow_Check.
-    bool isOverflowCheck() { return getOverflow(); }
   }];
 }
 

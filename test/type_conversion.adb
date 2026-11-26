@@ -22,7 +22,7 @@
 -- LOWERED-NEXT:  %[[LO:.*]] = ada.constant : !ada.qual<f32, @standard.float> = -2.14748365E+9
 -- LOWERED-NEXT:  %[[HI:.*]] = ada.constant : !ada.qual<f32, @standard.float> = 2.14748352E+9
 -- LOWERED-NEXT:  %[[R:.*]] = ada.range %[[LO]], %[[HI]]
--- LOWERED-NEXT:  %[[C:.*]] = ada.range_check %[[WRAPPED]], %[[R]] {overflow} : !ada.qual<f32, @standard.float> to !ada.qual<f32, @standard.float>
+-- LOWERED-NEXT:  %[[C:.*]] = ada.range_check %[[WRAPPED]], %[[R]] : !ada.qual<f32, @standard.float> to !ada.qual<f32, @standard.float>
 -- LOWERED-NEXT:  %[[U:.*]] = ada.unwrap %[[C]]
 -- LOWERED-NEXT:  %[[I:.*]] = arith.fptosi %[[U]] : f32 to i32
 -- LOWERED-NEXT:  ada.wrap %[[I]] : i32 to !ada.qual<i32, @standard.integer>
@@ -30,8 +30,8 @@
 -- LOWERED-NEXT:  %[[Y:.*]] = arith.sitofp %[[X]] : i32 to f32
 -- LOWERED-NEXT:  ada.wrap %[[Y]] : f32 to !ada.qual<f32, @standard.float>
 
--- A float converted to Small needs distinct overflow and range checks.
--- LOWERED:       ada.range_check %{{.*}}, %{{.*}} {overflow} : !ada.qual<f32, @standard.float> to !ada.qual<f32, @standard.float>
+-- A float converted to Small checks the integer base range, then Small.
+-- LOWERED:       ada.range_check %{{.*}}, %{{.*}} : !ada.qual<f32, @standard.float> to !ada.qual<f32, @standard.float>
 -- LOWERED:       %[[ROUNDED:.*]] = arith.fptosi %{{.*}} : f32 to i32
 -- LOWERED-NEXT:  %[[BASE:.*]] = ada.wrap %[[ROUNDED]] : i32 to !ada.qual<i32, @standard.integer>
 -- LOWERED:       ada.range_check %[[BASE]], %{{.*}} : !ada.qual<i32, @standard.integer> to !ada.qual<i32, @type_conversion.small>

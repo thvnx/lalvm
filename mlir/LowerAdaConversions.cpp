@@ -349,7 +349,7 @@ struct IntegerFloatConversion : public OpRewritePattern<ada::ConvertOp> {
     Value range = ada::createRange(rewriter, unnamed, floatLo, floatHi,
                                    sourceBaseQual.getAdaType());
     value = ada::RangeCheckOp::create(rewriter, unnamed, sourceBaseQual, value,
-                                      range, rewriter.getUnitAttr());
+                                      range);
 
     raw = ada::UnwrapOp::create(rewriter, unnamed, floatType, value);
     if (targetUnsigned)

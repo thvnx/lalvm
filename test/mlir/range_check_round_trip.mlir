@@ -32,10 +32,6 @@ module {
     // CHECK: ada.range_check %arg1, %[[R]] : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
     %cb = ada.range_check %n, %r : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
 
-    // The overflow marker preserves the check kind through printing and parsing.
-    // CHECK: ada.range_check %arg1, %[[R]] {overflow} : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
-    %overflow = ada.range_check %n, %r {overflow} : !ada.qual<i32, @integer> to !ada.qual<i32, @positive>
-
     ada.return
   }
 }

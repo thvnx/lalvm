@@ -257,9 +257,8 @@ struct RangeOpLowering : public OpConversionPattern<ada::RangeOp> {
 } // namespace
 
 /// The LALVM runtime entry point raising Constraint_Error for each check kind.
-static llvm::StringRef raiseEntry(ada::RangeCheckOp op) {
-  return op.isOverflowCheck() ? "__lalvm_rcheck_CE_Overflow_Check"
-                              : "__lalvm_rcheck_CE_Range_Check";
+static llvm::StringRef raiseEntry(ada::RangeCheckOp) {
+  return "__lalvm_rcheck_CE_Range_Check";
 }
 static llvm::StringRef raiseEntry(ada::IndexCheckOp) {
   return "__lalvm_rcheck_CE_Index_Check";
